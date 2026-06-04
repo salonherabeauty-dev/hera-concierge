@@ -1394,8 +1394,8 @@ export default async function handler(req, res) {
       .filter(Boolean)
       .join("\n")
       .trim();
-
-    return res.status(200).json({ reply: reply || fallbackReply() });
+    const cleanReply = reply.replace(/\*/g, "");
+    return res.status(200).json({ reply: cleanReply || fallbackReply() });
   } catch (e) {
     console.error("Concierge handler error", e);
     return res.status(200).json({ reply: fallbackReply() });
