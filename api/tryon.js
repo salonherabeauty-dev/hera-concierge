@@ -88,7 +88,6 @@ export default async function handler(req, res) {
     form.append("model", "gpt-image-1.5");
     form.append("prompt", prompt);
     form.append("size", "1024x1024");
-    form.append("input_fidelity", "high"); // bias toward preserving the input face
     const blob = new Blob([imageBuffer], { type: "image/png" });
     form.append("image[]", blob, "photo.png");
 
@@ -102,8 +101,10 @@ export default async function handler(req, res) {
     if (!aiRes.ok) {
       const errText = await aiRes.text();
       console.error("OpenAI error:", aiRes.status, errText);
+      // Surface the real reason during testing so we can diagnose.
+      // (You can make this message generic again before public launch.)
       return res.status(502).json({
-        error: "We couldn't create the preview just now. Please try again, or speak with our concierge.",
+        error: "Preview failed. Technical detail: " + errText.slice(0, 400),
       });
     }
 
