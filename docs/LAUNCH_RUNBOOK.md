@@ -10,17 +10,16 @@
 
 ## Gate 1 — database
 
-Preferred: create a Supabase development branch, apply the migration, generate types and run security and performance advisors.
+Status: completed in the isolated Singapore project `hera-ai-receptionist-staging` (`zjnbheohgwfzkmbnjqjr`) at the connector-confirmed cost of US$0/month.
 
-Current blocker: Supabase reported US$0.01344/hour for a branch but then rejected creation because Hera's organization is not on Pro.
+- Applied both receptionist migrations without touching production.
+- Forced RLS on all nine `ai_` tables and revoked `anon` and `authenticated` access.
+- Restricted all eight `ai_` RPC functions to `service_role`.
+- Verified webhook idempotency, job claiming, appointment lookup and approved-knowledge retrieval in a rolled-back synthetic transaction.
+- Added all six foreign-key indexes identified by the performance advisor.
+- Security advisor findings are informational deny-all RLS notices; remaining performance notices are expected unused-index notices on a new empty database.
 
-Choose one before proceeding:
-
-1. Temporarily upgrade and create a development branch.
-2. Create a separate disposable Supabase project after reviewing its monthly cost.
-3. Approve a controlled production migration only after backup, SQL review and rollback preparation.
-
-Never apply the untested migration directly to production by default.
+Never connect a preview to Hera's production Supabase credentials. Never apply these migrations to production before the remaining launch gates pass.
 
 ## Gate 2 — Meta staging
 

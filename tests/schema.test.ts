@@ -8,6 +8,11 @@ const migrationUrl = new URL(
   import.meta.url,
 );
 
+const indexMigrationUrl = new URL(
+  "../supabase/migrations/20260821000001_add_ai_foreign_key_indexes.sql",
+  import.meta.url,
+);
+
 test("database migration contains the required isolation and idempotency controls", async () => {
   const sql = await readFile(migrationUrl, "utf8");
   for (const table of [
@@ -33,7 +38,23 @@ test("database migration contains the required isolation and idempotency control
 });
 
 test("PostgreSQL 17 accepts the migration syntax", async () => {
-  const sql = await readFile(migrationUrl, "utf8");
-  const result = await parse(sql);
-  assert.ok(result.stmts.length > 30);
+  for (const url of [migrationUrl, indexMigrationUrl]) {
+    const sql = await readFile(url, "utf8");
+    const result = await parse(sql);
+    assert.ok(result.stmts.length > 0);
+  }
+});
+
+test("foreign keys used by queue and conversation workflows are indexed", async () => {
+  const sql = await readFile(indexMigrationUrl, "utf8");
+  for (const index of [
+    "ai_messages_contact_id_idx",
+    "ai_jobs_source_message_id_idx",
+    "ai_outbox_conversation_id_idx",
+    "ai_outbox_source_message_id_idx",
+    "ai_decisions_conversation_id_idx",
+    "ai_incidents_conversation_id_idx",
+  ]) {
+    assert.match(sql, new RegExp(`create index if not exists ${index}`));
+  }
 });

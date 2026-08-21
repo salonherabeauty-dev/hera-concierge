@@ -14,9 +14,9 @@ The implementation is complete as an isolated, shadow-first foundation. It is no
 - Hair-photo vision, PDF input and WhatsApp voice-note transcription
 - Deterministic complaint, medical-safety, legal, privacy, booking and financial-action controls
 - Shadow mode that records proposed replies without making any Meta send request
-- Twenty-four automated tests plus PostgreSQL 17 syntax validation
+- Twenty-five automated tests plus PostgreSQL 17 syntax validation
 
-The remaining work is account provisioning and controlled validation: apply the migration in an isolated database, configure a Meta test number, add Vercel secrets, deploy a preview, and pass the launch evaluation.
+The isolated database gate is complete. The remaining work is controlled validation: configure a Meta test number, add Preview-only Vercel secrets, redeploy the preview, and pass the launch evaluation.
 
 ## Request flow
 
@@ -53,11 +53,16 @@ Required groups:
 
 ## Database
 
-The migration is supabase/migrations/20260821000000_create_hera_ai_receptionist.sql.
+The database migrations are:
+
+- supabase/migrations/20260821000000_create_hera_ai_receptionist.sql
+- supabase/migrations/20260821000001_add_ai_foreign_key_indexes.sql
+
+They have been applied and verified in the isolated Singapore staging project `hera-ai-receptionist-staging`. Production remains unchanged.
 
 All new objects use the ai_ prefix. Tables have RLS forced, anon and authenticated privileges revoked, and service-role-only SECURITY DEFINER functions with an empty search path.
 
-Do not apply the migration to production before the runbook's database gate. Supabase development branching is unavailable on Hera's current plan.
+Do not apply the migrations to production before the remaining launch gates pass. Supabase development branching is unavailable on Hera's current plan.
 
 ## Documentation
 
