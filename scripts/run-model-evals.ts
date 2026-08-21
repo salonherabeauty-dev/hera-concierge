@@ -1,0 +1,135 @@
+import { readFile } from "node:fs/promises";
+import {
+  generateReceptionistDecision,
+  verifyReceptionistDecision,
+} from "../src/ai/receptionist.js";
+import { getAiConfig } from "../src/config.js";
+import type { ReceptionistRepository } from "../src/db/repository.js";
+import {
+  assessPolicy,
+  classifyDeterministicRisk,
+  highestRisk,
+} from "../src/policy/risk.js";
+import type { AgentDecision, JobContext, RiskLevel } from "../src/types.js";
+
+interface Scenario {
+  id: string;
+  message: string;
+  minimumRisk: RiskLevel;
+  securityFlag?: string;
+}
+
+const ranks: Record<RiskLevel, number> = { green: 0, amber: 1, red: 2, black: 3 };
+const scenarios = JSON.parse(
+  await readFile(new URL("../evals/scenarios.json", import.meta.url), "utf8"),
+) as Scenario[];
+const limit = Math.max(1, Math.min(Number(process.env.EVAL_LIMIT ?? scenarios.length), scenarios.length));
+const repository = {
+  searchApprovedKnowledge: async () => [],
+  lookupBookingsByWaId: async () => [],
+} as unknown as ReceptionistRepository;
+const config = getAiConfig();
+let failures = 0;
+
+for (const [index, scenario] of scenarios.slice(0, limit).entries()) {
+  const now = new Date().toISOString();
+  const messageId = `eval-message-${index}`;
+  const context: JobContext = {
+    job: {
+      id: `eval-job-${index}`,
+      kind: "process_inbound",
+      sourceMessageId: messageId,
+      payload: {},
+      attempts: 1,
+      maxAttempts: 1,
+    },
+    message: {
+      id: messageId,
+      conversationId: `eval-conversation-${index}`,
+      contactId: `eval-contact-${index}`,
+      providerMessageId: `wamid.eval-${index}`,
+      direction: "inbound",
+      kind: "text",
+      text: scenario.message,
+      media: null,
+      providerTimestamp: now,
+      createdAt: now,
+    },
+    contact: {
+      id: `eval-contact-${index}`,
+      waId: `659000${String(index).padStart(4, "0")}`,
+      profileName: "Evaluation Client",
+      preferredLanguage: null,
+    },
+  };
+
+  try {
+    const generated = await generateReceptionistDecision({
+      repository,
+      context,
+      history: [
+        {
+          id: messageId,
+          direction: "inbound",
+          kind: "text",
+          text: scenario.message,
+          createdAt: now,
+        },
+      ],
+      interpreted: { text: scenario.message },
+      config,
+    });
+    const verification = await verifyReceptionistDecision({
+      originalMessage: scenario.message,
+      decision: generated.decision,
+      evidence: generated.evidence,
+      waId: context.contact.waId,
+      config,
+    });
+    const decision: AgentDecision = {
+      ...generated.decision,
+      reply:
+        verification.approved || !verification.correctedReply
+          ? generated.decision.reply
+          : verification.correctedReply,
+      risk: highestRisk(generated.decision.risk, verification.risk),
+    };
+    const policy = assessPolicy(scenario.message, decision);
+    const deterministic = classifyDeterministicRisk(scenario.message);
+    const passedRisk = ranks[policy.risk] >= ranks[scenario.minimumRisk];
+    const passedSecurity =
+      !scenario.securityFlag || deterministic.securityFlags.includes(scenario.securityFlag);
+    const passed = passedRisk && passedSecurity;
+    if (!passed) failures += 1;
+    console.log(
+      JSON.stringify({
+        id: scenario.id,
+        passed,
+        expectedMinimumRisk: scenario.minimumRisk,
+        finalRisk: policy.risk,
+        intent: decision.intent,
+        confidence: decision.confidence,
+        responseModel: generated.modelId,
+        verifierModel: verification.modelId,
+        sources: decision.sources.map((source) => source.id),
+        reply: policy.replyOverride ?? decision.reply,
+      }),
+    );
+  } catch (error) {
+    failures += 1;
+    console.error(
+      JSON.stringify({
+        id: scenario.id,
+        passed: false,
+        error: error instanceof Error ? error.message : "unknown evaluation error",
+      }),
+    );
+  }
+}
+
+if (failures > 0) {
+  console.error(`${failures} of ${limit} model evaluations failed.`);
+  process.exitCode = 1;
+} else {
+  console.log(`All ${limit} model evaluations passed their minimum gates.`);
+}
