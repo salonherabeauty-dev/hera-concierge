@@ -11,8 +11,7 @@
     "allowJs": true,
     "checkJs": false,
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "types": ["node"]
+    "resolveJsonModule": true
   },
   "include": ["api/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
 }
