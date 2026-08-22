@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/whatsapp/webhook.ts": {
+      "maxDuration": 300
+    },
+    "api/internal/drain.ts": {
+      "maxDuration": 300
+    },
+    "api/internal/sync-knowledge.ts": {
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/internal/drain",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/sync-knowledge",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}

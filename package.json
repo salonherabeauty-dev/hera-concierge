@@ -1,5 +1,34 @@
 {
   "name": "hera-concierge",
-  "version": "1.0.0",
-  "private": true
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "allowScripts": {
+    "esbuild@0.27.0": true,
+    "esbuild@0.28.2": true
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "node --import tsx --test tests/*.test.ts",
+    "test": "npm run typecheck && npm run test:unit",
+    "eval:model": "tsx scripts/run-model-evals.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "4.0.59",
+    "@supabase/supabase-js": "2.112.3",
+    "@vercel/functions": "3.9.5",
+    "ai": "7.0.73",
+    "cheerio": "1.2.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@vercel/node": "5.10.2",
+    "libpg-query": "17.7.4",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
+  }
 }

@@ -8,7 +8,7 @@ const MAX_TOKENS = 1600;
 const MAX_MESSAGES = 24;
 const MAX_CHARS_PER_MSG = 1800;
 
-const HERA_KNOWLEDGE_BASE = String.raw`
+export const HERA_KNOWLEDGE_BASE = String.raw`
 HERA HAIR BEAUTY APPROVED KNOWLEDGE BASE - VERSION 4 FINAL
 Purpose: power the Hera Hair Beauty website digital concierge with accurate, professional, technically informed, legally careful and commercially helpful answers.
 Primary rule: answer only from this approved knowledge base. If a detail is not here, do not invent. Offer WhatsApp assistance at +65 9237 1254.
