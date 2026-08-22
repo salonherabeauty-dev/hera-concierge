@@ -17,7 +17,7 @@ test("the launch evaluation corpus covers routine through emergency risk", async
   const scenarios = JSON.parse(
     await readFile(new URL("../evals/scenarios.json", import.meta.url), "utf8"),
   ) as Scenario[];
-  assert.ok(scenarios.length >= 20);
+  assert.ok(scenarios.length >= 30);
   assert.deepEqual(new Set(scenarios.map((scenario) => scenario.minimumRisk)), new Set([
     "green",
     "amber",

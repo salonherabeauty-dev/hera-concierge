@@ -166,6 +166,17 @@ export const AGENT_ACTIONS = [
 ] as const;
 export type AgentAction = (typeof AGENT_ACTIONS)[number];
 
+export const AGENT_FACTUAL_BASES = [
+  "approved_hera_source",
+  "current_client_record",
+  "client_provided_fact",
+  "deterministic_calculation",
+  "general_hairdressing_knowledge",
+  "safety_policy",
+  "no_factual_claim",
+] as const;
+export type AgentFactualBasis = (typeof AGENT_FACTUAL_BASES)[number];
+
 export interface SourceReference {
   id: string;
   title: string;
@@ -178,6 +189,7 @@ export interface AgentDecision {
   confidence: number;
   language: string;
   sources: SourceReference[];
+  factualBasis: AgentFactualBasis[];
   proposedActions: AgentAction[];
   requiresManagementNotification: boolean;
   rationale: string;

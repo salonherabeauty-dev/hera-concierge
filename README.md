@@ -11,12 +11,13 @@ The implementation is complete as an isolated, shadow-first foundation. It is no
 - GPT-5.6 Sol primary reasoning through Vercel AI Gateway, Claude Opus 5 independent verification, and model/provider fallback
 - Read-only access to the current client's Gmail-derived Timely appointment records
 - Retrieval from the existing approved Concierge knowledge base, versioned Supabase documents and official Hera website snapshots
+- Deterministic grounding gate that canonicalizes citations and blocks unsourced Hera prices, hours, stylist, booking and appointment claims
 - Hair-photo vision, PDF input and WhatsApp voice-note transcription
-- Deterministic complaint, medical-safety, legal, privacy, booking and financial-action controls
+- Deterministic English, Chinese, Malay and Tamil complaint, medical-safety, legal, privacy, booking and financial-action controls
 - Shadow mode that records proposed replies without making any Meta send request
-- Twenty-five automated tests plus PostgreSQL 17 syntax validation
+- Thirty-two automated tests plus PostgreSQL 17 syntax validation
 
-The isolated database gate is complete. The remaining work is controlled validation: configure a Meta test number, add Preview-only Vercel secrets, redeploy the preview, and pass the launch evaluation.
+The isolated database gate, Preview-only credentials, signed Meta test webhook and Vercel AI Gateway funding are complete. The remaining work is controlled validation: deploy this hardened build, pass the full shadow evaluation, resolve the documented policy conflict and complete the limited-live pilot before any main-number transition.
 
 ## Request flow
 
@@ -25,9 +26,10 @@ The isolated database gate is complete. The remaining work is controlled validat
 3. Supabase atomically stores the contact, conversation and message and creates one durable job.
 4. The worker transcribes or downloads media when needed and retrieves approved Hera knowledge and matching appointment records.
 5. The primary agent produces a structured answer with evidence.
-6. An independent verifier reviews the answer and deterministic policy overrides any unsafe action.
-7. The reply enters the durable outbox. Shadow mode records it; live mode sends it through Meta.
-8. Delivery receipts, model usage, decisions, incidents and audit events remain traceable.
+6. An independent verifier reviews the answer using only retrieved evidence as authoritative.
+7. A deterministic grounding gate canonicalizes citations and replaces any unsupported Hera-specific answer with a reviewed safe response; the risk policy then overrides unsafe actions.
+8. The reply enters the durable outbox. Shadow mode records it; live mode sends it through Meta.
+9. Delivery receipts, model usage, evidence, grounding decisions, incidents and audit events remain traceable.
 
 ## Autonomy boundaries
 

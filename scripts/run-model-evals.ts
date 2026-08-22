@@ -10,6 +10,7 @@ import {
   classifyDeterministicRisk,
   highestRisk,
 } from "../src/policy/risk.js";
+import { assessGrounding } from "../src/policy/grounding.js";
 import type { AgentDecision, JobContext, RiskLevel } from "../src/types.js";
 
 interface Scenario {
@@ -83,7 +84,7 @@ for (const [index, scenario] of scenarios.slice(0, limit).entries()) {
       originalMessage: scenario.message,
       decision: generated.decision,
       evidence: generated.evidence,
-      waId: context.contact.waId,
+      contactId: context.contact.id,
       config,
     });
     const decision: AgentDecision = {
@@ -94,6 +95,16 @@ for (const [index, scenario] of scenarios.slice(0, limit).entries()) {
           : verification.correctedReply,
       risk: highestRisk(generated.decision.risk, verification.risk),
     };
+    const grounding = assessGrounding(scenario.message, decision);
+    if (!grounding.grounded && grounding.replyOverride) {
+      decision.reply = grounding.replyOverride;
+      decision.confidence = Math.min(
+        decision.confidence,
+        grounding.confidenceCap ?? decision.confidence,
+      );
+      decision.sources = [];
+      decision.factualBasis = ["no_factual_claim"];
+    }
     const policy = assessPolicy(scenario.message, decision);
     const deterministic = classifyDeterministicRisk(scenario.message);
     const passedRisk = ranks[policy.risk] >= ranks[scenario.minimumRisk];
@@ -112,6 +123,9 @@ for (const [index, scenario] of scenarios.slice(0, limit).entries()) {
         responseModel: generated.modelId,
         verifierModel: verification.modelId,
         sources: decision.sources.map((source) => source.id),
+        groundingRequired: grounding.required,
+        grounded: grounding.grounded,
+        groundingFlags: grounding.flags,
         reply: policy.replyOverride ?? decision.reply,
       }),
     );

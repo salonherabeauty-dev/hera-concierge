@@ -21,8 +21,13 @@ import {
   classifyDeterministicRisk,
   highestRisk,
   POLICY_VERSION,
-  URGENT_SAFETY_REPLY,
+  urgentSafetyReplyFor,
 } from "./policy/risk.js";
+import {
+  assessGrounding,
+  GROUNDING_POLICY_VERSION,
+  type GroundingAssessment,
+} from "./policy/grounding.js";
 import type {
   AgentDecision,
   DrainSummary,
@@ -55,14 +60,15 @@ function cleanReply(value: string): string {
     .slice(0, 4000);
 }
 
-function staticUrgentDecision(): AgentDecision {
+function staticUrgentDecision(input: string): AgentDecision {
   return {
-    reply: URGENT_SAFETY_REPLY,
+    reply: urgentSafetyReplyFor(input),
     intent: "medical_safety",
     risk: "black",
     confidence: 1,
     language: "same as client where reliable",
     sources: [],
+    factualBasis: ["safety_policy"],
     proposedActions: ["urgent_safety_guidance", "open_incident", "notify_management"],
     requiresManagementNotification: true,
     rationale: "Deterministic urgent-safety policy matched the client message.",
@@ -114,9 +120,10 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   let responseUsage: JsonValue = {};
   let responseEvidence: JsonValue = [];
   let responseLatencyMs = 0;
+  let grounding: GroundingAssessment;
 
   if (deterministic.risk === "black") {
-    decision = staticUrgentDecision();
+    decision = staticUrgentDecision(interpreted.text);
   } else {
     const generated = await generateReceptionistDecision({
       repository: runtime.repository,
@@ -135,7 +142,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       originalMessage: interpreted.text,
       decision,
       evidence: generated.evidence,
-      waId: context.contact.waId,
+      contactId: context.contact.id,
       config: runtime.ai,
     });
     decision = {
@@ -161,6 +168,33 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     });
   }
 
+  grounding = assessGrounding(interpreted.text, decision);
+  if (!grounding.grounded && grounding.replyOverride) {
+    const ungroundedDecision = decision;
+    decision = {
+      ...decision,
+      reply: grounding.replyOverride,
+      confidence: Math.min(
+        decision.confidence,
+        grounding.confidenceCap ?? decision.confidence,
+      ),
+      sources: [],
+      factualBasis: ["no_factual_claim"],
+    };
+    await runtime.repository.audit(
+      "grounding_fallback_applied",
+      "message",
+      context.message.id,
+      asJson({
+        groundingPolicyVersion: GROUNDING_POLICY_VERSION,
+        intent: ungroundedDecision.intent,
+        flags: grounding.flags,
+        proposedSourceIds: ungroundedDecision.sources.map((source) => source.id),
+        factualBasis: ungroundedDecision.factualBasis,
+      }),
+    );
+  }
+
   await runtime.repository.recordDecision({
     conversationId: context.message.conversationId,
     sourceMessageId: context.message.id,
@@ -170,7 +204,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     policyVersion: POLICY_VERSION,
     risk: decision.risk,
     confidence: decision.confidence,
-    output: asJson({ decision, evidence: responseEvidence }),
+    output: asJson({ decision, evidence: responseEvidence, grounding }),
     usage: responseUsage,
     latencyMs: responseLatencyMs,
   });
@@ -199,6 +233,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       clientSummary: interpreted.text,
       evidence: asJson({
         messageKind: context.message.kind,
+        groundingFlags: grounding.flags,
         securityFlags: policy.securityFlags,
         blockedActions: policy.blockedActions,
       }),
@@ -220,12 +255,16 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   if (policy.requiresManagementNotification && runtime.managementWaId) {
     const displayName = context.contact.profileName?.slice(0, 80) || "client";
     const summary = interpreted.text.replace(/[\r\n]+/g, " ").slice(0, 600);
+    const containmentStatus =
+      runtime.sendMode === "live"
+        ? "The AI sent a safe containment response."
+        : "The AI prepared a safe containment response; shadow mode did not send it.";
     await runtime.repository.queueOutbound({
       conversationId: context.message.conversationId,
       sourceMessageId: context.message.id,
       toWaId: runtime.managementWaId,
       targetType: "management",
-      body: `Hera AI ${policy.risk.toUpperCase()} concern from ${displayName} (WhatsApp ending ${context.contact.waId.slice(-4)}). Intent: ${decision.intent}. The AI sent a safe containment response. Summary: ${summary}`,
+      body: `Hera AI ${policy.risk.toUpperCase()} concern from ${displayName} (WhatsApp ending ${context.contact.waId.slice(-4)}). Intent: ${decision.intent}. ${containmentStatus} Summary: ${summary}`,
       dedupeKey: managementAlertDedupeKey(context.message.id),
       authorization: "auto",
     });

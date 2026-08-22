@@ -23,6 +23,8 @@ Never connect a preview to Hera's production Supabase credentials. Never apply t
 
 ## Gate 2 — Meta staging
 
+Status: signed callback verification and Meta's safe `messages` field test completed successfully against the protected Vercel Preview endpoint. Keep the app and test number isolated from Hera's main number.
+
 1. In Hera's Meta Business Portfolio, create or select a business app and add WhatsApp.
 2. Use Meta's test phone number first.
 3. Create a least-privilege system-user token for the required WhatsApp assets.
@@ -36,6 +38,8 @@ Before touching the current phone-app number, confirm in Meta's own onboarding U
 WATI is not part of this architecture.
 
 ## Gate 3 — Vercel preview
+
+Status: Preview-only Supabase, Meta, cron and shadow-mode variables are configured. AI Gateway has prepaid credit with automatic reload disabled. The hardened grounding build still requires deployment and end-to-end shadow verification.
 
 Configure all variables in .env.example for Preview only. Use Vercel OIDC for AI Gateway where available. Confirm:
 

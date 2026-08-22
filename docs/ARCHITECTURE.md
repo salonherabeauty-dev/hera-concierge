@@ -2,7 +2,7 @@
 
 ## Request topology
 
-Meta WhatsApp Cloud API sends a signed webhook to the durable Supabase inbox. A Hera reasoning agent retrieves evidence, an independent Claude verifier and deterministic policy engine inspect the candidate, and an ordered outbox returns the approved reply through Meta.
+Meta WhatsApp Cloud API sends a signed webhook to the durable Supabase inbox. A Hera reasoning agent retrieves evidence, an independent Claude verifier, deterministic grounding gate and risk policy inspect the candidate, and an ordered outbox returns the approved reply through Meta.
 
 ## Component responsibilities
 
@@ -13,6 +13,7 @@ Meta WhatsApp Cloud API sends a signed webhook to the durable Supabase inbox. A 
 | Media interpreter | Download authenticated Meta media, transcribe voice notes and pass photos/PDFs to vision-capable models | Size limits, URL allowlist and explicit unsupported-media response |
 | Reasoning agent | Search approved sources, read the current client's appointments and draft a structured reply | Gateway provider/model fallback and no write-capable booking or payment tool |
 | Independent verifier | Check the candidate against the retrieved evidence and non-negotiable rules | Unsafe replies are corrected before policy evaluation |
+| Grounding gate | Canonicalize source metadata and require tool evidence for Hera operations, prices, bookings and current-client records | Unsupported answers become reviewed, localized “unable to verify” responses with capped confidence |
 | Policy engine | Apply deterministic risk escalation and block unauthorised actions | Black-risk reply is deterministic and does not depend on a model |
 | Outbox | Separate decision completion from delivery and suppress duplicate sends | Shadow by default; retry failed Meta calls; process destinations in order |
 | Knowledge sync | Fetch only official Hera HTTPS sitemap pages and version changes | New or changed pages default to draft and cannot affect answers |
@@ -32,7 +33,9 @@ Meta WhatsApp Cloud API sends a signed webhook to the durable Supabase inbox. A 
 
 The default response model is openai/gpt-5.6-sol. Gateway fallbacks are anthropic/claude-opus-5 and openai/gpt-5.6-terra. The verifier defaults to anthropic/claude-opus-5 with GPT fallback. Model IDs are configurable because availability changes.
 
-Each request is tagged for Hera WhatsApp observability and uses a one-way hash of the WhatsApp ID for cost attribution rather than sending the phone number as the tracking identifier.
+Each request is tagged for Hera WhatsApp observability and uses a one-way hash of the database contact UUID for cost attribution. The WhatsApp phone identifier is never used as the AI Gateway tracking identifier.
+
+Both reasoning passes run at high reasoning effort. The response model must declare whether each answer relies on an approved Hera source, the current client record, a client-provided fact, a deterministic calculation, general hairdressing knowledge, safety policy or no factual claim. The independent verifier treats only the captured tool evidence—not model-written citations or rationale—as authoritative.
 
 ## Delivery semantics
 
