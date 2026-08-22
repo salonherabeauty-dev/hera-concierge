@@ -62,9 +62,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
     if (result.inserted) inserted += 1;
   }
 
-  if (inserted > 0) {
+  // A valid inbound delivery is also a safe wake-up signal for eligible retry
+  // jobs. Meta's dashboard may resend the same fixed sample message during
+  // Preview validation; ingestion remains idempotent, while the worker can
+  // recover work that was deferred by a transient provider failure.
+  if (parsed.inbound.length > 0) {
+    const drainLimit = Math.min(Math.max(inserted, parsed.inbound.length), 8);
     waitUntil(
-      drainReceptionist(createProductionRuntime(), Math.min(inserted, 8)).catch(
+      drainReceptionist(createProductionRuntime(), drainLimit).catch(
         (error: unknown) => {
           console.error(
             "Hera receptionist background drain failed",
