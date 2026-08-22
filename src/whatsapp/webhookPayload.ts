@@ -184,37 +184,49 @@ export function parseWhatsAppWebhook(payload: unknown): ParsedWhatsAppWebhook {
   const inboundById = new Map<string, InboundMessage>();
   const statusesByKey = new Map<string, WhatsAppStatusEvent>();
 
+  const parseValue = (
+    valueInput: unknown,
+    businessAccountId: string | undefined,
+  ): void => {
+    const value = record(valueInput);
+    if (!value) return;
+
+    const metadata = record(value.metadata);
+    const phoneNumberId = text(metadata?.phone_number_id);
+    const contacts = array(value.contacts);
+
+    for (const messageValue of array(value.messages)) {
+      const parsed = parseInbound(
+        messageValue,
+        contacts,
+        phoneNumberId,
+        businessAccountId,
+      );
+      if (parsed) inboundById.set(parsed.providerMessageId, parsed);
+    }
+
+    for (const statusValue of array(value.statuses)) {
+      const parsed = parseStatus(statusValue);
+      if (!parsed) continue;
+      const key = `${parsed.providerMessageId}:${parsed.status}:${parsed.providerTimestamp}`;
+      statusesByKey.set(key, parsed);
+    }
+  };
+
   for (const entryValue of array(root?.entry)) {
     const entry = record(entryValue);
     const businessAccountId = text(entry?.id);
 
     for (const changeValue of array(entry?.changes)) {
       const change = record(changeValue);
-      const value = record(change?.value);
-      if (!value) continue;
-
-      const metadata = record(value.metadata);
-      const phoneNumberId = text(metadata?.phone_number_id);
-      const contacts = array(value.contacts);
-
-      for (const messageValue of array(value.messages)) {
-        const parsed = parseInbound(
-          messageValue,
-          contacts,
-          phoneNumberId,
-          businessAccountId,
-        );
-        if (parsed) inboundById.set(parsed.providerMessageId, parsed);
-      }
-
-      for (const statusValue of array(value.statuses)) {
-        const parsed = parseStatus(statusValue);
-        if (!parsed) continue;
-        const key = `${parsed.providerMessageId}:${parsed.status}:${parsed.providerTimestamp}`;
-        statusesByKey.set(key, parsed);
-      }
+      parseValue(change?.value, businessAccountId);
     }
   }
+
+  // Meta's dashboard "Send to server" tool posts a field sample directly as
+  // { field: "messages", value: {...} }, without the live entry/changes envelope.
+  // Accept that documented test shape while preserving the normal production path.
+  if (text(root?.field) === "messages") parseValue(root?.value, undefined);
 
   return {
     inbound: [...inboundById.values()],

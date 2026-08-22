@@ -91,6 +91,56 @@ test("deduplicates repeated provider message and status ids in one webhook", () 
   assert.equal(parsed.statuses.length, 1);
 });
 
+test("normalizes Meta dashboard messages field samples without the live envelope", () => {
+  const parsed = parseWhatsAppWebhook({
+    field: "messages",
+    value: {
+      messaging_product: "whatsapp",
+      metadata: {
+        display_phone_number: "16505551111",
+        phone_number_id: "123456123",
+      },
+      contacts: [
+        {
+          profile: { name: "test user name" },
+          wa_id: "16315551181",
+        },
+      ],
+      messages: [
+        {
+          from: "16315551181",
+          id: "ABGGF1A5Fpa",
+          timestamp: "1504902988",
+          type: "text",
+          text: { body: "this is a text message" },
+        },
+      ],
+    },
+  });
+
+  assert.equal(parsed.inbound.length, 1);
+  assert.equal(parsed.statuses.length, 0);
+  assert.deepEqual(parsed.inbound[0], {
+    providerMessageId: "ABGGF1A5Fpa",
+    fromWaId: "16315551181",
+    profileName: "test user name",
+    phoneNumberId: "123456123",
+    businessAccountId: undefined,
+    kind: "text",
+    text: "this is a text message",
+    media: undefined,
+    contextMessageId: undefined,
+    providerTimestamp: "2017-09-08T20:36:28.000Z",
+    raw: {
+      from: "16315551181",
+      id: "ABGGF1A5Fpa",
+      timestamp: "1504902988",
+      type: "text",
+      text: { body: "this is a text message" },
+    },
+  });
+});
+
 test("ignores malformed entries rather than creating synthetic messages", () => {
   const parsed = parseWhatsAppWebhook({
     entry: [{ changes: [{ value: { messages: [{ id: "missing-from" }] } }] }],
