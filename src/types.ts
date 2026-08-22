@@ -103,6 +103,7 @@ export interface JobContext {
   job: ReceptionistJob;
   message: StoredMessage;
   contact: ContactContext;
+  conversationRisk: RiskLevel;
 }
 
 export interface ConversationMessage {

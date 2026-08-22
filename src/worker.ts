@@ -209,7 +209,11 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     latencyMs: responseLatencyMs,
   });
 
-  const policy = assessPolicy(interpreted.text, decision);
+  const policy = assessPolicy(
+    interpreted.text,
+    decision,
+    context.conversationRisk,
+  );
   const finalReply = cleanReply(policy.replyOverride ?? decision.reply);
   await runtime.repository.recordDecision({
     conversationId: context.message.conversationId,

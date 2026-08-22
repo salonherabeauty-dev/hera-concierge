@@ -198,6 +198,28 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
       .single();
     const contactRow = row(requireData(contactResult.data, contactResult.error, "load contact"));
 
+    const conversationResult = await this.database
+      .from("ai_conversations")
+      .select("current_risk")
+      .eq("id", requiredString(messageRow.conversation_id, "conversation_id"))
+      .single();
+    const conversationRow = row(
+      requireData(
+        conversationResult.data,
+        conversationResult.error,
+        "load conversation risk",
+      ),
+    );
+    const conversationRisk = conversationRow.current_risk;
+    if (
+      conversationRisk !== "green" &&
+      conversationRisk !== "amber" &&
+      conversationRisk !== "red" &&
+      conversationRisk !== "black"
+    ) {
+      throw new Error("Database row has an invalid current_risk");
+    }
+
     const message: StoredMessage = {
       id: requiredString(messageRow.id, "id"),
       conversationId: requiredString(messageRow.conversation_id, "conversation_id"),
@@ -225,6 +247,7 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
             ? contactRow.preferred_language
             : null,
       },
+      conversationRisk,
     };
   }
 

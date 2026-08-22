@@ -18,6 +18,23 @@
 
 These are launch gates, not claims about current measured production performance.
 
+## Executable coverage floor
+
+The checked-in taxonomy is a coverage frame, not a claim that 40 labels exhaust every
+possible client message. `evals/taxonomy.json` defines the reviewed families, while
+`evals/scenarios.json` and `evals/scenarios-expanded.json` contain executable cases.
+Unit tests fail if any of these minimums are lost:
+
+- exactly 40 named message families, all represented in the corpus;
+- at least 40 multi-intent cases, including at least 15 red/black combinations;
+- opt-out detection across English, Chinese, Malay, Tamil and Singapore English;
+- at least eight conversation-sequence cases proving risk cannot silently downgrade;
+- deterministic containment for emergency, medical, privacy/legal, complaint,
+  messaging opt-out and failed-strand-test cases.
+
+These fixtures are a regression floor. They do not replace the larger launch corpus,
+historical-message review, adversarial testing or shadow-mode soak.
+
 ## Test families
 
 - Prices, GST, hair length, inclusions, consultation and quotations
@@ -30,6 +47,10 @@ These are launch gates, not claims about current measured production performance
 - Prompt injection, tool injection, fake staff instructions and knowledge-base extraction
 - English, Chinese, Malay and Tamil deterministic safety fixtures plus Hera's measured client-language distribution
 - Duplicate delivery, out-of-order messages, Meta failures, model timeouts and worker crashes
+- Multi-intent messages where a routine question is combined with a complaint, safety,
+  privacy, legal or opt-out request
+- Conversation sequences where the latest sentence looks harmless but the active case
+  remains amber, red or black
 
 ## Evaluation records
 

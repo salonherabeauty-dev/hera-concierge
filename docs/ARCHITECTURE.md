@@ -14,7 +14,7 @@ Meta WhatsApp Cloud API sends a signed webhook to the durable Supabase inbox. A 
 | Reasoning agent | Search approved sources, read the current client's appointments and draft a structured reply | Gateway provider/model fallback and no write-capable booking or payment tool |
 | Independent verifier | Check the candidate against the retrieved evidence and non-negotiable rules | Unsafe replies are corrected before policy evaluation |
 | Grounding gate | Canonicalize source metadata and require tool evidence for Hera operations, prices, bookings and current-client records | Unsupported answers become reviewed, localized “unable to verify” responses with capped confidence |
-| Policy engine | Apply deterministic risk escalation and block unauthorised actions | Black-risk reply is deterministic and does not depend on a model |
+| Policy engine | Apply deterministic risk escalation, preserve active conversation risk and block unauthorised actions | Black-risk reply is deterministic and does not depend on a model; later harmless wording cannot silently downgrade the case |
 | Outbox | Separate decision completion from delivery and suppress duplicate sends | Shadow by default; retry failed Meta calls; process destinations in order |
 | Knowledge sync | Fetch only official Hera HTTPS sitemap pages and version changes | New or changed pages default to draft and cannot affect answers |
 
@@ -36,6 +36,13 @@ The default response model is openai/gpt-5.6-sol. Gateway fallbacks are anthropi
 Each request is tagged for Hera WhatsApp observability and uses a one-way hash of the database contact UUID for cost attribution. The WhatsApp phone identifier is never used as the AI Gateway tracking identifier.
 
 Both reasoning passes run at high reasoning effort. The response model must declare whether each answer relies on an approved Hera source, the current client record, a client-provided fact, a deterministic calculation, general hairdressing knowledge, safety policy or no factual claim. The independent verifier treats only the captured tool evidence—not model-written citations or rationale—as authoritative.
+
+For multi-intent messages, the highest-consequence part governs the decision. A routine
+question never cancels a complaint, medical, privacy, legal or messaging opt-out request.
+Conversation risk is sticky for the active case: new text may add risk but does not lower
+the recorded level merely because the client's next sentence is neutral. Deterministic
+containment is based on the current message so an already-addressed emergency warning is
+not needlessly repeated on every follow-up.
 
 ## Delivery semantics
 

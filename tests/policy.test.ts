@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   assessPolicy,
   classifyDeterministicRisk,
+  isOptOutRequest,
   SAFE_BOOKING_REPLY,
   SAFE_CONCERN_REPLY,
   SAFE_MEDICAL_CONCERN_REPLY,
+  SAFE_OPT_OUT_REPLY,
   SAFE_PRIVACY_LEGAL_REPLY,
   SAFE_STRAND_TEST_REPLY,
   SAFE_WAIT_RECOVERY_REPLY,
@@ -147,4 +149,79 @@ test("blocks unauthorised booking and refund claims in reviewed languages", () =
   );
   assert.ok(malayBooking.blockedActions.length > 0);
   assert.match(malayBooking.replyOverride ?? "", /sistem tempahan/);
+});
+
+test("records messaging opt-out requests without falsely claiming suppression is complete", () => {
+  const input = "Stop messaging me and remove my phone number";
+  const result = assessPolicy(input, decision());
+
+  assert.equal(isOptOutRequest(input), true);
+  assert.equal(result.risk, "red");
+  assert.equal(result.replyOverride, SAFE_OPT_OUT_REPLY);
+  assert.equal(result.requiresManagementNotification, true);
+  assert.equal(result.requiresIncident, true);
+  assert.doesNotMatch(result.replyOverride ?? "", /has been (?:removed|suppressed)/i);
+});
+
+test("detects messaging opt-out requests across Hera's reviewed language styles", () => {
+  const messages = [
+    "不要再发消息给我，请删除我的号码",
+    "Jangan hantar mesej lagi, buang nombor saya",
+    "எனக்கு இனி செய்தி அனுப்பாதீர்கள்; என் எண்ணை நீக்குங்கள்",
+    "Don't message me anymore lah, take me off your list",
+  ];
+
+  for (const message of messages) {
+    const result = assessPolicy(message, decision());
+    assert.equal(isOptOutRequest(message), true, message);
+    assert.equal(result.risk, "red", message);
+    assert.ok(result.replyOverride, message);
+  }
+});
+
+test("retains prior conversation risk without repeating stale emergency containment", () => {
+  const redFollowUp = assessPolicy(
+    "Thanks, the service was yesterday.",
+    decision(),
+    "red",
+  );
+  assert.equal(redFollowUp.risk, "red");
+  assert.equal(redFollowUp.replyOverride, null);
+  assert.equal(redFollowUp.requiresManagementNotification, false);
+  assert.equal(redFollowUp.requiresIncident, false);
+
+  const blackFollowUp = assessPolicy("I feel a bit better now.", decision(), "black");
+  assert.equal(blackFollowUp.risk, "black");
+  assert.equal(blackFollowUp.replyOverride, null);
+});
+
+test("the highest-consequence intent governs mixed messages", () => {
+  const emergency = assessPolicy(
+    "How much is colour, and I cannot breathe after the product.",
+    decision(),
+  );
+  assert.equal(emergency.risk, "black");
+  assert.equal(emergency.replyOverride, URGENT_SAFETY_REPLY);
+
+  const optOut = assessPolicy(
+    "Do you have Saturday appointments? Also stop messaging me.",
+    decision({ intent: "booking" }),
+  );
+  assert.equal(optOut.risk, "red");
+  assert.equal(optOut.replyOverride, SAFE_OPT_OUT_REPLY);
+});
+
+test("flags chemical-history, testing and minor chemical-service risk", () => {
+  assert.equal(
+    classifyDeterministicRisk("I used henna last year and want bleach today").risk,
+    "amber",
+  );
+  assert.equal(
+    classifyDeterministicRisk("Can I skip the patch test and book colour tomorrow?").risk,
+    "amber",
+  );
+  assert.equal(
+    classifyDeterministicRisk("Can you colour my 14-year-old child's hair?").risk,
+    "amber",
+  );
 });
