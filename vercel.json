@@ -14,6 +14,9 @@
     "api/internal/readiness.ts": {
       "maxDuration": 30
     },
+    "api/internal/shadow-quality.ts": {
+      "maxDuration": 30
+    },
     "api/internal/sync-knowledge.ts": {
       "maxDuration": 300
     }
