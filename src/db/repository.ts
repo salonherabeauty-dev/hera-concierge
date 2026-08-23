@@ -64,6 +64,7 @@ export interface ReceptionistRepository {
   applyStatus(event: WhatsAppStatusEvent): Promise<void>;
   claimJobs(workerId: string, limit: number): Promise<ReceptionistJob[]>;
   getJobContext(job: ReceptionistJob): Promise<JobContext>;
+  isInboundSuperseded(messageId: string): Promise<boolean>;
   getConversationHistory(
     conversationId: string,
     limit: number,
@@ -118,6 +119,15 @@ function row(value: unknown): Record<string, unknown> {
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value) throw new Error(`Database row is missing ${field}`);
   return value;
+}
+
+function effectiveTimestamp(providerTimestamp: unknown, createdAt: string): number {
+  const provider =
+    typeof providerTimestamp === "string" ? Date.parse(providerTimestamp) : Number.NaN;
+  if (Number.isFinite(provider)) return provider;
+  const created = Date.parse(createdAt);
+  if (!Number.isFinite(created)) throw new Error("Database row has an invalid created_at");
+  return created;
 }
 
 export class SupabaseReceptionistRepository implements ReceptionistRepository {
@@ -258,29 +268,51 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
     };
   }
 
+  async isInboundSuperseded(messageId: string): Promise<boolean> {
+    const { data, error } = await this.database.rpc("ai_is_inbound_superseded", {
+      p_message_id: messageId,
+    });
+    if (error) throw new Error(`check inbound chronology: ${error.message}`);
+    if (typeof data !== "boolean") {
+      throw new Error("check inbound chronology: invalid database response");
+    }
+    return data;
+  }
+
   async getConversationHistory(
     conversationId: string,
     limit: number,
     throughCreatedAt: string,
   ): Promise<ConversationMessage[]> {
+    const requestedLimit = Math.max(1, Math.min(limit, 30));
+    const fetchLimit = Math.max(30, Math.min(requestedLimit * 3, 100));
     const { data, error } = await this.database
       .from("ai_messages")
-      .select("id,direction,kind,text_body,created_at")
+      .select("id,direction,kind,text_body,provider_timestamp,created_at")
       .eq("conversation_id", conversationId)
       .lte("created_at", throughCreatedAt)
       .order("created_at", { ascending: false })
-      .limit(Math.max(1, Math.min(limit, 30)));
+      .limit(fetchLimit);
     const values = requireData(data, error, "load conversation history") as unknown[];
-    return values.reverse().map((value) => {
-      const item = row(value);
-      return {
-        id: requiredString(item.id, "id"),
-        direction: item.direction === "outbound" ? "outbound" : "inbound",
-        kind: item.kind as ConversationMessage["kind"],
-        text: typeof item.text_body === "string" ? item.text_body : "",
-        createdAt: requiredString(item.created_at, "created_at"),
-      };
-    });
+    return values
+      .map((value) => {
+        const item = row(value);
+        const createdAt = requiredString(item.created_at, "created_at");
+        return {
+          orderAt: effectiveTimestamp(item.provider_timestamp, createdAt),
+          createdAt,
+          message: {
+            id: requiredString(item.id, "id"),
+            direction: item.direction === "outbound" ? "outbound" as const : "inbound" as const,
+            kind: item.kind as ConversationMessage["kind"],
+            text: typeof item.text_body === "string" ? item.text_body : "",
+            createdAt,
+          },
+        };
+      })
+      .sort((a, b) => a.orderAt - b.orderAt || a.createdAt.localeCompare(b.createdAt))
+      .slice(-requestedLimit)
+      .map((item) => item.message);
   }
 
   async lookupBookingsByWaId(waId: string, limit = 10): Promise<BookingSummary[]> {
