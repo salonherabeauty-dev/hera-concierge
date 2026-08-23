@@ -219,6 +219,12 @@ export function parseWhatsAppWebhook(payload: unknown): ParsedWhatsAppWebhook {
 
     for (const changeValue of array(entry?.changes)) {
       const change = record(changeValue);
+      const field = text(change?.field);
+      // Meta and 360dialog deliver live inbound messages and delivery statuses
+      // under the documented `messages` field. Coexistence history, app-state
+      // sync and staff echoes use separate fields and must never enter the
+      // ordinary client-message parser.
+      if (field && field !== "messages") continue;
       parseValue(change?.value, businessAccountId);
     }
   }
