@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  isRetryableWhatsAppError,
   MetaWhatsAppClient,
   WhatsAppApiError,
 } from "../src/whatsapp/client.js";
@@ -33,6 +34,15 @@ test("sends the supported Cloud API text payload and returns Meta's id", async (
     type: "text",
     text: { preview_url: false, body: "Hello from Hera" },
   });
+});
+
+test("classifies only retry-safe Meta and transport failures as retryable", () => {
+  assert.equal(isRetryableWhatsAppError(new WhatsAppApiError("bad", 400)), false);
+  assert.equal(isRetryableWhatsAppError(new WhatsAppApiError("forbidden", 403)), false);
+  assert.equal(isRetryableWhatsAppError(new WhatsAppApiError("throttled", 429)), true);
+  assert.equal(isRetryableWhatsAppError(new WhatsAppApiError("unavailable", 503)), true);
+  assert.equal(isRetryableWhatsAppError(new TypeError("network failure")), true);
+  assert.equal(isRetryableWhatsAppError(new Error("invalid local state")), false);
 });
 
 test("never includes the access token in a Meta API error message", async () => {

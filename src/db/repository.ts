@@ -8,6 +8,7 @@ import type {
   JsonValue,
   JobContext,
   KnowledgeResult,
+  OperationalSnapshot,
   OutboxItem,
   ReceptionistJob,
   RiskLevel,
@@ -79,9 +80,15 @@ export interface ReceptionistRepository {
   completeJob(jobId: string): Promise<void>;
   retryJob(job: ReceptionistJob, error: unknown): Promise<"retry" | "dead">;
   claimOutbox(workerId: string, limit: number): Promise<OutboxItem[]>;
+  getOperationalSnapshot(): Promise<OperationalSnapshot>;
+  getSourceMessageProviderTimestamp(messageId: string): Promise<string | null>;
   markOutboxShadowed(itemId: string): Promise<void>;
   markOutboxSent(itemId: string, providerMessageId: string): Promise<void>;
-  retryOutbox(item: OutboxItem, error: unknown): Promise<"retry" | "dead">;
+  retryOutbox(
+    item: OutboxItem,
+    error: unknown,
+    retryable?: boolean,
+  ): Promise<"retry" | "dead">;
   audit(eventType: string, targetType: string, targetId: string | null, details?: JsonValue): Promise<void>;
 }
 
@@ -463,6 +470,114 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
     });
   }
 
+  async getOperationalSnapshot(): Promise<OperationalSnapshot> {
+    const activeQueueStatuses = ["pending", "processing", "retry"];
+    const openIncidentStatuses = ["open", "monitoring"];
+    const [
+      activeJobs,
+      deadJobs,
+      activeOutbox,
+      deadOutbox,
+      openIncidents,
+      blackIncidents,
+      oldestActiveJob,
+      oldestActiveOutbox,
+    ] = await Promise.all([
+      this.database
+        .from("ai_jobs")
+        .select("id", { count: "exact", head: true })
+        .in("status", activeQueueStatuses),
+      this.database
+        .from("ai_jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "dead"),
+      this.database
+        .from("ai_outbox")
+        .select("id", { count: "exact", head: true })
+        .in("status", activeQueueStatuses),
+      this.database
+        .from("ai_outbox")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "dead"),
+      this.database
+        .from("ai_incidents")
+        .select("id", { count: "exact", head: true })
+        .in("status", openIncidentStatuses),
+      this.database
+        .from("ai_incidents")
+        .select("id", { count: "exact", head: true })
+        .in("status", openIncidentStatuses)
+        .eq("severity", "black"),
+      this.database
+        .from("ai_jobs")
+        .select("created_at")
+        .in("status", activeQueueStatuses)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      this.database
+        .from("ai_outbox")
+        .select("created_at")
+        .in("status", activeQueueStatuses)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    function exactCount(
+      result: { count: number | null; error: { message: string } | null },
+      operation: string,
+    ): number {
+      if (result.error) throw new Error(`${operation}: ${result.error.message}`);
+      if (result.count === null) throw new Error(`${operation}: count unavailable`);
+      return result.count;
+    }
+
+    function oldestCreatedAt(
+      result: { data: unknown; error: { message: string } | null },
+      operation: string,
+    ): string | null {
+      if (result.error) throw new Error(`${operation}: ${result.error.message}`);
+      if (result.data === null) return null;
+      const value = row(result.data).created_at;
+      if (typeof value !== "string" || !value) {
+        throw new Error(`${operation}: invalid created_at`);
+      }
+      return value;
+    }
+
+    return {
+      activeJobs: exactCount(activeJobs, "count active jobs"),
+      deadJobs: exactCount(deadJobs, "count dead jobs"),
+      activeOutbox: exactCount(activeOutbox, "count active outbox"),
+      deadOutbox: exactCount(deadOutbox, "count dead outbox"),
+      openIncidents: exactCount(openIncidents, "count open incidents"),
+      blackIncidents: exactCount(blackIncidents, "count black incidents"),
+      oldestActiveJobCreatedAt: oldestCreatedAt(
+        oldestActiveJob,
+        "load oldest active job",
+      ),
+      oldestActiveOutboxCreatedAt: oldestCreatedAt(
+        oldestActiveOutbox,
+        "load oldest active outbox",
+      ),
+    };
+  }
+
+  async getSourceMessageProviderTimestamp(messageId: string): Promise<string | null> {
+    const { data, error } = await this.database
+      .from("ai_messages")
+      .select("provider_timestamp")
+      .eq("id", messageId)
+      .maybeSingle();
+    if (error) throw new Error(`load source message timestamp: ${error.message}`);
+    if (!data) return null;
+    const messageRow = row(data);
+    return typeof messageRow.provider_timestamp === "string"
+      ? messageRow.provider_timestamp
+      : null;
+  }
+
   async markOutboxShadowed(itemId: string): Promise<void> {
     const { error } = await this.database
       .from("ai_outbox")
@@ -484,8 +599,12 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
     if (error) throw new Error(`mark outbox sent: ${error.message}`);
   }
 
-  async retryOutbox(item: OutboxItem, errorValue: unknown): Promise<"retry" | "dead"> {
-    const status = item.attempts >= item.maxAttempts ? "dead" : "retry";
+  async retryOutbox(
+    item: OutboxItem,
+    errorValue: unknown,
+    retryable = true,
+  ): Promise<"retry" | "dead"> {
+    const status = !retryable || item.attempts >= item.maxAttempts ? "dead" : "retry";
     const { error } = await this.database
       .from("ai_outbox")
       .update({

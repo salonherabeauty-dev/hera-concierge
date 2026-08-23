@@ -1,9 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getDatabaseConfig, getWebhookConfig } from "../../src/config.js";
 import { SupabaseReceptionistRepository } from "../../src/db/repository.js";
+import {
+  logOperationalEvent,
+  safeErrorFields,
+} from "../../src/observability/log.js";
 import { verifyMetaSignature } from "../../src/security/metaSignature.js";
-import { readRawBody } from "../../src/security/readRawBody.js";
+import {
+  PayloadTooLargeError,
+  readRawBody,
+} from "../../src/security/readRawBody.js";
 import { parseWhatsAppWebhook } from "../../src/whatsapp/webhookPayload.js";
 import { createProductionRuntime, drainReceptionist } from "../../src/worker.js";
 
@@ -16,7 +24,17 @@ function secureHeaders(response: VercelResponse): void {
   response.setHeader("X-Content-Type-Options", "nosniff");
 }
 
+function requestId(request: VercelRequest): string {
+  const value = request.headers["x-vercel-id"];
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return typeof candidate === "string" && candidate
+    ? candidate.slice(0, 160)
+    : randomUUID();
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
+  const startedAt = Date.now();
+  const correlationId = requestId(request);
   secureHeaders(response);
 
   if (request.method === "GET") {
@@ -25,8 +43,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
     const token = firstQuery(request.query["hub.verify_token"]);
     const challenge = firstQuery(request.query["hub.challenge"]);
     if (mode === "subscribe" && token === verifyToken && challenge) {
+      logOperationalEvent("info", "webhook_verification_succeeded", {
+        correlationId,
+      });
       return response.status(200).send(challenge);
     }
+    logOperationalEvent("warn", "webhook_verification_rejected", {
+      correlationId,
+    });
     return response.status(403).json({ error: "Webhook verification failed" });
   }
 
@@ -36,8 +60,24 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   const { appSecret } = getWebhookConfig();
-  const rawBody = await readRawBody(request, 1_000_000);
+  let rawBody: Buffer;
+  try {
+    rawBody = await readRawBody(request, 1_000_000);
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      logOperationalEvent("warn", "webhook_payload_too_large", {
+        correlationId,
+        maxBytes: error.maxBytes,
+      });
+      return response.status(413).json({ error: "Payload too large" });
+    }
+    throw error;
+  }
   if (!verifyMetaSignature(rawBody, request.headers["x-hub-signature-256"], appSecret)) {
+    logOperationalEvent("warn", "webhook_signature_rejected", {
+      correlationId,
+      bodyBytes: rawBody.byteLength,
+    });
     return response.status(401).json({ error: "Invalid webhook signature" });
   }
 
@@ -45,6 +85,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
   try {
     payload = JSON.parse(rawBody.toString("utf8"));
   } catch {
+    logOperationalEvent("warn", "webhook_json_rejected", {
+      correlationId,
+      bodyBytes: rawBody.byteLength,
+    });
     return response.status(400).json({ error: "Invalid JSON" });
   }
 
@@ -69,16 +113,31 @@ export default async function handler(request: VercelRequest, response: VercelRe
   if (parsed.inbound.length > 0) {
     const drainLimit = Math.min(Math.max(inserted, parsed.inbound.length), 8);
     waitUntil(
-      drainReceptionist(createProductionRuntime(), drainLimit).catch(
-        (error: unknown) => {
-          console.error(
-            "Hera receptionist background drain failed",
-            error instanceof Error ? error.message : "unknown error",
-          );
-        },
-      ),
+      Promise.resolve()
+        .then(() => drainReceptionist(createProductionRuntime(), drainLimit))
+        .then((summary) => {
+          logOperationalEvent("info", "webhook_background_drain_completed", {
+            correlationId,
+            ...summary,
+          });
+        })
+        .catch((error: unknown) => {
+          logOperationalEvent("error", "webhook_background_drain_failed", {
+            correlationId,
+            ...safeErrorFields(error),
+          });
+        }),
     );
   }
+
+  logOperationalEvent("info", "webhook_ingested", {
+    correlationId,
+    bodyBytes: rawBody.byteLength,
+    inboundCount: parsed.inbound.length,
+    insertedCount: inserted,
+    statusCount: parsed.statuses.length,
+    durationMs: Date.now() - startedAt,
+  });
 
   return response.status(200).json({
     received: true,

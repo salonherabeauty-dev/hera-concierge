@@ -15,6 +15,8 @@
 | Correct language mirroring on supported languages | at least 95% |
 | Messages lost during retry/concurrency testing | 0 |
 | Shadow-mode Meta send calls | 0 |
+| Free-form replies sent outside the customer-service window | 0 |
+| Internal management alerts sent as client-style free-form messages | 0 |
 
 These are launch gates, not claims about current measured production performance.
 

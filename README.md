@@ -15,7 +15,10 @@ The implementation is complete as an isolated, shadow-first foundation. It is no
 - Hair-photo vision, PDF input and WhatsApp voice-note transcription
 - Deterministic English, Chinese, Malay and Tamil complaint, medical-safety, legal, privacy, booking and financial-action controls
 - Shadow mode that records proposed replies without making any Meta send request
-- Thirty-two automated tests plus PostgreSQL 17 syntax validation
+- Automated tests plus PostgreSQL 17 syntax validation
+- Two-key live-send interlock, permanent-vs-transient Meta retry classification and privacy-safe structured operational events
+- Fail-closed customer-service-window enforcement with a five-minute delivery safety margin; internal alerts cannot masquerade as client replies
+- Bearer-protected aggregate readiness reporting with fail-closed queue, dead-letter and critical-incident thresholds
 
 The isolated database gate, Preview-only credentials, signed Meta test webhook and Vercel AI Gateway funding are complete. The remaining work is controlled validation: deploy this hardened build, pass the full shadow evaluation, resolve the documented policy conflict and complete the limited-live pilot before any main-number transition.
 
@@ -52,6 +55,7 @@ Required groups:
 - Vercel AI Gateway authentication through Vercel OIDC or AI_GATEWAY_API_KEY
 - CRON_SECRET
 - WHATSAPP_SEND_MODE=shadow until launch approval
+- WHATSAPP_LIVE_CONFIRMATION left empty until the separately approved live deployment
 
 ## Database
 
@@ -72,6 +76,7 @@ Do not apply the migrations to production before the remaining launch gates pass
 - docs/LAUNCH_RUNBOOK.md — exact staged rollout and kill-switch procedure
 - docs/SOURCE_OF_TRUTH.md — knowledge hierarchy and unresolved policy conflicts
 - docs/EVALUATION_PLAN.md — required quality and safety gates
+- docs/PRODUCTION_READINESS.md — measurable operational SLOs, private readiness checks and required launch evidence
 
 ## Preserved existing systems
 

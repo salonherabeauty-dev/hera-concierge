@@ -1,5 +1,12 @@
 import type { IncomingMessage } from "node:http";
 
+export class PayloadTooLargeError extends Error {
+  constructor(readonly maxBytes: number) {
+    super("Request payload exceeds the configured limit");
+    this.name = "PayloadTooLargeError";
+  }
+}
+
 export async function readRawBody(
   request: IncomingMessage,
   maxBytes = 1_000_000,
@@ -11,7 +18,7 @@ export async function readRawBody(
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     totalBytes += buffer.length;
     if (totalBytes > maxBytes) {
-      throw new Error(`Webhook body exceeds ${maxBytes} bytes`);
+      throw new PayloadTooLargeError(maxBytes);
     }
     chunks.push(buffer);
   }

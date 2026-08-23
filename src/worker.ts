@@ -28,6 +28,11 @@ import {
   GROUNDING_POLICY_VERSION,
   type GroundingAssessment,
 } from "./policy/grounding.js";
+import { assessCustomerCareWindow } from "./policy/customerCareWindow.js";
+import {
+  logOperationalEvent,
+  safeErrorFields,
+} from "./observability/log.js";
 import type {
   AgentDecision,
   DrainSummary,
@@ -35,7 +40,11 @@ import type {
   MessageKind,
   ReceptionistJob,
 } from "./types.js";
-import { MetaWhatsAppClient, type WhatsAppTransport } from "./whatsapp/client.js";
+import {
+  isRetryableWhatsAppError,
+  MetaWhatsAppClient,
+  type WhatsAppTransport,
+} from "./whatsapp/client.js";
 import { interpretInboundMedia } from "./whatsapp/media.js";
 
 interface WorkerRuntime {
@@ -260,9 +269,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     const displayName = context.contact.profileName?.slice(0, 80) || "client";
     const summary = interpreted.text.replace(/[\r\n]+/g, " ").slice(0, 600);
     const containmentStatus =
-      runtime.sendMode === "live"
-        ? "The AI sent a safe containment response."
-        : "The AI prepared a safe containment response; shadow mode did not send it.";
+      "The AI prepared a policy-checked containment response for the client.";
     await runtime.repository.queueOutbound({
       conversationId: context.message.conversationId,
       sourceMessageId: context.message.id,
@@ -270,7 +277,9 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       targetType: "management",
       body: `Hera AI ${policy.risk.toUpperCase()} concern from ${displayName} (WhatsApp ending ${context.contact.waId.slice(-4)}). Intent: ${decision.intent}. ${containmentStatus} Summary: ${summary}`,
       dedupeKey: managementAlertDedupeKey(context.message.id),
-      authorization: "auto",
+      // Management alerts are review-only until a separately approved template
+      // or non-WhatsApp incident channel is configured.
+      authorization: "management",
     });
   }
 
@@ -305,27 +314,84 @@ export async function drainOutbox(input: {
   limit?: number;
 }): Promise<Pick<
   DrainSummary,
-  "outboxClaimed" | "outboxSent" | "outboxShadowed" | "outboxRetried"
+  | "outboxClaimed"
+  | "outboxSent"
+  | "outboxShadowed"
+  | "outboxRetried"
+  | "outboxDead"
 >> {
   const items = await input.repository.claimOutbox(input.workerId, input.limit ?? 20);
   let outboxSent = 0;
   let outboxShadowed = 0;
   let outboxRetried = 0;
+  let outboxDead = 0;
 
   for (const item of items) {
-    try {
-      if (input.sendMode === "shadow" || item.authorization !== "auto") {
-        await input.repository.markOutboxShadowed(item.id);
-        outboxShadowed += 1;
+    if (input.sendMode === "shadow" || item.authorization !== "auto") {
+      await input.repository.markOutboxShadowed(item.id);
+      outboxShadowed += 1;
+      continue;
+    }
+
+    if (item.targetType === "client") {
+      let sourceReceivedAt: string | null = null;
+      try {
+        sourceReceivedAt = item.sourceMessageId
+          ? await input.repository.getSourceMessageProviderTimestamp(item.sourceMessageId)
+          : null;
+      } catch (error) {
+        const status = await input.repository.retryOutbox(item, error, true);
+        if (status === "retry") outboxRetried += 1;
+        else outboxDead += 1;
+        logOperationalEvent("warn", "outbox_window_check_failed", {
+          outboxId: item.id,
+          targetType: item.targetType,
+          attempt: item.attempts,
+          retryable: true,
+          disposition: status,
+          ...safeErrorFields(error),
+        });
         continue;
       }
+
+      const window = assessCustomerCareWindow(sourceReceivedAt);
+      if (!window.allowed) {
+        const error = new Error("WhatsApp free-form reply blocked by customer-service-window guard");
+        error.name = "CustomerServiceWindowError";
+        const status = await input.repository.retryOutbox(item, error, false);
+        outboxDead += 1;
+        logOperationalEvent("error", "outbox_freeform_window_blocked", {
+          outboxId: item.id,
+          targetType: item.targetType,
+          attempt: item.attempts,
+          retryable: false,
+          disposition: status,
+          windowReason: window.reason,
+          ageSeconds:
+            window.ageMs === null ? null : Math.max(0, Math.round(window.ageMs / 1000)),
+        });
+        continue;
+      }
+    }
+
+    try {
       if (!input.whatsapp) throw new Error("Live mode requires a WhatsApp transport");
       const result = await input.whatsapp.sendText(item.toWaId, item.body);
       await input.repository.markOutboxSent(item.id, result.providerMessageId);
       outboxSent += 1;
     } catch (error) {
-      await input.repository.retryOutbox(item, error);
-      outboxRetried += 1;
+      const retryable = isRetryableWhatsAppError(error);
+      const status = await input.repository.retryOutbox(item, error, retryable);
+      if (status === "retry") outboxRetried += 1;
+      else outboxDead += 1;
+      logOperationalEvent(status === "retry" ? "warn" : "error", "outbox_send_failed", {
+        outboxId: item.id,
+        targetType: item.targetType,
+        attempt: item.attempts,
+        retryable,
+        disposition: status,
+        ...safeErrorFields(error),
+      });
     }
   }
 
@@ -334,6 +400,7 @@ export async function drainOutbox(input: {
     outboxSent,
     outboxShadowed,
     outboxRetried,
+    outboxDead,
   };
 }
 
@@ -353,6 +420,12 @@ export async function drainReceptionist(
     } catch (error) {
       const status = await runtime.repository.retryJob(job, error);
       jobsRetried += 1;
+      logOperationalEvent(status === "retry" ? "warn" : "error", "job_processing_failed", {
+        jobId: job.id,
+        attempt: job.attempts,
+        disposition: status,
+        ...safeErrorFields(error),
+      });
       if (status === "dead") {
         await queueDeadLetterFallback(runtime.repository, job).catch(() => undefined);
       }

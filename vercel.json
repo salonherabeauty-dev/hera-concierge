@@ -7,6 +7,9 @@
     "api/internal/drain.ts": {
       "maxDuration": 300
     },
+    "api/internal/readiness.ts": {
+      "maxDuration": 30
+    },
     "api/internal/sync-knowledge.ts": {
       "maxDuration": 300
     }

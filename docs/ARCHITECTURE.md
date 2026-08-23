@@ -15,7 +15,7 @@ Meta WhatsApp Cloud API sends a signed webhook to the durable Supabase inbox. A 
 | Independent verifier | Check the candidate against the retrieved evidence and non-negotiable rules | Unsafe replies are corrected before policy evaluation |
 | Grounding gate | Canonicalize source metadata and require tool evidence for Hera operations, prices, bookings and current-client records | Unsupported answers become reviewed, localized “unable to verify” responses with capped confidence |
 | Policy engine | Apply deterministic risk escalation, preserve active conversation risk and block unauthorised actions | Black-risk reply is deterministic and does not depend on a model; later harmless wording cannot silently downgrade the case |
-| Outbox | Separate decision completion from delivery and suppress duplicate sends | Shadow by default; retry failed Meta calls; process destinations in order |
+| Outbox | Separate decision completion from delivery and suppress duplicate sends | Shadow by default; fail closed outside the customer-service window; retry only transient Meta failures; process destinations in order |
 | Knowledge sync | Fetch only official Hera HTTPS sitemap pages and version changes | New or changed pages default to draft and cannot affect answers |
 
 ## Data sources
@@ -47,3 +47,10 @@ not needlessly repeated on every follow-up.
 ## Delivery semantics
 
 Database operations are exactly-once for a provider message ID and idempotent for reply creation. Meta delivery is at-least-once across the unavoidable boundary between Meta accepting a send and the database recording its response. The ordered outbox and lock timeout make duplication rare, auditable and recoverable; no API can honestly promise mathematical exactly-once delivery without provider idempotency support.
+
+Every ordinary client reply is tied to its source inbound message. Live delivery checks
+that provider timestamp immediately before contacting Meta and allows at most 23 hours
+55 minutes, leaving a five-minute safety margin inside Meta's 24-hour customer-service
+window. Missing, malformed, future or expired timestamps fail closed. Internal
+management alerts are not sent as ordinary WhatsApp text; they remain review-only until
+a separately approved template or non-WhatsApp incident channel exists.

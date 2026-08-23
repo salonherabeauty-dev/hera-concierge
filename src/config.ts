@@ -79,12 +79,23 @@ export function getAiConfig(env: NodeJS.ProcessEnv = process.env) {
 
 const operationsSchema = z.object({
   WHATSAPP_SEND_MODE: z.enum(["shadow", "live"]).default("shadow"),
+  WHATSAPP_LIVE_CONFIRMATION: z.string().trim().optional(),
   HERA_MANAGEMENT_WHATSAPP_ID: z.string().trim().optional(),
   CRON_SECRET: nonEmpty.min(24),
 });
 
+export const WHATSAPP_LIVE_CONFIRMATION_VALUE = "ENABLE_HERA_WHATSAPP_LIVE";
+
 export function getOperationsConfig(env: NodeJS.ProcessEnv = process.env) {
   const value = parse(operationsSchema, env, "operations");
+  if (
+    value.WHATSAPP_SEND_MODE === "live" &&
+    value.WHATSAPP_LIVE_CONFIRMATION !== WHATSAPP_LIVE_CONFIRMATION_VALUE
+  ) {
+    throw new Error(
+      "Invalid operations configuration: WHATSAPP_LIVE_CONFIRMATION",
+    );
+  }
   return {
     sendMode: value.WHATSAPP_SEND_MODE,
     managementWaId: value.HERA_MANAGEMENT_WHATSAPP_ID || null,

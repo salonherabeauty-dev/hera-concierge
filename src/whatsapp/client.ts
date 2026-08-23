@@ -31,6 +31,31 @@ export class WhatsAppApiError extends Error {
   }
 }
 
+/**
+ * Only transient transport failures and retry-safe Meta responses should be
+ * attempted again. Invalid payloads, permissions and other permanent 4xx
+ * responses are dead-lettered immediately instead of generating retry storms.
+ */
+export function isRetryableWhatsAppError(error: unknown): boolean {
+  if (error instanceof WhatsAppApiError) {
+    return (
+      error.status === 408 ||
+      error.status === 409 ||
+      error.status === 425 ||
+      error.status === 429 ||
+      error.status >= 500
+    );
+  }
+  if (error instanceof TypeError) return true;
+  if (
+    error instanceof DOMException &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function allowedMediaUrl(value: string): URL {
   const url = new URL(value);
   const host = url.hostname.toLowerCase();

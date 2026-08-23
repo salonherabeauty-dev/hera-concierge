@@ -219,6 +219,17 @@ export interface OutboxItem {
   maxAttempts: number;
 }
 
+export interface OperationalSnapshot {
+  activeJobs: number;
+  deadJobs: number;
+  activeOutbox: number;
+  deadOutbox: number;
+  openIncidents: number;
+  blackIncidents: number;
+  oldestActiveJobCreatedAt: string | null;
+  oldestActiveOutboxCreatedAt: string | null;
+}
+
 export interface DrainSummary {
   jobsClaimed: number;
   jobsCompleted: number;
@@ -227,4 +238,5 @@ export interface DrainSummary {
   outboxSent: number;
   outboxShadowed: number;
   outboxRetried: number;
+  outboxDead: number;
 }

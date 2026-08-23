@@ -3,6 +3,7 @@
 ## Gate 0 — protect existing systems
 
 - Keep WHATSAPP_SEND_MODE=shadow.
+- Keep WHATSAPP_LIVE_CONFIRMATION empty.
 - Do not register or migrate Hera's main phone number.
 - Do not modify the Virtual Stylist or pre-consultation deployment.
 - Use a Meta test number or a separate staging number.
@@ -48,6 +49,7 @@ Configure all variables in .env.example for Preview only. Use Vercel OIDC for AI
 - the five-minute recovery cron claims abandoned jobs;
 - the daily website sync leaves changed pages in draft;
 - logs contain no tokens, image bytes or raw prompts.
+- GET /api/internal/readiness with the CRON_SECRET returns non-critical aggregate state without exposing client content or identifiers.
 
 ## Gate 4 — shadow evaluation
 
@@ -65,10 +67,14 @@ No candidate reply is sent to a client in this gate. Review ai_decisions, ai_inc
 
 1. Resolve every item in docs/SOURCE_OF_TRUTH.md.
 2. Keep a dedicated staging number live for internal testers.
-3. Change WHATSAPP_SEND_MODE to live only for the approved deployment.
-4. Start with routine queries; monitor every result.
-5. Test the emergency kill switch by returning to shadow and redeploying.
-6. Verify Meta delivery/read/failure receipts and outbox recovery.
+3. Set WHATSAPP_LIVE_CONFIRMATION=ENABLE_HERA_WHATSAPP_LIVE only for the approved deployment.
+4. Change WHATSAPP_SEND_MODE to live only for that same approved deployment. Both controls are required; either one missing prevents startup.
+5. Start with routine queries; monitor every result.
+6. Test the emergency kill switch by returning WHATSAPP_SEND_MODE to shadow, clearing WHATSAPP_LIVE_CONFIRMATION and redeploying.
+7. Verify Meta delivery/read/failure receipts and outbox recovery. Permanent Meta 4xx rejections must dead-letter immediately; only transient failures are retried.
+8. Confirm a queued client reply older than 23 hours 55 minutes is blocked before any Meta send request. Ordinary free-form messages must never cross Meta's 24-hour customer-service window.
+9. Keep management alerts review-only until Hera configures a separately approved WhatsApp template or a non-WhatsApp incident channel.
+10. Require a `healthy` private readiness result and retain it with the exact commit and deployment URL before requesting pilot approval.
 
 ## Gate 6 — main-number transition
 
@@ -80,7 +86,7 @@ No candidate reply is sent to a client in this gate. Review ai_decisions, ai_inc
 
 ## Rollback
 
-1. Set WHATSAPP_SEND_MODE=shadow and redeploy the last known-good commit.
+1. Set WHATSAPP_SEND_MODE=shadow, clear WHATSAPP_LIVE_CONFIRMATION and redeploy the last known-good commit.
 2. Keep webhook ingestion active so no client message is lost.
 3. Drain or inspect pending jobs; do not delete them.
 4. Revert Meta routing only through the documented number migration path.
