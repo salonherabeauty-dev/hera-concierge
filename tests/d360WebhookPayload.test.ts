@@ -82,7 +82,22 @@ test("Coexistence history and app-state events are counted but never treated as 
       {
         id: "waba-1",
         changes: [
-          { field: "history", value: {} },
+          {
+            field: "history",
+            value: {
+              metadata: { phone_number_id: "phone-1" },
+              contacts: [{ wa_id: "6591112222", profile: { name: "Client" } }],
+              messages: [
+                {
+                  id: "wamid.historical-1",
+                  from: "6591112222",
+                  timestamp,
+                  type: "image",
+                  image: { id: "historical-media-1", mime_type: "image/jpeg" },
+                },
+              ],
+            },
+          },
           { field: "smb_app_state_sync", value: {} },
         ],
       },
@@ -90,6 +105,7 @@ test("Coexistence history and app-state events are counted but never treated as 
   });
   assert.deepEqual(parsed.ignored, { history: 2, appStateSync: 1 });
   assert.equal(parsed.inbound.length, 0);
+  assert.equal(parsed.statuses.length, 0);
   assert.equal(parsed.humanEchoes.length, 0);
 });
 
