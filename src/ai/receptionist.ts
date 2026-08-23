@@ -184,7 +184,7 @@ export async function generateReceptionistDecision(input: {
       "Search versioned, approved Hera salon knowledge. Use before any Hera-specific claim.",
     inputSchema: z.object({
       query: z.string().trim().min(2).max(500),
-      limit: z.number().int().min(1).max(8).default(5),
+      limit: z.number().int().min(1).max(8),
     }),
     strict: true,
     execute: async ({ query, limit }) => {
