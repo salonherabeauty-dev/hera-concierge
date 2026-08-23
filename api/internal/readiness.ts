@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   getAiConfig,
+  getD360Config,
   getDatabaseConfig,
   getMetaConfig,
   getOperationsConfig,
   getWebhookConfig,
+  getWhatsAppProviderConfig,
 } from "../../src/config.js";
 import { SupabaseReceptionistRepository } from "../../src/db/repository.js";
 import {
@@ -53,8 +55,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
     // Parse every required runtime group. Values are intentionally never returned
     // or logged; this proves presence and format, not provider connectivity.
     const database = getDatabaseConfig();
-    getWebhookConfig();
-    getMetaConfig();
+    const provider = getWhatsAppProviderConfig().provider;
+    if (provider === "360dialog") {
+      getD360Config();
+    } else {
+      getWebhookConfig();
+      getMetaConfig();
+    }
     getAiConfig();
 
     const repository = new SupabaseReceptionistRepository(
@@ -72,6 +79,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       {
         correlationId,
         durationMs,
+        provider,
         readiness: readiness.level,
         activeJobs: snapshot.activeJobs,
         deadJobs: snapshot.deadJobs,
@@ -85,6 +93,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return response.status(status).json({
       ok: status === 200,
       checkedAt: new Date().toISOString(),
+      provider,
       mode: operations.sendMode,
       readiness: readiness.level,
       cutoverEligible: readiness.cutoverEligible,
