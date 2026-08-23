@@ -184,11 +184,12 @@ export async function generateReceptionistDecision(input: {
       "Search versioned, approved Hera salon knowledge. Use before any Hera-specific claim.",
     inputSchema: z.object({
       query: z.string().trim().min(2).max(500),
-      limit: z.number().int().min(1).max(8).default(5),
     }),
     strict: true,
-    execute: async ({ query, limit }) => {
-      const results = await searchAllKnowledge(input.repository, query, limit);
+    execute: async ({ query }) => {
+      // Keep the provider-facing strict schema fully required. The result cap is
+      // a server-side policy rather than an optional model-controlled argument.
+      const results = await searchAllKnowledge(input.repository, query, 5);
       for (const result of results) {
         seenSources.set(result.id, result.title);
         seenEvidence.set(result.id, jsonValue(result));
