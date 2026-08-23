@@ -3,6 +3,7 @@ name: Hera receptionist verification
 on:
   push:
     branches:
+      - feat/hera-ai-receptionist-foundation
       - feat/360dialog-coexistence-adapter
   pull_request:
 
