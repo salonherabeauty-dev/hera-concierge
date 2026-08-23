@@ -8,14 +8,20 @@ import {
 } from "./ai/receptionist.js";
 import {
   getAiConfig,
+  getD360Config,
   getDatabaseConfig,
   getMetaConfig,
   getOperationsConfig,
+  getWhatsAppProviderConfig,
 } from "./config.js";
 import {
   SupabaseReceptionistRepository,
   type ReceptionistRepository,
 } from "./db/repository.js";
+import {
+  D360CoexistenceStore,
+  type OutboundAuthorizationDisposition,
+} from "./db/coexistence.js";
 import {
   assessPolicy,
   classifyDeterministicRisk,
@@ -45,6 +51,7 @@ import {
   MetaWhatsAppClient,
   type WhatsAppTransport,
 } from "./whatsapp/client.js";
+import { D360WhatsAppClient } from "./whatsapp/d360Client.js";
 import { interpretInboundMedia } from "./whatsapp/media.js";
 
 interface WorkerRuntime {
@@ -53,6 +60,9 @@ interface WorkerRuntime {
   ai: AiRuntimeConfig;
   sendMode: "shadow" | "live";
   managementWaId: string | null;
+  authorizeOutbound?: (
+    outboxId: string,
+  ) => Promise<OutboundAuthorizationDisposition>;
 }
 
 function asJson(value: unknown): JsonValue {
@@ -312,6 +322,9 @@ export async function drainOutbox(input: {
   sendMode: "shadow" | "live";
   workerId: string;
   limit?: number;
+  authorizeOutbound?: (
+    outboxId: string,
+  ) => Promise<OutboundAuthorizationDisposition>;
 }): Promise<Pick<
   DrainSummary,
   | "outboxClaimed"
@@ -370,6 +383,41 @@ export async function drainOutbox(input: {
           ageSeconds:
             window.ageMs === null ? null : Math.max(0, Math.round(window.ageMs / 1000)),
         });
+        continue;
+      }
+    }
+
+    if (input.authorizeOutbound) {
+      let disposition: OutboundAuthorizationDisposition;
+      try {
+        disposition = await input.authorizeOutbound(item.id);
+      } catch (error) {
+        const status = await input.repository.retryOutbox(item, error, true);
+        if (status === "retry") outboxRetried += 1;
+        else outboxDead += 1;
+        logOperationalEvent("warn", "outbox_coexistence_guard_failed", {
+          outboxId: item.id,
+          targetType: item.targetType,
+          attempt: item.attempts,
+          retryable: true,
+          disposition: status,
+          ...safeErrorFields(error),
+        });
+        continue;
+      }
+
+      if (disposition !== "authorized") {
+        if (disposition === "shadowed") outboxShadowed += 1;
+        else outboxDead += 1;
+        logOperationalEvent(
+          disposition === "shadowed" ? "info" : "error",
+          "outbox_provider_send_suppressed",
+          {
+            outboxId: item.id,
+            targetType: item.targetType,
+            disposition,
+          },
+        );
         continue;
       }
     }
@@ -437,6 +485,7 @@ export async function drainReceptionist(
     whatsapp: runtime.whatsapp,
     sendMode: runtime.sendMode,
     workerId,
+    authorizeOutbound: runtime.authorizeOutbound,
   });
   return {
     jobsClaimed: jobs.length,
@@ -450,17 +499,40 @@ export function createProductionRuntime(
   env: NodeJS.ProcessEnv = process.env,
 ): WorkerRuntime {
   const database = getDatabaseConfig(env);
-  const meta = getMetaConfig(env);
   const operations = getOperationsConfig(env);
-  return {
-    repository: new SupabaseReceptionistRepository(database.url, database.serviceRoleKey),
-    whatsapp: new MetaWhatsAppClient({
+  const provider = getWhatsAppProviderConfig(env).provider;
+
+  let whatsapp: WhatsAppTransport;
+  let authorizeOutbound:
+    | ((outboxId: string) => Promise<OutboundAuthorizationDisposition>)
+    | undefined;
+
+  if (provider === "360dialog") {
+    const d360 = getD360Config(env);
+    const coexistence = new D360CoexistenceStore(
+      database.url,
+      database.serviceRoleKey,
+    );
+    whatsapp = new D360WhatsAppClient({
+      apiKey: d360.apiKey,
+      baseUrl: d360.baseUrl,
+    });
+    authorizeOutbound = (outboxId) => coexistence.authorizeOutbound(outboxId);
+  } else {
+    const meta = getMetaConfig(env);
+    whatsapp = new MetaWhatsAppClient({
       graphApiVersion: meta.graphApiVersion,
       accessToken: meta.accessToken,
       phoneNumberId: meta.phoneNumberId,
-    }),
+    });
+  }
+
+  return {
+    repository: new SupabaseReceptionistRepository(database.url, database.serviceRoleKey),
+    whatsapp,
     ai: getAiConfig(env),
     sendMode: operations.sendMode,
     managementWaId: operations.managementWaId,
+    authorizeOutbound,
   };
 }

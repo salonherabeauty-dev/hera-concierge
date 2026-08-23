@@ -4,6 +4,10 @@
     "api/whatsapp/webhook.ts": {
       "maxDuration": 300
     },
+    "api/whatsapp/360dialog.ts": {
+      "maxDuration": 300,
+      "regions": ["sin1"]
+    },
     "api/internal/drain.ts": {
       "maxDuration": 300
     },

@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getDatabaseConfig, getWebhookConfig } from "../../src/config.js";
+import {
+  getDatabaseConfig,
+  getWebhookConfig,
+  getWhatsAppProviderConfig,
+} from "../../src/config.js";
 import { SupabaseReceptionistRepository } from "../../src/db/repository.js";
 import {
   logOperationalEvent,
@@ -36,6 +40,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
   const startedAt = Date.now();
   const correlationId = requestId(request);
   secureHeaders(response);
+
+  if (getWhatsAppProviderConfig().provider !== "meta") {
+    logOperationalEvent("warn", "meta_webhook_provider_disabled", {
+      correlationId,
+    });
+    return response.status(404).json({ error: "Not found" });
+  }
 
   if (request.method === "GET") {
     const { verifyToken } = getWebhookConfig();

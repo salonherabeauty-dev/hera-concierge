@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "test": "npm run typecheck && npm run test:unit",
+    "credential:scan": "node scripts/scan-secrets.mjs",
     "eval:model": "tsx scripts/run-model-evals.ts"
   },
   "dependencies": {

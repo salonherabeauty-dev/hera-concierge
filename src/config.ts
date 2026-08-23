@@ -24,6 +24,18 @@ export function getDatabaseConfig(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
+export const WHATSAPP_PROVIDERS = ["meta", "360dialog"] as const;
+export type WhatsAppProvider = (typeof WHATSAPP_PROVIDERS)[number];
+
+const whatsappProviderSchema = z.object({
+  WHATSAPP_PROVIDER: z.enum(WHATSAPP_PROVIDERS).default("meta"),
+});
+
+export function getWhatsAppProviderConfig(env: NodeJS.ProcessEnv = process.env) {
+  const value = parse(whatsappProviderSchema, env, "WhatsApp provider");
+  return { provider: value.WHATSAPP_PROVIDER };
+}
+
 const webhookSchema = z.object({
   META_APP_SECRET: nonEmpty.min(16),
   WHATSAPP_VERIFY_TOKEN: nonEmpty.min(16),
@@ -51,6 +63,45 @@ export function getMetaConfig(env: NodeJS.ProcessEnv = process.env) {
     accessToken: value.WHATSAPP_ACCESS_TOKEN,
     phoneNumberId: value.WHATSAPP_PHONE_NUMBER_ID,
     businessAccountId: value.WHATSAPP_BUSINESS_ACCOUNT_ID,
+  };
+}
+
+function normalizeD360BaseUrl(value: string): string {
+  const url = new URL(value);
+  const allowedHosts = new Set([
+    "waba-v2.360dialog.io",
+    "waba-sandbox.360dialog.io",
+  ]);
+  if (url.protocol !== "https:" || !allowedHosts.has(url.hostname.toLowerCase())) {
+    throw new Error("Invalid 360dialog configuration: D360_API_BASE_URL");
+  }
+  return url.origin;
+}
+
+const d360Schema = z.object({
+  D360_API_KEY: nonEmpty.min(20),
+  D360_API_BASE_URL: z
+    .string()
+    .url()
+    .default("https://waba-v2.360dialog.io"),
+  D360_WEBHOOK_USERNAME: nonEmpty.min(3).max(64).default("hera-receptionist"),
+  D360_WEBHOOK_PASSWORD: nonEmpty.min(24).max(256),
+  D360_HUMAN_TAKEOVER_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(5)
+    .max(1440)
+    .default(120),
+});
+
+export function getD360Config(env: NodeJS.ProcessEnv = process.env) {
+  const value = parse(d360Schema, env, "360dialog");
+  return {
+    apiKey: value.D360_API_KEY,
+    baseUrl: normalizeD360BaseUrl(value.D360_API_BASE_URL),
+    webhookUsername: value.D360_WEBHOOK_USERNAME,
+    webhookPassword: value.D360_WEBHOOK_PASSWORD,
+    humanTakeoverMinutes: value.D360_HUMAN_TAKEOVER_MINUTES,
   };
 }
 
