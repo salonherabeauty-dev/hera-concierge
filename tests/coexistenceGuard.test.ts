@@ -42,12 +42,16 @@ function fakeRepository() {
 test("a manual WhatsApp Business App takeover suppresses the AI send", async () => {
   const { repository } = fakeRepository();
   let sends = 0;
-  const transport = {
+  const transport: WhatsAppTransport = {
     sendText: async () => {
       sends += 1;
       return { providerMessageId: "must-not-send" };
     },
-  } as WhatsAppTransport;
+    downloadMedia: async () => ({
+      data: new Uint8Array(),
+      mimeType: "application/octet-stream",
+    }),
+  };
 
   const result = await drainOutbox({
     repository,
@@ -77,12 +81,16 @@ test("a fail-closed coexistence guard can dead-letter an invalid outbox item", a
 test("a temporary coexistence database failure retries without contacting 360dialog", async () => {
   const { repository, state } = fakeRepository();
   let sends = 0;
-  const transport = {
+  const transport: WhatsAppTransport = {
     sendText: async () => {
       sends += 1;
       return { providerMessageId: "must-not-send" };
     },
-  } as WhatsAppTransport;
+    downloadMedia: async () => ({
+      data: new Uint8Array(),
+      mimeType: "application/octet-stream",
+    }),
+  };
 
   const result = await drainOutbox({
     repository,
