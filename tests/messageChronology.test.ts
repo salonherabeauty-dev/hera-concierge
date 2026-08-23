@@ -7,12 +7,18 @@ const migrationUrl = new URL(
   "../supabase/migrations/20260824000002_add_out_of_order_inbound_guard.sql",
   import.meta.url,
 );
+const lockDownMigrationUrl = new URL(
+  "../supabase/migrations/20260824000003_lock_down_chronology_trigger.sql",
+  import.meta.url,
+);
 const repositoryUrl = new URL("../src/db/repository.ts", import.meta.url);
 
-test("PostgreSQL 17 accepts the out-of-order inbound migration", async () => {
-  const sql = await readFile(migrationUrl, "utf8");
-  const result = await parse(sql);
-  assert.ok(result.stmts.length > 0);
+test("PostgreSQL 17 accepts the out-of-order inbound migrations", async () => {
+  for (const url of [migrationUrl, lockDownMigrationUrl]) {
+    const sql = await readFile(url, "utf8");
+    const result = await parse(sql);
+    assert.ok(result.stmts.length > 0);
+  }
 });
 
 test("delayed older messages are suppressed before AI processing", async () => {
@@ -51,8 +57,9 @@ test("conversation history is ordered by provider chronology, not webhook arriva
   );
 });
 
-test("chronology RPCs remain service-role-only", async () => {
+test("chronology entry points remain least-privilege", async () => {
   const sql = await readFile(migrationUrl, "utf8");
+  const lockDownSql = await readFile(lockDownMigrationUrl, "utf8");
   assert.match(
     sql,
     /revoke all on function public\.ai_is_inbound_superseded\(uuid\)[\s\S]*from public, anon, authenticated/,
@@ -64,5 +71,9 @@ test("chronology RPCs remain service-role-only", async () => {
   assert.match(
     sql,
     /grant execute on function public\.ai_authorize_whatsapp_outbox_send\(uuid\)[\s\S]*to service_role/,
+  );
+  assert.match(
+    lockDownSql,
+    /revoke all on function public\.ai_suppress_superseded_job_insert\(\)[\s\S]*from public, anon, authenticated, service_role/,
   );
 });
