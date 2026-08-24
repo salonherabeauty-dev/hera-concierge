@@ -20,6 +20,19 @@ export const COMMAND_CENTRE_ACCESS_COOKIE = "__Host-hera_cc_access";
 export const COMMAND_CENTRE_REFRESH_COOKIE = "__Host-hera_cc_refresh";
 export const COMMAND_CENTRE_CSRF_COOKIE = "__Host-hera_cc_csrf";
 
+const PREVIEW_OWNER: CommandCentreStaff = {
+  userId: "00000000-0000-4000-8000-000000000001",
+  email: "vercel-preview-owner@herabeauty.sg",
+  displayName: "Neo Chin Chuan",
+  role: "owner",
+  outletScope: ["Tanglin Mall", "Sentosa Quayside Isle"],
+  status: "active",
+  permissions: {
+    previewReadOnly: true,
+    accessBoundary: "vercel-authenticated-preview",
+  },
+};
+
 interface StaffProfileRow {
   user_id: string;
   email: string;
@@ -40,6 +53,16 @@ function adminClient() {
     },
     global: { headers: { "X-Client-Info": "hera-command-centre/1.0" } },
   });
+}
+
+export function isCommandCentrePasswordlessPreview(): boolean {
+  const branch = process.env.VERCEL_GIT_COMMIT_REF ?? "";
+  return (
+    process.env.VERCEL_ENV === "preview" &&
+    branch !== "main" &&
+    process.env.WHATSAPP_SEND_MODE === "shadow" &&
+    process.env.WHATSAPP_LIVE_CONFIRMATION !== "ENABLE_HERA_WHATSAPP_LIVE"
+  );
 }
 
 function isRole(value: string): value is CommandCentreRole {
@@ -67,6 +90,26 @@ function mapStaff(row: StaffProfileRow): CommandCentreStaff {
 
 function csrfToken(): string {
   return randomBytes(32).toString("base64url");
+}
+
+function ensurePreviewCsrf(
+  request: VercelRequest,
+  response: VercelResponse,
+): string {
+  const cookies = parseCookies(firstHeader(request.headers.cookie));
+  const existing = cookies.get(COMMAND_CENTRE_CSRF_COOKIE);
+  if (existing) return existing;
+
+  const csrf = csrfToken();
+  appendSetCookies(response, [
+    serializeCookie({
+      name: COMMAND_CENTRE_CSRF_COOKIE,
+      value: csrf,
+      maxAge: 60 * 60 * 8,
+      httpOnly: false,
+    }),
+  ]);
+  return csrf;
 }
 
 export function setCommandCentreSession(
@@ -132,6 +175,17 @@ export async function authenticateCommandCentre(
   request: VercelRequest,
   response: VercelResponse,
 ): Promise<CommandCentreSession> {
+  // The staging Command Centre Preview is already protected by Vercel
+  // Authentication. While customer delivery remains locked to shadow mode,
+  // that upstream access boundary is sufficient for passwordless owner review.
+  // This path cannot activate on Production or main.
+  if (isCommandCentrePasswordlessPreview()) {
+    return {
+      staff: PREVIEW_OWNER,
+      csrfToken: ensurePreviewCsrf(request, response),
+    };
+  }
+
   const cookies = parseCookies(firstHeader(request.headers.cookie));
   const accessToken = cookies.get(COMMAND_CENTRE_ACCESS_COOKIE);
   const refreshToken = cookies.get(COMMAND_CENTRE_REFRESH_COOKIE);
@@ -192,6 +246,12 @@ export async function signInCommandCentre(input: {
   password: string;
   response: VercelResponse;
 }): Promise<CommandCentreSession> {
+  if (isCommandCentrePasswordlessPreview()) {
+    const error = new Error("Password sign-in is disabled for the protected Preview.");
+    error.name = "CommandCentreAuthenticationError";
+    throw error;
+  }
+
   const database = adminClient();
   const { data, error } = await database.auth.signInWithPassword({
     email: input.email.trim().toLowerCase(),
