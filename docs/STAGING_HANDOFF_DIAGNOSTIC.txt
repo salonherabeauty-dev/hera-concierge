@@ -1,0 +1,3 @@
+Generated: 2026-08-24T14:51:15Z
+HERA_DIAGNOSTIC_CAPABILITIES {"supabaseUrl":false,"serviceRoleKey":false,"managementToken":false,"databaseUrl":false,"postgresUrlNonPooling":false,"supabaseDbUrl":false}
+HERA_STAGING_REPORT unavailable_no_supabase_runtime_secrets
