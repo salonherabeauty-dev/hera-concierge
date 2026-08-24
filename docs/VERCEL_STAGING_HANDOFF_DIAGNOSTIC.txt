@@ -1,0 +1,31 @@
+Generated from protected Vercel Preview build: 2026-08-24T14:52:14Z
+Deployment branch: feat/hera-ai-receptionist-foundation
+Deployment commit inspected: aa31d0cbb65f3f90931ad6429edcf7dc7bbf391f
+
+Environment capabilities available in Vercel Preview:
+- SUPABASE_URL: present
+- SUPABASE_SERVICE_ROLE_KEY: present
+- Supabase Management API token: absent
+- Direct PostgreSQL connection URL: absent
+
+Staging schema diagnosis:
+- public.ai_handoff_tasks: available
+- public.ai_staff_profiles: available
+- public.ai_upsert_automatic_handoff(...): MISSING
+
+Fresh controlled WhatsApp test job:
+- Job ID: 5aa7fbfe-0306-4445-a81e-ef194dfdf3b5
+- Status: retry
+- Attempts: 1 of 5
+- Retry available since: 2026-08-24T14:33:26.228Z
+- Failure classification: automatic_handoff_rpc_missing
+- Source message retained: yes
+- AI decision records retained: 3
+- Outbox items created: 0
+- Provider messages sent: 0
+
+Required repair:
+- Apply migration 20260824000006_add_automatic_handoff_engine.sql
+- Apply migration 20260824000007_activate_full_handoff_takeover.sql
+- Keep WHATSAPP_SEND_MODE=shadow
+- Do not touch main or Production
