@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   authenticateCommandCentre,
+  isCommandCentrePasswordlessPreview,
   requireCommandCentreCsrf,
 } from "../../src/command-centre/auth.js";
 import {
@@ -25,6 +26,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
     const session = await authenticateCommandCentre(request, response);
     requireSameOrigin(request);
     requireCommandCentreCsrf(request);
+    if (isCommandCentrePasswordlessPreview()) {
+      return response.status(403).json({
+        error: "This protected Preview is currently read-only. No task was changed.",
+        code: "preview_read_only",
+      });
+    }
+
     const body = parseSchema(taskActionBodySchema, parseJsonBody<unknown>(request));
     const repository = new SupabaseCommandCentreRepository();
     let result: JsonValue;

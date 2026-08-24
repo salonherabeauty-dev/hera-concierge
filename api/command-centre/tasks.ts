@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   authenticateCommandCentre,
+  isCommandCentrePasswordlessPreview,
   requireCommandCentreCsrf,
 } from "../../src/command-centre/auth.js";
 import {
@@ -11,6 +12,7 @@ import {
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
+import { createCommandCentreReadRepository } from "../../src/command-centre/readRepository.js";
 import { SupabaseCommandCentreRepository } from "../../src/command-centre/repository.js";
 import type { HandoffStatus } from "../../src/command-centre/types.js";
 import {
@@ -37,7 +39,6 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   try {
     const session = await authenticateCommandCentre(request, response);
-    const repository = new SupabaseCommandCentreRepository();
     if (request.method === "GET") {
       if (!hasCapability(session.staff.role, "view_dashboard")) {
         return response.status(403).json({ error: "Forbidden" });
@@ -47,6 +48,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
         : request.query.status;
       const candidate = typeof statusValue === "string" ? statusValue : "open";
       const status = allowedStatuses.has(candidate) ? candidate : "open";
+      const repository = createCommandCentreReadRepository();
       const tasks = await repository.listTasks({
         status: status as HandoffStatus | "open",
         limit: 150,
@@ -56,10 +58,17 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
     requireSameOrigin(request);
     requireCommandCentreCsrf(request);
+    if (isCommandCentrePasswordlessPreview()) {
+      return response.status(403).json({
+        error: "This protected Preview is currently read-only. No operational action was performed.",
+        code: "preview_read_only",
+      });
+    }
     if (!hasCapability(session.staff.role, "create_task")) {
       return response.status(403).json({ error: "Forbidden" });
     }
     const input = parseSchema(createTaskBodySchema, parseJsonBody<unknown>(request));
+    const repository = new SupabaseCommandCentreRepository();
     const result = await repository.createTask(input, session.staff.userId);
     return response.status(201).json({ result });
   } catch (error) {
