@@ -25,8 +25,8 @@ test("the private SPA builds to a static same-origin control surface", async () 
 
 test("Preview GUI exposes human controls but no WhatsApp send action", async () => {
   const [app, api] = await Promise.all([readFile(appUrl, "utf8"), readFile(apiUrl, "utf8")]);
-  assert.match(app, /AI DELIVERY/);
-  assert.match(app, /SHADOW/);
+  assert.match(app, /AI delivery/i);
+  assert.match(app, /Shadow (?:mode|protected)/i);
   assert.match(app, /Take over conversation/);
   assert.match(app, /Resolve and return to AI/);
   assert.match(app, /Not sent to WhatsApp/);
