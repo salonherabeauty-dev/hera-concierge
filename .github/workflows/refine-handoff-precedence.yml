@@ -1,5 +1,6 @@
 name: Refine automatic handoff precedence
 
+# One-shot verifier and commit workflow for the isolated automatic-handoff branch.
 on:
   push:
     branches:
