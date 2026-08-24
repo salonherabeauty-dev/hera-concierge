@@ -14,6 +14,27 @@ create index if not exists ai_handoff_tasks_open_conversation_type_idx
   on public.ai_handoff_tasks(conversation_id, task_type, created_at desc)
   where status in ('new', 'assigned', 'accepted', 'waiting_client', 'waiting_internal');
 
+insert into public.ai_handoff_sla_policies (
+  task_type,
+  priority,
+  target_minutes,
+  escalation_role
+) values
+  ('booking_action', 'high', 5, 'salon_manager'),
+  ('appointment_change', 'urgent', 5, 'salon_manager'),
+  ('complaint_review', 'urgent', 5, 'managing_director'),
+  ('refund_finance', 'urgent', 10, 'managing_director'),
+  ('medical_safety', 'high', 5, 'technical_lead'),
+  ('medical_safety', 'urgent', 2, 'salon_manager'),
+  ('client_requested_human', 'urgent', 2, 'salon_manager'),
+  ('technical_review', 'urgent', 5, 'technical_lead'),
+  ('other', 'urgent', 5, 'salon_manager')
+on conflict (task_type, priority) do update
+set target_minutes = excluded.target_minutes,
+    escalation_role = excluded.escalation_role,
+    active = true,
+    updated_at = now();
+
 create or replace function public.ai_upsert_automatic_handoff(
   p_conversation_id uuid,
   p_source_message_id uuid,
@@ -51,6 +72,13 @@ begin
   if jsonb_typeof(coalesce(p_missing_facts, '[]'::jsonb)) <> 'array' then
     raise exception 'missing facts must be a JSON array';
   end if;
+
+  -- Serialise every open-task decision for one conversation and task class.
+  -- This closes the race where two concurrent messages could otherwise both
+  -- observe no open task and create competing handoffs.
+  perform pg_advisory_xact_lock(
+    hashtextextended(p_conversation_id::text || ':' || p_task_type, 0)
+  );
 
   select policy.target_minutes
   into v_target_minutes
@@ -111,7 +139,7 @@ begin
         summary = trim(p_summary),
         requested_action = trim(p_requested_action),
         collected_facts = coalesce(collected_facts, '{}'::jsonb)
-          || coalesce(p_collected_facts, '{}'::jsonb),
+          || jsonb_strip_nulls(coalesce(p_collected_facts, '{}'::jsonb)),
         missing_facts = coalesce(p_missing_facts, '[]'::jsonb),
         client_visible_status = coalesce(
           nullif(trim(coalesce(p_client_visible_status, '')), ''),
@@ -180,7 +208,7 @@ begin
       nullif(trim(coalesce(p_assigned_outlet, '')), ''),
       trim(p_summary),
       trim(p_requested_action),
-      coalesce(p_collected_facts, '{}'::jsonb),
+      jsonb_strip_nulls(coalesce(p_collected_facts, '{}'::jsonb)),
       coalesce(p_missing_facts, '[]'::jsonb),
       nullif(trim(coalesce(p_client_visible_status, '')), ''),
       v_due_at,

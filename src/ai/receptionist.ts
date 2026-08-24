@@ -32,8 +32,8 @@ import {
 } from "../types.js";
 import type { InterpretedInbound } from "../whatsapp/media.js";
 
-export const RESPONSE_PROMPT_VERSION = "hera-receptionist-response-1.5.0";
-export const VERIFIER_PROMPT_VERSION = "hera-receptionist-verifier-1.5.0";
+export const RESPONSE_PROMPT_VERSION = "hera-receptionist-response-1.5.1";
+export const VERIFIER_PROMPT_VERSION = "hera-receptionist-verifier-1.5.1";
 
 export interface AiRuntimeConfig {
   primaryModel: string;
@@ -111,14 +111,31 @@ const agentDecisionSchema = z.object({
   rationale: z.string().trim().min(1).max(300),
 });
 
-const verificationSchema = z.object({
-  approved: z.boolean(),
-  correctedReply: z.string().trim().min(1).max(3500).nullable(),
-  handoffApproved: z.boolean(),
-  correctedHandoff: agentHandoffSchema.nullable(),
-  risk: z.enum(RISK_LEVELS),
-  issues: z.array(z.string().trim().min(1).max(180)).max(10),
-});
+const verificationSchema = z
+  .object({
+    approved: z.boolean(),
+    correctedReply: z.string().trim().min(1).max(3500).nullable(),
+    handoffApproved: z.boolean(),
+    correctedHandoff: agentHandoffSchema.nullable(),
+    risk: z.enum(RISK_LEVELS),
+    issues: z.array(z.string().trim().min(1).max(180)).max(10),
+  })
+  .superRefine((value, context) => {
+    if (!value.approved && !value.correctedReply) {
+      context.addIssue({
+        code: "custom",
+        path: ["correctedReply"],
+        message: "A rejected client reply requires a complete correction.",
+      });
+    }
+    if (!value.handoffApproved && !value.correctedHandoff) {
+      context.addIssue({
+        code: "custom",
+        path: ["correctedHandoff"],
+        message: "A rejected handoff requires a complete correction.",
+      });
+    }
+  });
 
 export const RESPONSE_INSTRUCTIONS = [
   "You are Hera, the AI receptionist for Hera Hair Beauty in Singapore.",

@@ -33,3 +33,12 @@ test("automatic handoff records SLA, audit and service-role-only execution", asy
   assert.match(sql, /grant execute on function public\.ai_upsert_automatic_handoff/);
   assert.match(sql, /to service_role/);
 });
+
+
+test("automatic handoff concurrency and fact merging fail closed", async () => {
+  const sql = await readFile(migrationUrl, "utf8");
+  assert.match(sql, /pg_advisory_xact_lock/);
+  assert.match(sql, /hashtextextended\(p_conversation_id::text \|\| ':' \|\| p_task_type, 0\)/);
+  assert.match(sql, /jsonb_strip_nulls\(coalesce\(p_collected_facts/);
+  assert.match(sql, /\('booking_action', 'high', 5, 'salon_manager'\)/);
+});

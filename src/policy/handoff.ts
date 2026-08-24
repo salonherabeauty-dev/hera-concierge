@@ -10,7 +10,7 @@ import type {
   PolicyAssessment,
 } from "../types.js";
 
-export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.0.0";
+export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.0";
 
 const HUMAN_REQUEST_PATTERNS = [
   /\b(?:speak|talk|chat|connect|transfer|pass me|put me through)\b.{0,28}\b(?:human|person|receptionist|manager|staff|someone)\b/i,
@@ -38,6 +38,24 @@ const FALSE_COMPLETION_PATTERNS = [
 ];
 
 const URL_PATTERN = /https?:\/\//i;
+
+const MANAGER_REQUEST_PATTERNS = [
+  /\b(?:manager|owner|managing director|person in charge)\b/i,
+  /经理|店长|负责人/u,
+  /pengurus|orang yang bertanggungjawab/i,
+  /மேலாளர்|பொறுப்பாளர்/u,
+];
+
+const OUTLET_ALIASES: Array<{ canonical: string; patterns: RegExp[] }> = [
+  {
+    canonical: "Tanglin Mall",
+    patterns: [/\btanglin(?: mall)?\b/i],
+  },
+  {
+    canonical: "Sentosa Quayside Isle",
+    patterns: [/\bsentosa\b/i, /\bquayside(?: isle)?\b/i],
+  },
+];
 
 const EMPTY_FACTS: AgentHandoffFacts = {
   service: null,
@@ -83,12 +101,23 @@ function clean(value: string | null | undefined, maximum = 1200): string | null 
   return normalized ? normalized.slice(0, maximum) : null;
 }
 
+function canonicalOutlet(value: string | null | undefined): string | null {
+  const candidate = clean(value, 160);
+  if (!candidate) return null;
+  for (const outlet of OUTLET_ALIASES) {
+    if (outlet.patterns.some((pattern) => pattern.test(candidate))) {
+      return outlet.canonical;
+    }
+  }
+  return null;
+}
+
 function normalizedFacts(value: AgentHandoffFacts | undefined): AgentHandoffFacts {
   const source = value ?? EMPTY_FACTS;
   return {
     service: clean(source.service, 200),
     stylist: clean(source.stylist, 160),
-    outlet: clean(source.outlet, 160),
+    outlet: canonicalOutlet(source.outlet),
     date: clean(source.date, 160),
     time: clean(source.time, 160),
     flexibility: clean(source.flexibility, 240),
@@ -155,7 +184,7 @@ function defaultSummary(
   }
   if (taskType === "complaint_review") return "Client service concern requires management review.";
   if (taskType === "refund_finance") return "Client financial or refund request requires authorised review.";
-  if (taskType === "medical_safety") return "Urgent client safety concern requires immediate human attention.";
+  if (taskType === "medical_safety") return "Client safety concern requires priority human review.";
   if (taskType === "privacy_legal") return "Client privacy or legal request requires authorised handling.";
   if (taskType === "client_requested_human") return "Client explicitly requested direct human assistance.";
   if (taskType === "arrival_issue") return "Time-sensitive arrival or appointment-day issue.";
@@ -177,7 +206,7 @@ function defaultRequestedAction(taskType: HandoffTaskType): string {
     refund_finance:
       "Verify the transaction and appointment records, then obtain the authorised financial decision before responding.",
     medical_safety:
-      "Review immediately, ensure emergency guidance has been given, and contact the client only when it is safe and appropriate.",
+      "Review the symptoms and service context promptly, confirm that the appropriate safety guidance was given, and contact the client only within the team's professional scope.",
     technical_review:
       "Arrange senior technical review before any chemical-service commitment is made.",
     privacy_legal:
@@ -206,25 +235,25 @@ function defaultAcknowledgement(
 ): string | null {
   if (taskType === "medical_safety") return null;
   if (taskType === "booking_action") {
-    return `Thank you. I’ve noted ${bookingDescription(facts)}. Our reception team will now check live availability and confirm the appointment with you.`;
+    return `Thank you. I’ve noted ${bookingDescription(facts)}. Our reception team will now check live availability and update you with the available option or confirmed outcome.`;
   }
   if (taskType === "appointment_change") {
     return "Thank you. I’ve passed your appointment-change request to our reception team for verification and confirmation.";
   }
   if (taskType === "client_requested_human") {
-    return "Certainly. I’ve arranged for a member of Hera’s team to take over this conversation and assist you directly.";
+    return "Certainly. I’ve sent your request to Hera’s team for direct assistance. A staff member will continue with you as soon as available.";
   }
   if (taskType === "complaint_review") {
-    return "Thank you for explaining this. I’ve arranged for Hera’s management team to review the matter and continue assisting you directly.";
+    return "Thank you for explaining this. I’ve placed the matter with Hera’s management team for direct review and follow-up.";
   }
   if (taskType === "refund_finance") {
-    return "Thank you. I’ve arranged for the authorised team to review the transaction and contact you with the verified outcome.";
+    return "Thank you. I’ve placed the transaction request with the authorised team for verification and a confirmed outcome.";
   }
   if (taskType === "privacy_legal") {
     return "Thank you. I’ve routed this to Hera’s authorised privacy and management team for direct review.";
   }
   if (taskType === "arrival_issue") {
-    return "Thank you for updating us. I’ve alerted the outlet team so they can assist with the appointment immediately.";
+    return "Thank you for updating us. I’ve placed this in the outlet team’s urgent queue for immediate coordination.";
   }
   return "Thank you. I’ve passed this to the appropriate Hera team for direct review and action.";
 }
@@ -240,7 +269,7 @@ function assignedRoleFor(taskType: HandoffTaskType): HandoffAssignedRole {
 }
 
 function scopeFor(taskType: HandoffTaskType): HandoffScope {
-  if (taskType === "medical_safety") return "emergency";
+  if (taskType === "medical_safety") return "full_takeover";
   if (
     taskType === "complaint_review" ||
     taskType === "refund_finance" ||
@@ -270,7 +299,11 @@ function priorityFor(
   policy: PolicyAssessment,
   message: string,
 ): HandoffPriority {
-  if (policy.risk === "black" || taskType === "medical_safety") return "emergency";
+  if (policy.risk === "black") return "emergency";
+  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(message))) return "urgent";
+  if (taskType === "medical_safety") {
+    return policy.risk === "red" ? "urgent" : "high";
+  }
   if (taskType === "privacy_legal" || taskType === "security_review" || taskType === "arrival_issue") {
     return "urgent";
   }
@@ -307,13 +340,12 @@ function taskTypeFor(input: {
   policy: PolicyAssessment;
   proposal: AgentHandoffProposal;
 }): HandoffTaskType | null {
-  if (input.policy.risk === "black" || input.decision.intent === "medical_safety") {
-    return "medical_safety";
-  }
-  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) return "arrival_issue";
+  if (input.policy.risk === "black") return "medical_safety";
   if (HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(input.message))) {
     return "client_requested_human";
   }
+  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) return "arrival_issue";
+  if (input.decision.intent === "medical_safety") return "medical_safety";
   if (input.decision.intent === "appointment_change") return "appointment_change";
   if (input.decision.intent === "complaint") return "complaint_review";
   if (input.decision.intent === "refund_compensation") return "refund_finance";
@@ -361,7 +393,9 @@ export function assessHumanHandoff(input: {
 
   let missingFacts = uniqueMissing(proposal.missingFacts);
   if (taskType === "booking_action") {
-    missingFacts = uniqueMissing([...missingFacts, ...bookingMissingFacts(facts)]);
+    // Booking readiness is deterministic. Optional preferences such as stylist
+    // and flexibility can never prevent a complete request from reaching reception.
+    missingFacts = bookingMissingFacts(facts);
     if (missingFacts.length > 0) {
       return {
         createTask: false,
@@ -390,20 +424,33 @@ export function assessHumanHandoff(input: {
       ? "emergency"
       : priorityFor(taskType, input.policy, input.message);
   const priority = strongestPriority(proposal.priority, requiredPriority);
+  const managerExplicitlyRequested = MANAGER_REQUEST_PATTERNS.some((pattern) =>
+    pattern.test(input.message),
+  );
   const assignedRole =
-    taskType === "other" && proposal.assignedRole
-      ? proposal.assignedRole
-      : assignedRoleFor(taskType);
-  const assignedOutlet = clean(proposal.assignedOutlet, 160) ?? facts.outlet;
+    taskType === "client_requested_human" && managerExplicitlyRequested
+      ? "salon_manager"
+      : taskType === "other" && proposal.assignedRole
+        ? proposal.assignedRole
+        : assignedRoleFor(taskType);
+  const assignedOutlet = canonicalOutlet(proposal.assignedOutlet) ?? facts.outlet;
+  // Known task classes use deterministic internal wording. The model may supply
+  // custom wording only for an uncategorised task, never for booking or authority claims.
   const summary =
-    clean(proposal.summary, 1000) ?? defaultSummary(taskType, facts);
+    taskType === "other"
+      ? clean(proposal.summary, 1000) ?? defaultSummary(taskType, facts)
+      : defaultSummary(taskType, facts);
   const requestedAction =
-    clean(proposal.requestedAction, 1200) ?? defaultRequestedAction(taskType);
+    taskType === "other"
+      ? clean(proposal.requestedAction, 1200) ?? defaultRequestedAction(taskType)
+      : defaultRequestedAction(taskType);
   const acknowledgement =
     taskType === "medical_safety"
       ? null
-      : safeAcknowledgement(proposal.clientAcknowledgement) ??
-        defaultAcknowledgement(taskType, facts);
+      : taskType === "other"
+        ? safeAcknowledgement(proposal.clientAcknowledgement) ??
+          defaultAcknowledgement(taskType, facts)
+        : defaultAcknowledgement(taskType, facts);
 
   return {
     createTask: true,

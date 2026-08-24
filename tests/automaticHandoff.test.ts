@@ -100,7 +100,7 @@ test("complete booking details create one structured reception handoff", () => {
     }),
   });
 
-  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.0.0");
+  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.0");
   assert.equal(result.createTask, true);
   assert.equal(result.taskType, "booking_action");
   assert.equal(result.scope, "task_only");
@@ -288,4 +288,155 @@ test("black-risk safety cases create an emergency handoff without replacing safe
   assert.equal(result.scope, "emergency");
   assert.equal(result.priority, "emergency");
   assert.equal(result.clientReplyOverride, null);
+});
+
+
+test("booking readiness ignores optional model missing-fact noise", () => {
+  const result = assessHumanHandoff({
+    message: "Any stylist is fine. Root colour at Tanglin on 28 August at 2 pm.",
+    conversationId: "conversation-7",
+    sourceMessageId: "message-7",
+    policy: policy(),
+    decision: decision({
+      handoff: {
+        required: false,
+        taskType: "booking_action",
+        scope: "task_only",
+        priority: "normal",
+        assignedRole: "receptionist",
+        assignedOutlet: "Tanglin",
+        summary: null,
+        requestedAction: null,
+        collectedFacts: {
+          ...emptyFacts,
+          service: "root colour",
+          outlet: "Tanglin",
+          date: "28 August",
+          time: "2 pm",
+        },
+        missingFacts: ["stylist", "flexibility"],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.createTask, true);
+  assert.deepEqual(result.missingFacts, []);
+  assert.equal(result.assignedOutlet, "Tanglin Mall");
+});
+
+test("unknown outlets fail closed instead of entering the reception queue", () => {
+  const result = assessHumanHandoff({
+    message: "Root colour at Orchard on 28 August at 2 pm.",
+    conversationId: "conversation-8",
+    sourceMessageId: "message-8",
+    policy: policy(),
+    decision: decision({
+      handoff: {
+        required: true,
+        taskType: "booking_action",
+        scope: "task_only",
+        priority: "normal",
+        assignedRole: "receptionist",
+        assignedOutlet: "Orchard",
+        summary: null,
+        requestedAction: null,
+        collectedFacts: {
+          ...emptyFacts,
+          service: "root colour",
+          outlet: "Orchard",
+          date: "28 August",
+          time: "2 pm",
+        },
+        missingFacts: [],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.createTask, false);
+  assert.deepEqual(result.missingFacts, ["outlet"]);
+  assert.equal(result.assignedOutlet, null);
+});
+
+test("non-emergency medical concerns use priority human review, not emergency mode", () => {
+  const result = assessHumanHandoff({
+    message: "My scalp is still irritated after yesterday's colour service.",
+    conversationId: "conversation-9",
+    sourceMessageId: "message-9",
+    policy: policy({ risk: "red", requiresIncident: true }),
+    decision: decision({
+      intent: "medical_safety",
+      risk: "red",
+      handoff: {
+        required: true,
+        taskType: "medical_safety",
+        scope: "full_takeover",
+        priority: "urgent",
+        assignedRole: "technical_lead",
+        assignedOutlet: null,
+        summary: null,
+        requestedAction: null,
+        collectedFacts: {
+          ...emptyFacts,
+          symptoms: "persistent scalp irritation",
+        },
+        missingFacts: [],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.createTask, true);
+  assert.equal(result.scope, "full_takeover");
+  assert.equal(result.priority, "urgent");
+});
+
+test("an explicit manager request outranks a simultaneous arrival phrase", () => {
+  const result = assessHumanHandoff({
+    message: "I am at reception and need to speak to the manager now.",
+    conversationId: "conversation-10",
+    sourceMessageId: "message-10",
+    policy: policy(),
+    decision: decision({ intent: "other" }),
+  });
+
+  assert.equal(result.taskType, "client_requested_human");
+  assert.equal(result.scope, "full_takeover");
+  assert.equal(result.priority, "urgent");
+  assert.equal(result.assignedRole, "salon_manager");
+});
+
+test("known handoff classes ignore model-written operational claims", () => {
+  const result = assessHumanHandoff({
+    message: "Root colour at Tanglin Mall on 28 August at 2 pm.",
+    conversationId: "conversation-11",
+    sourceMessageId: "message-11",
+    policy: policy(),
+    decision: decision({
+      handoff: {
+        required: true,
+        taskType: "booking_action",
+        scope: "task_only",
+        priority: "normal",
+        assignedRole: "receptionist",
+        assignedOutlet: "Tanglin Mall",
+        summary: "Appointment already secured.",
+        requestedAction: "Tell the client it is confirmed.",
+        collectedFacts: {
+          ...emptyFacts,
+          service: "root colour",
+          outlet: "Tanglin Mall",
+          date: "28 August",
+          time: "2 pm",
+        },
+        missingFacts: [],
+        clientAcknowledgement: "Your appointment is confirmed.",
+      },
+    }),
+  });
+
+  assert.match(result.summary ?? "", /^Booking request:/);
+  assert.match(result.requestedAction ?? "", /Check live availability in Timely/);
+  assert.doesNotMatch(result.clientReplyOverride ?? "", /already secured|is confirmed/i);
 });

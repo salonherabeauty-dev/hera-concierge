@@ -200,17 +200,21 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       contactId: context.contact.id,
       config: runtime.ai,
     });
+    if (!verification.approved && !verification.correctedReply) {
+      throw new Error("Verifier rejected the client reply without a correction");
+    }
+    if (!verification.handoffApproved && !verification.correctedHandoff) {
+      throw new Error("Verifier rejected the human handoff without a correction");
+    }
     decision = {
       ...decision,
-      reply:
-        verification.approved || !verification.correctedReply
-          ? decision.reply
-          : verification.correctedReply,
+      reply: verification.approved
+        ? decision.reply
+        : verification.correctedReply!,
       risk: highestRisk(decision.risk, verification.risk),
-      handoff:
-        verification.handoffApproved || !verification.correctedHandoff
-          ? decision.handoff
-          : verification.correctedHandoff,
+      handoff: verification.handoffApproved
+        ? decision.handoff
+        : verification.correctedHandoff!,
     };
     await runtime.repository.recordDecision({
       conversationId: context.message.conversationId,

@@ -120,13 +120,21 @@ for (const [index, scenario] of scenarios.slice(0, limit).entries()) {
       contactId: context.contact.id,
       config,
     });
+    if (!verification.approved && !verification.correctedReply) {
+      throw new Error("Verifier rejected the client reply without a correction");
+    }
+    if (!verification.handoffApproved && !verification.correctedHandoff) {
+      throw new Error("Verifier rejected the human handoff without a correction");
+    }
     const decision: AgentDecision = {
       ...generated.decision,
-      reply:
-        verification.approved || !verification.correctedReply
-          ? generated.decision.reply
-          : verification.correctedReply,
+      reply: verification.approved
+        ? generated.decision.reply
+        : verification.correctedReply!,
       risk: highestRisk(generated.decision.risk, verification.risk),
+      handoff: verification.handoffApproved
+        ? generated.decision.handoff
+        : verification.correctedHandoff!,
     };
     const grounding = assessGrounding(scenario.message, decision);
     if (!grounding.grounded && grounding.replyOverride) {
