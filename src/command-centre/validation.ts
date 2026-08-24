@@ -46,8 +46,8 @@ export const createTaskBodySchema = z.object({
   assignedOutlet: z.string().trim().min(1).max(80).nullish().transform((value) => value ?? null),
   summary: trimmed(1, 1000),
   requestedAction: trimmed(1, 1200),
-  collectedFacts: z.record(z.string(), z.unknown()).default({}),
-  missingFacts: z.array(z.unknown()).default([]),
+  collectedFacts: z.record(z.string(), z.json()).default({}),
+  missingFacts: z.array(z.json()).default([]),
   clientVisibleStatus: z.string().trim().max(500).nullish().transform((value) => value ?? null),
   dueAt: z.string().datetime({ offset: true }).nullish().transform((value) => value ?? null),
   dedupeKey: trimmed(1, 220),
@@ -71,7 +71,7 @@ export const taskActionBodySchema = z.discriminatedUnion("action", [
       "Invalid transition target",
     ),
     note: z.string().trim().max(2000).nullish().transform((value) => value ?? null),
-    resolution: z.record(z.string(), z.unknown()).default({}),
+    resolution: z.record(z.string(), z.json()).default({}),
   }),
 ]);
 
