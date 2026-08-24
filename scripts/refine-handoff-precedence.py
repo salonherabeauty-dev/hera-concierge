@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,45 +21,22 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    if count != 1:
+        raise RuntimeError(f"{label}: expected one regex match, found {count}")
+    return updated
+
+
 path = "src/policy/handoff.ts"
 text = read(path)
-text = replace_once(
+text = regex_once(
     text,
-    'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.0";',
+    r'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-[^"]+";',
     'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.1";',
     "bump policy version",
 )
 
-old_task_type = '''function taskTypeFor(input: {
-  message: string;
-  decision: AgentDecision;
-  policy: PolicyAssessment;
-  proposal: AgentHandoffProposal;
-}): HandoffTaskType | null {
-  if (input.policy.risk === "black") return "medical_safety";
-  if (HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(input.message))) {
-    return "client_requested_human";
-  }
-  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) {
-    return "arrival_issue";
-  }
-  if (input.decision.intent === "medical_safety") return "medical_safety";
-  if (input.decision.intent === "appointment_change") {
-    return "appointment_change";
-  }
-  if (input.decision.intent === "complaint") return "complaint_review";
-  if (input.decision.intent === "refund_compensation") {
-    return "refund_finance";
-  }
-  if (input.decision.intent === "privacy_legal") return "privacy_legal";
-  if (
-    input.decision.intent === "booking" ||
-    input.decision.intent === "availability"
-  ) {
-    return "booking_action";
-  }
-  return input.proposal.required ? input.proposal.taskType ?? "other" : null;
-}'''
 new_task_type = '''function taskTypeFor(input: {
   message: string;
   decision: AgentDecision;
@@ -94,8 +72,15 @@ new_task_type = '''function taskTypeFor(input: {
     return "client_requested_human";
   }
   return input.proposal.required ? input.proposal.taskType ?? "other" : null;
-}'''
-text = replace_once(text, old_task_type, new_task_type, "replace task precedence")
+}
+
+export function assessHumanHandoff'''
+text = regex_once(
+    text,
+    r'function taskTypeFor\(input: \{.*?\n\}\n\nexport function assessHumanHandoff',
+    new_task_type,
+    "replace task precedence",
+)
 
 text = replace_once(
     text,
@@ -111,26 +96,9 @@ text = replace_once(
     "capture explicit human request",
 )
 
-text = replace_once(
+text = regex_once(
     text,
-    '''    if (missingFacts.length > 0) {
-      return {
-        createTask: false,
-        taskType,
-        scope: "task_only",
-        priority: priorityFor(taskType, input.policy, input.message),
-        assignedRole: "receptionist",
-        assignedOutlet: canonicalOutlet(facts.outlet),
-        summary: null,
-        requestedAction: null,
-        collectedFacts: facts,
-        missingFacts,
-        clientReplyOverride: null,
-        clientVisibleStatus: null,
-        dedupeKey: null,
-        reason: `Booking handoff is waiting for: ${missingFacts.join(", ")}.`,
-      };
-    }''',
+    r'    if \(missingFacts\.length > 0\) \{\n      return \{\n        createTask: false,.*?\n      \};\n    \}',
     '''    if (missingFacts.length > 0 && !requestedHuman) {
       return {
         createTask: false,
@@ -152,14 +120,9 @@ text = replace_once(
     "allow explicit-human incomplete booking handoff",
 )
 
-text = replace_once(
+text = regex_once(
     text,
-    '''  const requiredScope =
-    input.policy.risk === "black" ? "emergency" : scopeFor(taskType);
-  const requiredPriority =
-    input.policy.risk === "black"
-      ? "emergency"
-      : priorityFor(taskType, input.policy, input.message);''',
+    r'  const requiredScope =.*?  const assignedRole =.*?;\n',
     '''  const requiredScope =
     input.policy.risk === "black"
       ? "emergency"
@@ -172,41 +135,22 @@ text = replace_once(
       ? "emergency"
       : requestedHuman && basePriority === "normal"
         ? "high"
-        : basePriority;''',
-    "enforce explicit takeover authority",
-)
-
-text = replace_once(
-    text,
-    '''  const managerExplicitlyRequested = MANAGER_REQUEST_PATTERNS.some((pattern) =>
-    pattern.test(input.message),
-  );
-  const assignedRole =
-    taskType === "client_requested_human" && managerExplicitlyRequested
-      ? "salon_manager"
-      : assignedRoleFor(taskType);''',
-    '''  const managerExplicitlyRequested = MANAGER_REQUEST_PATTERNS.some((pattern) =>
+        : basePriority;
+  const managerExplicitlyRequested = MANAGER_REQUEST_PATTERNS.some((pattern) =>
     pattern.test(input.message),
   );
   const baseAssignedRole = assignedRoleFor(taskType);
   const assignedRole =
     managerExplicitlyRequested && baseAssignedRole === "receptionist"
       ? "salon_manager"
-      : baseAssignedRole;''',
-    "preserve specialised authority",
+      : baseAssignedRole;
+''',
+    "enforce explicit takeover authority",
 )
 
-text = replace_once(
+text = regex_once(
     text,
-    '''  const safeAcknowledgement = safeClientAcknowledgement(
-    proposal.clientAcknowledgement,
-  );
-  const acknowledgement =
-    taskType === "medical_safety"
-      ? null
-      : taskType === "other" && safeAcknowledgement
-        ? safeAcknowledgement
-        : defaultAcknowledgement(taskType, facts);''',
+    r'  const safeAcknowledgement = safeClientAcknowledgement\(.*?  const acknowledgement =.*?defaultAcknowledgement\(taskType, facts\);',
     '''  const safeAcknowledgement = safeClientAcknowledgement(
     proposal.clientAcknowledgement,
   );
@@ -224,9 +168,9 @@ write(path, text)
 
 path = "tests/automaticHandoff.test.ts"
 text = read(path)
-text = replace_once(
+text = regex_once(
     text,
-    'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.0");',
+    r'assert\.equal\(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-[^"]+"\);',
     'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.1");',
     "update policy-version test",
 )
