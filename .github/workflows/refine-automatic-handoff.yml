@@ -29,6 +29,20 @@ jobs:
       - name: Apply deterministic hardening refinements
         run: python3 scripts/refine-automatic-handoff.py
 
+      - name: Align the handoff policy-version regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/automaticHandoff.test.ts")
+          source = path.read_text()
+          old = 'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.0.0");'
+          new = 'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.0");'
+          if old not in source:
+              raise SystemExit("handoff policy-version assertion did not match the reviewed source")
+          path.write_text(source.replace(old, new, 1))
+          PY
+
       - name: Install locked dependencies
         run: npm ci
 
