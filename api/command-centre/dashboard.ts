@@ -7,7 +7,7 @@ import {
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
-import { SupabaseCommandCentreRepository } from "../../src/command-centre/repository.js";
+import { createCommandCentreReadRepository } from "../../src/command-centre/readRepository.js";
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   secureCommandCentreHeaders(response);
@@ -17,7 +17,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     if (!hasCapability(session.staff.role, "view_dashboard")) {
       return response.status(403).json({ error: "Forbidden" });
     }
-    const repository = new SupabaseCommandCentreRepository();
+    const repository = createCommandCentreReadRepository();
     const dashboard = await repository.dashboard(getOperationsConfig().sendMode);
     return response.status(200).json({ dashboard });
   } catch (error) {
