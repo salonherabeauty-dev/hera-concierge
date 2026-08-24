@@ -114,6 +114,7 @@ for (const [index, scenario] of scenarios.slice(0, limit).entries()) {
     });
     const verification = await verifyReceptionistDecision({
       originalMessage: scenario.message,
+      history,
       decision: generated.decision,
       evidence: generated.evidence,
       contactId: context.contact.id,

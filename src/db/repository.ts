@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import type {
   AgentDecision,
+  AutomaticHandoffInput,
+  AutomaticHandoffResult,
   BookingSummary,
   ConversationMessage,
   InboundMessage,
@@ -77,6 +79,7 @@ export interface ReceptionistRepository {
   updateConversationRisk(conversationId: string, risk: RiskLevel): Promise<void>;
   recordDecision(input: RecordDecisionInput): Promise<void>;
   openIncident(input: OpenIncidentInput): Promise<void>;
+  upsertAutomaticHandoff(input: AutomaticHandoffInput): Promise<AutomaticHandoffResult>;
   queueOutbound(input: QueueOutboundInput): Promise<void>;
   completeJob(jobId: string): Promise<void>;
   retryJob(job: ReceptionistJob, error: unknown): Promise<"retry" | "dead">;
@@ -425,6 +428,39 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
       { onConflict: "source_message_id,category", ignoreDuplicates: true },
     );
     if (error) throw new Error(`open incident: ${error.message}`);
+  }
+
+
+  async upsertAutomaticHandoff(
+    input: AutomaticHandoffInput,
+  ): Promise<AutomaticHandoffResult> {
+    const { data, error } = await this.database.rpc(
+      "ai_upsert_automatic_handoff",
+      {
+        p_conversation_id: input.conversationId,
+        p_source_message_id: input.sourceMessageId,
+        p_task_type: input.taskType,
+        p_scope: input.scope,
+        p_priority: input.priority,
+        p_assigned_role: input.assignedRole,
+        p_assigned_outlet: input.assignedOutlet,
+        p_summary: input.summary,
+        p_requested_action: input.requestedAction,
+        p_collected_facts: input.collectedFacts,
+        p_missing_facts: input.missingFacts,
+        p_client_visible_status: input.clientVisibleStatus,
+        p_due_at: input.dueAt ?? null,
+        p_dedupe_key: input.dedupeKey,
+      },
+    );
+    const value = row(requireData(data, error, "upsert automatic handoff"));
+    return {
+      inserted: value.inserted === true,
+      updated: value.updated === true,
+      taskId: requiredString(value.taskId, "taskId"),
+      status: requiredString(value.status, "status"),
+      version: Number(value.version),
+    };
   }
 
   async queueOutbound(input: QueueOutboundInput): Promise<void> {

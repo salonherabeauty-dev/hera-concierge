@@ -23,6 +23,10 @@ import {
   type OutboundAuthorizationDisposition,
 } from "./db/coexistence.js";
 import {
+  assessHumanHandoff,
+  HUMAN_HANDOFF_POLICY_VERSION,
+} from "./policy/handoff.js";
+import {
   assessPolicy,
   classifyDeterministicRisk,
   highestRisk,
@@ -88,8 +92,39 @@ function staticUrgentDecision(input: string): AgentDecision {
     language: "same as client where reliable",
     sources: [],
     factualBasis: ["safety_policy"],
-    proposedActions: ["urgent_safety_guidance", "open_incident", "notify_management"],
+    proposedActions: [
+      "urgent_safety_guidance",
+      "create_handoff_task",
+      "open_incident",
+      "notify_management",
+    ],
     requiresManagementNotification: true,
+    handoff: {
+      required: true,
+      taskType: "medical_safety",
+      scope: "emergency",
+      priority: "emergency",
+      assignedRole: "technical_lead",
+      assignedOutlet: null,
+      summary: "Urgent client safety concern requires immediate human attention.",
+      requestedAction:
+        "Review immediately, ensure emergency guidance has been given, and contact the client only when it is safe and appropriate.",
+      collectedFacts: {
+        service: null,
+        stylist: null,
+        outlet: null,
+        date: null,
+        time: null,
+        flexibility: null,
+        appointmentReference: null,
+        desiredOutcome: null,
+        symptoms: input.slice(0, 600),
+        photos: null,
+        other: null,
+      },
+      missingFacts: [],
+      clientAcknowledgement: null,
+    },
     rationale: "Deterministic urgent-safety policy matched the client message.",
   };
 }
@@ -159,6 +194,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
 
     const verification = await verifyReceptionistDecision({
       originalMessage: interpreted.text,
+      history,
       decision,
       evidence: generated.evidence,
       contactId: context.contact.id,
@@ -171,6 +207,10 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
           ? decision.reply
           : verification.correctedReply,
       risk: highestRisk(decision.risk, verification.risk),
+      handoff:
+        verification.handoffApproved || !verification.correctedHandoff
+          ? decision.handoff
+          : verification.correctedHandoff,
     };
     await runtime.repository.recordDecision({
       conversationId: context.message.conversationId,
@@ -233,7 +273,16 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     decision,
     context.conversationRisk,
   );
-  const finalReply = cleanReply(policy.replyOverride ?? decision.reply);
+  const handoff = assessHumanHandoff({
+    message: interpreted.text,
+    decision,
+    policy,
+    conversationId: context.message.conversationId,
+    sourceMessageId: context.message.id,
+  });
+  const finalReply = cleanReply(
+    handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
+  );
   await runtime.repository.recordDecision({
     conversationId: context.message.conversationId,
     sourceMessageId: context.message.id,
@@ -243,7 +292,12 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     policyVersion: POLICY_VERSION,
     risk: policy.risk,
     confidence: decision.confidence,
-    output: asJson({ policy, finalReply }),
+    output: asJson({
+      policy,
+      handoffPolicyVersion: HUMAN_HANDOFF_POLICY_VERSION,
+      handoff,
+      finalReply,
+    }),
   });
   await runtime.repository.updateConversationRisk(context.message.conversationId, policy.risk);
 
@@ -263,7 +317,56 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     });
   }
 
-  if (policy.canAutoSend) {
+
+  if (handoff.createTask) {
+    if (
+      !handoff.taskType ||
+      !handoff.scope ||
+      !handoff.priority ||
+      !handoff.summary ||
+      !handoff.requestedAction ||
+      !handoff.dedupeKey
+    ) {
+      throw new Error("Human handoff assessment was incomplete");
+    }
+
+    const task = await runtime.repository.upsertAutomaticHandoff({
+      conversationId: context.message.conversationId,
+      sourceMessageId: context.message.id,
+      taskType: handoff.taskType,
+      scope: handoff.scope,
+      priority: handoff.priority,
+      assignedRole: handoff.assignedRole,
+      assignedOutlet: handoff.assignedOutlet,
+      summary: handoff.summary,
+      requestedAction: handoff.requestedAction,
+      collectedFacts: handoff.collectedFacts,
+      missingFacts: handoff.missingFacts,
+      clientVisibleStatus: handoff.clientVisibleStatus,
+      dedupeKey: handoff.dedupeKey,
+    });
+
+    await runtime.repository.audit(
+      task.inserted
+        ? "automatic_handoff_created"
+        : "automatic_handoff_refreshed",
+      "handoff_task",
+      task.taskId,
+      asJson({
+        sourceMessageId: context.message.id,
+        conversationId: context.message.conversationId,
+        taskType: handoff.taskType,
+        scope: handoff.scope,
+        priority: handoff.priority,
+        assignedRole: handoff.assignedRole,
+        assignedOutlet: handoff.assignedOutlet,
+        status: task.status,
+        version: task.version,
+      }),
+    );
+  }
+
+  if (policy.canAutoSend || handoff.createTask) {
     await runtime.repository.queueOutbound({
       conversationId: context.message.conversationId,
       sourceMessageId: context.message.id,
