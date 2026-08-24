@@ -56,8 +56,8 @@ new_task_type = '''function taskTypeFor(input: {
   policy: PolicyAssessment;
   proposal: AgentHandoffProposal;
 }): HandoffTaskType | null {
-  // Highest consequence wins. Arrival wording or a request for a person must
-  // never downgrade a safety, privacy, refund or complaint case.
+  // Highest consequence wins. A request for a person changes ownership and
+  // scope, but it must not erase the underlying booking, safety or complaint action.
   if (
     input.policy.risk === "black" ||
     input.decision.intent === "medical_safety"
@@ -67,15 +67,15 @@ new_task_type = '''function taskTypeFor(input: {
   if (input.decision.intent === "privacy_legal") return "privacy_legal";
   if (input.decision.intent === "refund_compensation") return "refund_finance";
   if (input.decision.intent === "complaint") return "complaint_review";
-  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) {
-    return "arrival_issue";
-  }
   if (input.decision.intent === "appointment_change") return "appointment_change";
   if (input.decision.intent === "booking" || input.decision.intent === "availability") {
     return "booking_action";
   }
   if (HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(input.message))) {
     return "client_requested_human";
+  }
+  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) {
+    return "arrival_issue";
   }
   return input.proposal.required ? input.proposal.taskType ?? "other" : null;
 }'''
