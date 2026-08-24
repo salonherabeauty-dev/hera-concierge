@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,30 +20,44 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
-    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
-    if count != 1:
-        raise RuntimeError(f"{label}: expected one regex match, found {count}")
-    return updated
-
-
 path = "src/policy/handoff.ts"
 text = read(path)
-text = regex_once(
+text = replace_once(
     text,
-    r'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-[^"]+";',
+    'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.0";',
     'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.1";',
     "bump policy version",
 )
 
+old_task_type = '''function taskTypeFor(input: {
+  message: string;
+  decision: AgentDecision;
+  policy: PolicyAssessment;
+  proposal: AgentHandoffProposal;
+}): HandoffTaskType | null {
+  if (input.policy.risk === "black") return "medical_safety";
+  if (HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(input.message))) {
+    return "client_requested_human";
+  }
+  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) return "arrival_issue";
+  if (input.decision.intent === "medical_safety") return "medical_safety";
+  if (input.decision.intent === "appointment_change") return "appointment_change";
+  if (input.decision.intent === "complaint") return "complaint_review";
+  if (input.decision.intent === "refund_compensation") return "refund_finance";
+  if (input.decision.intent === "privacy_legal") return "privacy_legal";
+  if (input.decision.intent === "booking" || input.decision.intent === "availability") {
+    return "booking_action";
+  }
+  return input.proposal.required ? input.proposal.taskType ?? "other" : null;
+}'''
 new_task_type = '''function taskTypeFor(input: {
   message: string;
   decision: AgentDecision;
   policy: PolicyAssessment;
   proposal: AgentHandoffProposal;
 }): HandoffTaskType | null {
-  // The highest-consequence intent governs. Arrival wording or a request for a
-  // person must never downgrade a safety, privacy, refund or complaint case.
+  // Highest consequence wins. Arrival wording or a request for a person must
+  // never downgrade a safety, privacy, refund or complaint case.
   if (
     input.policy.risk === "black" ||
     input.decision.intent === "medical_safety"
@@ -52,35 +65,21 @@ new_task_type = '''function taskTypeFor(input: {
     return "medical_safety";
   }
   if (input.decision.intent === "privacy_legal") return "privacy_legal";
-  if (input.decision.intent === "refund_compensation") {
-    return "refund_finance";
-  }
+  if (input.decision.intent === "refund_compensation") return "refund_finance";
   if (input.decision.intent === "complaint") return "complaint_review";
   if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) {
     return "arrival_issue";
   }
-  if (input.decision.intent === "appointment_change") {
-    return "appointment_change";
-  }
-  if (
-    input.decision.intent === "booking" ||
-    input.decision.intent === "availability"
-  ) {
+  if (input.decision.intent === "appointment_change") return "appointment_change";
+  if (input.decision.intent === "booking" || input.decision.intent === "availability") {
     return "booking_action";
   }
   if (HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(input.message))) {
     return "client_requested_human";
   }
   return input.proposal.required ? input.proposal.taskType ?? "other" : null;
-}
-
-export function assessHumanHandoff'''
-text = regex_once(
-    text,
-    r'function taskTypeFor\(input: \{.*?\n\}\n\nexport function assessHumanHandoff',
-    new_task_type,
-    "replace task precedence",
-)
+}'''
+text = replace_once(text, old_task_type, new_task_type, "replace task precedence")
 
 text = replace_once(
     text,
@@ -96,17 +95,14 @@ text = replace_once(
     "capture explicit human request",
 )
 
-text = regex_once(
-    text,
-    r'    if \(missingFacts\.length > 0\) \{\n      return \{\n        createTask: false,.*?\n      \};\n    \}',
-    '''    if (missingFacts.length > 0 && !requestedHuman) {
+old_missing = '''    if (missingFacts.length > 0) {
       return {
         createTask: false,
         taskType,
         scope: "task_only",
         priority: priorityFor(taskType, input.policy, input.message),
         assignedRole: "receptionist",
-        assignedOutlet: canonicalOutlet(facts.outlet),
+        assignedOutlet: facts.outlet,
         summary: null,
         requestedAction: null,
         collectedFacts: facts,
@@ -116,19 +112,51 @@ text = regex_once(
         dedupeKey: null,
         reason: `Booking handoff is waiting for: ${missingFacts.join(", ")}.`,
       };
-    }''',
-    "allow explicit-human incomplete booking handoff",
-)
+    }'''
+new_missing = '''    if (missingFacts.length > 0 && !requestedHuman) {
+      return {
+        createTask: false,
+        taskType,
+        scope: "task_only",
+        priority: priorityFor(taskType, input.policy, input.message),
+        assignedRole: "receptionist",
+        assignedOutlet: facts.outlet,
+        summary: null,
+        requestedAction: null,
+        collectedFacts: facts,
+        missingFacts,
+        clientReplyOverride: null,
+        clientVisibleStatus: null,
+        dedupeKey: null,
+        reason: `Booking handoff is waiting for: ${missingFacts.join(", ")}.`,
+      };
+    }'''
+text = replace_once(text, old_missing, new_missing, "allow explicit-human incomplete booking handoff")
 
-text = regex_once(
-    text,
-    r'  const requiredScope =.*?  const assignedRole =.*?;\n',
-    '''  const requiredScope =
+old_authority = '''  const requiredScope =
+    input.policy.risk === "black" ? "emergency" : scopeFor(taskType);
+  const scope = strongestScope(proposal.scope, requiredScope);
+  const requiredPriority =
+    input.policy.risk === "black"
+      ? "emergency"
+      : priorityFor(taskType, input.policy, input.message);
+  const priority = strongestPriority(proposal.priority, requiredPriority);
+  const managerExplicitlyRequested = MANAGER_REQUEST_PATTERNS.some((pattern) =>
+    pattern.test(input.message),
+  );
+  const assignedRole =
+    taskType === "client_requested_human" && managerExplicitlyRequested
+      ? "salon_manager"
+      : taskType === "other" && proposal.assignedRole
+        ? proposal.assignedRole
+        : assignedRoleFor(taskType);'''
+new_authority = '''  const requiredScope =
     input.policy.risk === "black"
       ? "emergency"
       : requestedHuman
         ? "full_takeover"
         : scopeFor(taskType);
+  const scope = strongestScope(proposal.scope, requiredScope);
   const basePriority = priorityFor(taskType, input.policy, input.message);
   const requiredPriority =
     input.policy.risk === "black"
@@ -136,46 +164,50 @@ text = regex_once(
       : requestedHuman && basePriority === "normal"
         ? "high"
         : basePriority;
+  const priority = strongestPriority(proposal.priority, requiredPriority);
   const managerExplicitlyRequested = MANAGER_REQUEST_PATTERNS.some((pattern) =>
     pattern.test(input.message),
   );
-  const baseAssignedRole = assignedRoleFor(taskType);
+  const baseAssignedRole =
+    taskType === "other" && proposal.assignedRole
+      ? proposal.assignedRole
+      : assignedRoleFor(taskType);
   const assignedRole =
     managerExplicitlyRequested && baseAssignedRole === "receptionist"
       ? "salon_manager"
-      : baseAssignedRole;
-''',
-    "enforce explicit takeover authority",
-)
+      : baseAssignedRole;'''
+text = replace_once(text, old_authority, new_authority, "enforce explicit takeover authority")
 
-text = regex_once(
-    text,
-    r'  const safeAcknowledgement = safeClientAcknowledgement\(.*?  const acknowledgement =.*?defaultAcknowledgement\(taskType, facts\);',
-    '''  const safeAcknowledgement = safeClientAcknowledgement(
-    proposal.clientAcknowledgement,
-  );
-  const acknowledgement =
+old_ack = '''  const acknowledgement =
+    taskType === "medical_safety"
+      ? null
+      : taskType === "other"
+        ? safeAcknowledgement(proposal.clientAcknowledgement) ??
+          defaultAcknowledgement(taskType, facts)
+        : defaultAcknowledgement(taskType, facts);'''
+new_ack = '''  const acknowledgement =
     taskType === "medical_safety"
       ? null
       : requestedHuman
         ? defaultAcknowledgement("client_requested_human", facts)
-        : taskType === "other" && safeAcknowledgement
-          ? safeAcknowledgement
-          : defaultAcknowledgement(taskType, facts);''',
-    "acknowledge explicit human request",
-)
+        : taskType === "other"
+          ? safeAcknowledgement(proposal.clientAcknowledgement) ??
+            defaultAcknowledgement(taskType, facts)
+          : defaultAcknowledgement(taskType, facts);'''
+text = replace_once(text, old_ack, new_ack, "acknowledge explicit human request")
 write(path, text)
 
 path = "tests/automaticHandoff.test.ts"
 text = read(path)
-text = regex_once(
+text = replace_once(
     text,
-    r'assert\.equal\(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-[^"]+"\);',
+    'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.0");',
     'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.1");',
-    "update policy-version test",
+    "update policy version test",
 )
+
 insert_before = '''test("black-risk safety cases create an emergency handoff without replacing safety guidance", () => {'''
-new_tests = '''test("medical safety outranks an arrival phrase and a manager request", () => {
+new_tests = '''test("medical safety outranks arrival wording and a manager request", () => {
   const result = assessHumanHandoff({
     message: "I am at the salon and my scalp is burning badly. Please get a manager.",
     conversationId: "conversation-medical-arrival",
@@ -191,7 +223,7 @@ new_tests = '''test("medical safety outranks an arrival phrase and a manager req
         priority: "urgent",
         assignedRole: "technical_lead",
         assignedOutlet: "Tanglin Mall",
-        summary: "Scalp burning at the salon.",
+        summary: null,
         requestedAction: null,
         collectedFacts: {
           ...emptyFacts,
@@ -225,7 +257,7 @@ test("a manager request preserves the underlying complaint task", () => {
         priority: "high",
         assignedRole: "salon_manager",
         assignedOutlet: null,
-        summary: "Client complaint and manager request.",
+        summary: null,
         requestedAction: null,
         collectedFacts: { ...emptyFacts },
         missingFacts: [],
@@ -255,7 +287,7 @@ test("a manager request on a complete booking keeps the booking task and pauses 
         priority: "normal",
         assignedRole: "receptionist",
         assignedOutlet: "Tanglin Mall",
-        summary: "Complete booking request.",
+        summary: null,
         requestedAction: null,
         collectedFacts: {
           ...emptyFacts,
@@ -275,7 +307,7 @@ test("a manager request on a complete booking keeps the booking task and pauses 
   assert.equal(result.scope, "full_takeover");
   assert.equal(result.priority, "high");
   assert.equal(result.assignedRole, "salon_manager");
-  assert.match(result.clientReplyOverride ?? "", /team member/i);
+  assert.match(result.clientReplyOverride ?? "", /direct assistance|staff member/i);
 });
 
 test("an explicit human request creates a booking task even while details are missing", () => {
@@ -351,5 +383,6 @@ jobs:
 '''
 write(".github/workflows/ci.yml", original_ci)
 
+(ROOT / "scripts/.automatic-handoff-final-trigger").unlink(missing_ok=True)
 (ROOT / "scripts/refine-handoff-precedence.py").unlink(missing_ok=True)
 (ROOT / ".github/workflows/refine-handoff-precedence.yml").unlink(missing_ok=True)
