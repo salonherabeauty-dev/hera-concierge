@@ -1,5 +1,7 @@
 name: Apply automatic human handoff engine
 
+# This touch intentionally triggers the one-shot verified implementation workflow
+# after the workflow file already exists on the isolated feature branch.
 on:
   push:
     branches:
