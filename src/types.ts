@@ -161,6 +161,7 @@ export const AGENT_ACTIONS = [
   "share_booking_link",
   "request_photos",
   "request_appointment_details",
+  "create_handoff_task",
   "open_incident",
   "notify_management",
   "urgent_safety_guidance",
@@ -178,6 +179,112 @@ export const AGENT_FACTUAL_BASES = [
 ] as const;
 export type AgentFactualBasis = (typeof AGENT_FACTUAL_BASES)[number];
 
+
+export const HANDOFF_TASK_TYPES = [
+  "booking_action",
+  "appointment_change",
+  "arrival_issue",
+  "group_booking",
+  "complaint_review",
+  "refund_finance",
+  "medical_safety",
+  "technical_review",
+  "privacy_legal",
+  "accessibility_arrangement",
+  "consent_media",
+  "lost_property",
+  "client_requested_human",
+  "security_review",
+  "system_failure",
+  "other",
+] as const;
+export type HandoffTaskType = (typeof HANDOFF_TASK_TYPES)[number];
+
+export const HANDOFF_SCOPES = ["task_only", "full_takeover", "emergency"] as const;
+export type HandoffScope = (typeof HANDOFF_SCOPES)[number];
+
+export const HANDOFF_PRIORITIES = ["normal", "high", "urgent", "emergency"] as const;
+export type HandoffPriority = (typeof HANDOFF_PRIORITIES)[number];
+
+export const HANDOFF_ASSIGNED_ROLES = [
+  "owner",
+  "managing_director",
+  "salon_manager",
+  "receptionist",
+  "technical_lead",
+  "finance_admin",
+  "privacy_officer",
+] as const;
+export type HandoffAssignedRole = (typeof HANDOFF_ASSIGNED_ROLES)[number];
+
+export const HANDOFF_FACT_KEYS = [
+  "service",
+  "stylist",
+  "outlet",
+  "date",
+  "time",
+  "flexibility",
+  "appointmentReference",
+  "desiredOutcome",
+  "symptoms",
+  "photos",
+  "other",
+] as const;
+export type HandoffFactKey = (typeof HANDOFF_FACT_KEYS)[number];
+
+export interface AgentHandoffFacts {
+  service: string | null;
+  stylist: string | null;
+  outlet: string | null;
+  date: string | null;
+  time: string | null;
+  flexibility: string | null;
+  appointmentReference: string | null;
+  desiredOutcome: string | null;
+  symptoms: string | null;
+  photos: string | null;
+  other: string | null;
+}
+
+export interface AgentHandoffProposal {
+  required: boolean;
+  taskType: HandoffTaskType | null;
+  scope: HandoffScope | null;
+  priority: HandoffPriority | null;
+  assignedRole: HandoffAssignedRole | null;
+  assignedOutlet: string | null;
+  summary: string | null;
+  requestedAction: string | null;
+  collectedFacts: AgentHandoffFacts;
+  missingFacts: HandoffFactKey[];
+  clientAcknowledgement: string | null;
+}
+
+export interface AutomaticHandoffInput {
+  conversationId: string;
+  sourceMessageId: string;
+  taskType: HandoffTaskType;
+  scope: HandoffScope;
+  priority: HandoffPriority;
+  assignedRole: HandoffAssignedRole | null;
+  assignedOutlet: string | null;
+  summary: string;
+  requestedAction: string;
+  collectedFacts: AgentHandoffFacts;
+  missingFacts: HandoffFactKey[];
+  clientVisibleStatus: string | null;
+  dueAt?: string | null;
+  dedupeKey: string;
+}
+
+export interface AutomaticHandoffResult {
+  inserted: boolean;
+  updated: boolean;
+  taskId: string;
+  status: string;
+  version: number;
+}
+
 export interface SourceReference {
   id: string;
   title: string;
@@ -193,6 +300,7 @@ export interface AgentDecision {
   factualBasis: AgentFactualBasis[];
   proposedActions: AgentAction[];
   requiresManagementNotification: boolean;
+  handoff?: AgentHandoffProposal;
   rationale: string;
 }
 
