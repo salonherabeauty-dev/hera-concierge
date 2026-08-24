@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   authenticateCommandCentre,
+  isCommandCentrePasswordlessPreview,
   requireCommandCentreCsrf,
 } from "../../src/command-centre/auth.js";
 import {
@@ -11,6 +12,7 @@ import {
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
+import { createCommandCentreReadRepository } from "../../src/command-centre/readRepository.js";
 import { SupabaseCommandCentreRepository } from "../../src/command-centre/repository.js";
 import {
   conversationActionBodySchema,
@@ -31,19 +33,27 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
   try {
     const session = await authenticateCommandCentre(request, response);
-    const repository = new SupabaseCommandCentreRepository();
     if (request.method === "GET") {
       if (!hasCapability(session.staff.role, "view_conversations")) {
         return response.status(403).json({ error: "Forbidden" });
       }
       const id = queryId(request);
       if (!id) return response.status(400).json({ error: "Conversation id is required." });
+      const repository = createCommandCentreReadRepository();
       return response.status(200).json({ detail: await repository.getConversation(id) });
     }
 
     requireSameOrigin(request);
     requireCommandCentreCsrf(request);
+    if (isCommandCentrePasswordlessPreview()) {
+      return response.status(403).json({
+        error: "This protected Preview is currently read-only. No conversation state was changed.",
+        code: "preview_read_only",
+      });
+    }
+
     const body = parseSchema(conversationActionBodySchema, parseJsonBody<unknown>(request));
+    const repository = new SupabaseCommandCentreRepository();
 
     if (body.action === "add_note") {
       if (!hasCapability(session.staff.role, "add_note")) {
