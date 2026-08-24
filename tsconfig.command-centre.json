@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "rootDir": "command-centre/src",
+    "outDir": "public/command-centre/assets",
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "removeComments": true
+  },
+  "include": ["command-centre/src/**/*.ts"],
+  "exclude": []
+}
