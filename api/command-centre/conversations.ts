@@ -6,7 +6,7 @@ import {
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
-import { SupabaseCommandCentreRepository } from "../../src/command-centre/repository.js";
+import { createCommandCentreReadRepository } from "../../src/command-centre/readRepository.js";
 import type { RiskLevel } from "../../src/types.js";
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
@@ -20,7 +20,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     const modeValue = Array.isArray(request.query.mode) ? request.query.mode[0] : request.query.mode;
     const riskValue = Array.isArray(request.query.risk) ? request.query.risk[0] : request.query.risk;
     const searchValue = Array.isArray(request.query.search) ? request.query.search[0] : request.query.search;
-    const repository = new SupabaseCommandCentreRepository();
+    const repository = createCommandCentreReadRepository();
     const conversations = await repository.listConversations({
       mode: modeValue === "management" ? "management" : modeValue === "ai" ? "ai" : null,
       risk:
