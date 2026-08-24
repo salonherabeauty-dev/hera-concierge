@@ -60,10 +60,10 @@ test("automatic handoff retries preserve human ownership and terminal state", as
   );
   assert.match(
     sql,
-    /status = case[\s\S]*when existing\.status = 'waiting_client'[\s\S]*else existing\.status[\s\S]*end/,
+    /status = case[\s\S]*when status = 'waiting_client'[\s\S]*else status[\s\S]*end/,
   );
   assert.doesNotMatch(sql, /owner_user_id\s*=\s*null/);
-  assert.match(sql, /where task\.dedupe_key = p_dedupe_key/);
+  assert.match(sql, /where task\.dedupe_key = trim\(p_dedupe_key\)/);
 });
 
 test("takeover activation is idempotent for the same task", async () => {
