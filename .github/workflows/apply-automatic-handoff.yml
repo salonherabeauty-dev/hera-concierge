@@ -35,6 +35,27 @@ jobs:
       - name: Apply reviewed source transformation
         run: python3 scripts/apply-automatic-handoff.py
 
+      - name: Keep model evaluation verifier context complete
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/run-model-evals.ts")
+          source = path.read_text()
+          old = """    const verification = await verifyReceptionistDecision({
+                originalMessage: scenario.message,
+                decision: generated.decision,
+          """
+          new = """    const verification = await verifyReceptionistDecision({
+                originalMessage: scenario.message,
+                history,
+                decision: generated.decision,
+          """
+          if old not in source:
+              raise SystemExit("model evaluation verifier call did not match the reviewed source")
+          path.write_text(source.replace(old, new, 1))
+          PY
+
       - name: Install locked dependencies
         run: npm ci
 
