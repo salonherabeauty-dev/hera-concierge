@@ -12,16 +12,16 @@ is not the source of truth.
 
 - Production branch: `main`
 - Last approved Production foundation commit: `20484d73f92b46732a0d7a8469bc9537b2ec584d`
-- The 360dialog Coexistence, chronology and shadow-quality work has **not** been merged
-  into `main`.
+- The 360dialog Coexistence, chronology, historical-backfill and shadow-quality work has
+  **not** been merged into `main`.
 - Production environment variables, Virtual Stylist and pre-consultation systems remain
   untouched by this phase.
 
 ## Authoritative development line
 
 - Branch: `feat/hera-ai-receptionist-foundation`
-- Gate 4 quality merge immediately before this checkpoint:
-  `c40329cd4a6a0e38375c3ccaa7be936f3c9d57a7`
+- Historical-backfill safety merge immediately before this checkpoint:
+  `e32697904a44366b8d13fe56002594065facf2ba`
 - Current stable Preview alias:
   `hera-concierge-git-feat-hera-ai-rece-3023b8-hera-concierge-team.vercel.app`
 
@@ -42,7 +42,7 @@ is not the source of truth.
 - Dedicated authenticated `/api/whatsapp/360dialog` webhook
 - Vercel automation bypass plus independent Basic Authorization
 - 360dialog Direct API text and media transport
-- Coexistence history and app-state events excluded from client-message processing
+- Coexistence history and app-state events excluded from the ordinary client parser
 - WhatsApp Business App staff echoes recorded as human outbound messages
 - Two-hour human takeover, client-message suppression during takeover and automatic
   handback to AI
@@ -59,6 +59,18 @@ is not the source of truth.
 - The live delayed `2 mins` case is classified as superseded; the later
   `Coming up in the lift.` message is not superseded
 
+### Historical Coexistence backfill
+
+- Messages arriving more than 60 minutes after their provider timestamps are preserved
+  as operational evidence but are not treated as live enquiries
+- Backfill jobs are suppressed at insert and recovery/claim time
+- A final backfill check runs immediately before any future provider send
+- The one-hour rule uses recorded arrival delay rather than current message age, so a
+  genuinely live message does not become historical merely because processing takes time
+- Previously generated backfill candidates and automated reviews remain preserved and
+  are classified as operational, outside launch metrics
+- Three pre-existing active backfill jobs were safely completed as suppressed
+
 ### Shadow quality evidence
 
 - Forced-RLS `ai_shadow_reviews` table
@@ -68,20 +80,19 @@ is not the source of truth.
   evidence only
 - Real, synthetic, operational and historical case classes
 - Synthetic/operational and automated reviews cannot inflate human launch metrics
-- Six initial automated forensic reviews recorded outside launch metrics
+- Initial automated forensic reviews remain recorded outside launch metrics
 
 ## Latest verified engineering gates
 
 - Strict TypeScript checking: pass
-- Complete automated suite: 92/92 pass
-- Credential scan: pass across 82 tracked files
+- Complete automated suite: 97/97 pass
+- Credential scan: pass across 85 tracked files
 - Production dependency audit: 0 vulnerabilities
-- Combined Vercel Preview: READY
+- Authoritative Vercel Preview: READY
 - Staging migrations: applied and validated
+- Recent-versus-backfill validation: passed in a rolled-back transaction
 - Active staging jobs: 0
 - Active staging outbox: 0
-- Dead staging jobs/outbox: 0
-- Open staging incidents: 0
 - Provider send records: 0
 
 ## Non-negotiable safety state
@@ -94,25 +105,25 @@ is not the source of truth.
 
 ## Gate 4 evidence position
 
-Current aggregate evidence has six eligible shadow candidates and six automated baseline
-reviews. There are zero named human reviews and therefore zero launch-metric cases. This
-is intentional: model review is not misrepresented as human approval.
+The authenticated private quality endpoint passed with HTTP 200, `mode=shadow`,
+`rubricVersion=hera-shadow-quality-v1`, zero provider sends and zero duplicate candidates.
+The evidence set subsequently reached 18 preserved candidates:
 
-The initial baseline exposed and preserved:
+- 15 operational Coexistence backfill candidates;
+- 2 synthetic test candidates;
+- 1 genuinely real-time real-client candidate.
 
-- one context-appropriate real pass candidate;
-- one standalone-sticker case requiring operational review;
-- one critical delayed-message context failure, now fixed by the chronology safeguards;
-- synthetic and operational cases excluded from launch metrics.
+There are still zero named human reviews and therefore zero launch-metric cases. This is
+intentional: automated assessment is not misrepresented as human approval.
 
 ## Required next actions
 
-1. Run an authenticated runtime smoke test of `/api/internal/shadow-quality` using the
-   branch Preview's Vercel automation-bypass secret and `CRON_SECRET`.
-2. Begin named human review of anonymised real candidates; only explicit human reviews
-   may enter launch metrics.
-3. Decide and regression-test the standalone-sticker policy (silent handling versus a
-   context-sensitive reply).
+1. Begin named human review with the one genuinely real-time candidate; only an explicit
+   Hera human decision may enter launch metrics.
+2. Continue collecting new real-time shadow candidates while the backfill guard remains
+   active.
+3. Decide and regression-test the standalone-sticker policy, using the preserved sticker
+   case as operational evidence rather than a real-client launch case.
 4. Build the representative Gate 4 corpus: 200 historical, 500 adversarial/edge,
    100 high-risk, 50 multilingual/voice and a 24-hour retry/concurrency soak.
 5. Resolve every source-of-truth conflict and obtain a clean launch report before any
@@ -126,5 +137,5 @@ The initial baseline exposed and preserved:
 - Do not create `WHATSAPP_LIVE_CONFIRMATION`.
 - Do not merge the feature line into `main`.
 - Do not regenerate the 360dialog Number API Key.
-- Do not remove failed or superseded quality evidence.
+- Do not remove failed, backfilled or superseded quality evidence.
 - Do not expose review-queue client content through a public endpoint.
