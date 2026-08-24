@@ -12,16 +12,16 @@ is not the source of truth.
 
 - Production branch: `main`
 - Last approved Production foundation commit: `20484d73f92b46732a0d7a8469bc9537b2ec584d`
-- The 360dialog Coexistence, chronology, historical-backfill and shadow-quality work has
-  **not** been merged into `main`.
+- The 360dialog Coexistence, chronology, historical-backfill, incident-persistence and
+  shadow-quality work has **not** been merged into `main`.
 - Production environment variables, Virtual Stylist and pre-consultation systems remain
   untouched by this phase.
 
 ## Authoritative development line
 
 - Branch: `feat/hera-ai-receptionist-foundation`
-- Historical-backfill safety merge immediately before this checkpoint:
-  `e32697904a44366b8d13fe56002594065facf2ba`
+- Incident-persistence and backfill-reconciliation merge immediately before this
+  checkpoint: `2e9eb03c8018d1e29825fd07fe0efb55f6a49039`
 - Current stable Preview alias:
   `hera-concierge-git-feat-hera-ai-rece-3023b8-hera-concierge-team.vercel.app`
 
@@ -69,7 +69,19 @@ is not the source of truth.
   genuinely live message does not become historical merely because processing takes time
 - Previously generated backfill candidates and automated reviews remain preserved and
   are classified as operational, outside launch metrics
-- Three pre-existing active backfill jobs were safely completed as suppressed
+- Pre-guard active and dead backfill jobs were safely reconciled to completed suppression
+
+### Incident persistence and risk reconciliation
+
+- Incident idempotency now uses an inferable database UNIQUE constraint matching
+  `(source_message_id, category)`
+- Duplicate incident upserts were validated to produce one durable incident record
+- The original partial-index failure and dead job remain preserved in audit evidence
+- Backfill-only incidents can close with an explicit reconciliation resolution
+- Backfill-only elevated conversation risk is recalculated without weakening genuine
+  non-backfill policy or incident risk
+- The one historical dead job was reconciled and two backfill-only amber conversations
+  returned to green
 
 ### Shadow quality evidence
 
@@ -85,14 +97,19 @@ is not the source of truth.
 ## Latest verified engineering gates
 
 - Strict TypeScript checking: pass
-- Complete automated suite: 97/97 pass
-- Credential scan: pass across 85 tracked files
+- Complete automated suite: 102/102 pass
+- Credential scan: pass across 87 tracked files
 - Production dependency audit: 0 vulnerabilities
 - Authoritative Vercel Preview: READY
 - Staging migrations: applied and validated
-- Recent-versus-backfill validation: passed in a rolled-back transaction
+- Recent-versus-backfill validation: pass
+- Incident idempotency validation: pass before and after migration
 - Active staging jobs: 0
+- Dead staging jobs: 0
 - Active staging outbox: 0
+- Dead staging outbox: 0
+- Open staging incidents: 0
+- Elevated staging conversations: 0
 - Provider send records: 0
 
 ## Non-negotiable safety state
@@ -107,7 +124,7 @@ is not the source of truth.
 
 The authenticated private quality endpoint passed with HTTP 200, `mode=shadow`,
 `rubricVersion=hera-shadow-quality-v1`, zero provider sends and zero duplicate candidates.
-The evidence set subsequently reached 18 preserved candidates:
+The preserved candidate set was then forensically separated into:
 
 - 15 operational Coexistence backfill candidates;
 - 2 synthetic test candidates;
@@ -118,8 +135,8 @@ intentional: automated assessment is not misrepresented as human approval.
 
 ## Required next actions
 
-1. Begin named human review with the one genuinely real-time candidate; only an explicit
-   Hera human decision may enter launch metrics.
+1. Begin named human review with the genuinely real-time candidate; only an explicit Hera
+   human decision may enter launch metrics.
 2. Continue collecting new real-time shadow candidates while the backfill guard remains
    active.
 3. Decide and regression-test the standalone-sticker policy, using the preserved sticker
