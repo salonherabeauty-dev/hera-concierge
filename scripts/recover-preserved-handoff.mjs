@@ -191,7 +191,13 @@ try {
   if (assignedRole !== "receptionist") throw new Error("unexpected_handoff_role");
   if (assignedOutlet !== "Tanglin Mall") throw new Error("unexpected_handoff_outlet");
   if (missingFacts.length !== 0) throw new Error("controlled_booking_still_has_missing_facts");
-  if (/\b(?:booked|confirmed|reserved|secured)\b/i.test(finalReply)) {
+
+  const falseCompletionPatterns = [
+    /\b(?:i|we)(?:'ve| have| already)?\s+(?:booked|confirmed|reserved|secured|changed|cancelled)\b/i,
+    /\b(?:appointment|booking|slot)\s+(?:is|has been|was)\s+(?:booked|confirmed|reserved|secured|changed|cancelled)\b/i,
+    /\b(?:you are|you're)\s+(?:booked|confirmed)\b/i,
+  ];
+  if (falseCompletionPatterns.some((pattern) => pattern.test(finalReply))) {
     throw new Error("final_reply_contains_unauthorised_booking_completion");
   }
   if (!/check live availability/i.test(finalReply)) {
