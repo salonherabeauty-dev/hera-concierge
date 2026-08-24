@@ -1,6 +1,6 @@
 # Hera AI Receptionist — Authoritative Build Checkpoint
 
-**Checkpoint date:** 24 August 2026, Singapore  
+**Checkpoint date:** 25 August 2026, Singapore  
 **Environment:** isolated Vercel Preview + isolated Singapore Supabase staging  
 **Customer delivery mode:** shadow only
 
@@ -12,16 +12,18 @@ is not the source of truth.
 
 - Production branch: `main`
 - Last approved Production foundation commit: `20484d73f92b46732a0d7a8469bc9537b2ec584d`
-- The 360dialog Coexistence, chronology, historical-backfill, incident-persistence and
-  shadow-quality work has **not** been merged into `main`.
+- The 360dialog Coexistence, chronology, historical-backfill, incident-persistence,
+  shadow-quality, Command Centre and automatic-handoff work has **not** been merged into
+  `main`.
 - Production environment variables, Virtual Stylist and pre-consultation systems remain
   untouched by this phase.
 
 ## Authoritative development line
 
 - Branch: `feat/hera-ai-receptionist-foundation`
-- Incident-persistence and backfill-reconciliation merge immediately before this
-  checkpoint: `2e9eb03c8018d1e29825fd07fe0efb55f6a49039`
+- Automatic human-handoff merge: `86b019e81bff0d64097302a688aaff090be99956`
+- Current cleaned Preview commit after the controlled recovery and removal of temporary
+  diagnostics: `e8498b02f4f1fbf405b769e685afd0fc436e5fed`
 - Current stable Preview alias:
   `hera-concierge-git-feat-hera-ai-rece-3023b8-hera-concierge-team.vercel.app`
 
@@ -94,23 +96,70 @@ is not the source of truth.
 - Synthetic/operational and automated reviews cannot inflate human launch metrics
 - Initial automated forensic reviews remain recorded outside launch metrics
 
+### Command Centre foundation
+
+- Forced-RLS staff, handoff-task, handoff-event, internal-note and SLA-policy tables are
+  installed in the isolated staging project
+- Service-role-only database access and server-side staff capability checks
+- Durable assignment, acceptance, optimistic locking, status transitions and audit history
+- Private no-password Preview access remains read-only and protected by Vercel project
+  access; it is not a Production authentication design
+- Temporary diagnostic endpoints, workflows, files and one-time recovery scripts were
+  removed after validation
+
+### Deterministic automatic human handoff
+
+- Server-enforced H0-H4 handoff assessment does not rely on model judgement alone
+- Complete booking readiness requires service, outlet, date and time; stylist preference
+  and flexibility are retained when supplied
+- The system asks only for genuinely missing booking details
+- Exactly one durable task is created for webhook retries or repeated processing
+- Client acknowledgement is queued only after durable task persistence succeeds
+- The AI cannot claim that an appointment was booked or confirmed
+- Booking checks are task-only, allowing unrelated low-risk assistance while reception
+  checks Timely
+- Complaints, refunds, privacy/legal matters, explicit human requests and qualifying
+  safety cases can force full takeover
+- Highest-consequence routing prevents safety, privacy, refund or complaint cases from
+  being downgraded by arrival wording or a generic manager request
+- Accepted ownership and terminal task states survive retries
+
+### Controlled real WhatsApp booking-handoff proof
+
+A fresh controlled message requested Irene at Tanglin Mall for a root colour touch-up and
+toner on Friday 28 August around 2 pm, with a 1 pm–4 pm flexibility range.
+
+Verified result:
+
+- inbound webhook accepted exactly once
+- AI response, independent verification and deterministic policy decisions preserved
+- one `booking_action` handoff task
+- scope: `task_only`
+- priority: `normal`
+- status: `assigned`
+- assigned role: `receptionist`
+- assigned outlet: `Tanglin Mall`
+- missing facts: `0`
+- SLA due time present
+- one client acknowledgement candidate recorded as `shadowed`
+- provider message ID absent
+- sent timestamp absent
+- WhatsApp provider sends: `0`
+- conversation remained in `ai` mode because the booking handoff is task-scoped
+- original retry job completed with its prior attempt count preserved
+
 ## Latest verified engineering gates
 
 - Strict TypeScript checking: pass
-- Complete automated suite: 102/102 pass
-- Credential scan: pass across 87 tracked files
-- Production dependency audit: 0 vulnerabilities
-- Authoritative Vercel Preview: READY
-- Staging migrations: applied and validated
-- Recent-versus-backfill validation: pass
-- Incident idempotency validation: pass before and after migration
-- Active staging jobs: 0
-- Dead staging jobs: 0
-- Active staging outbox: 0
-- Dead staging outbox: 0
-- Open staging incidents: 0
-- Elevated staging conversations: 0
-- Provider send records: 0
+- Automatic-handoff final automated suite: 149/149 pass
+- Command Centre build: pass
+- Credential scan: pass
+- Production dependency audit: 0 high/critical Production vulnerabilities
+- Current cleaned Vercel Preview: READY
+- Command Centre foundation and automatic-handoff staging migrations: installed and
+  verified
+- Controlled booking handoff: pass
+- Controlled handoff provider sends: 0
 
 ## Non-negotiable safety state
 
@@ -126,26 +175,29 @@ The authenticated private quality endpoint passed with HTTP 200, `mode=shadow`,
 `rubricVersion=hera-shadow-quality-v1`, zero provider sends and zero duplicate candidates.
 The preserved candidate set was then forensically separated into:
 
-- 15 operational Coexistence backfill candidates;
-- 2 synthetic test candidates;
-- 1 genuinely real-time real-client candidate.
+- operational Coexistence backfill candidates;
+- synthetic test candidates;
+- genuinely real-time real-client candidates.
 
-There are still zero named human reviews and therefore zero launch-metric cases. This is
-intentional: automated assessment is not misrepresented as human approval.
+Automated assessment is not misrepresented as named-human approval. Launch metrics remain
+restricted to explicit human review.
 
 ## Required next actions
 
-1. Begin named human review with the genuinely real-time candidate; only an explicit Hera
-   human decision may enter launch metrics.
-2. Continue collecting new real-time shadow candidates while the backfill guard remains
-   active.
-3. Decide and regression-test the standalone-sticker policy, using the preserved sticker
-   case as operational evidence rather than a real-client launch case.
-4. Build the representative Gate 4 corpus: 200 historical, 500 adversarial/edge,
-   100 high-risk, 50 multilingual/voice and a 24-hour retry/concurrency soak.
-5. Resolve every source-of-truth conflict and obtain a clean launch report before any
+1. Verify the controlled `booking_action` card is visible under **Needs Human Action** in
+   the Command Centre with the correct structured details.
+2. Run the real staff-engagement proof: a Hera staff member replies through the WhatsApp
+   Business App, 360dialog records the human echo and the AI remains silent.
+3. Resolve the booking task explicitly and prove controlled return to AI without reopening
+   or duplicating the task.
+4. Extend the same real shadow proof to complaints, refunds, safety, privacy/legal,
+   same-day arrival and explicit-human-request cases.
+5. Continue named human quality review and build the representative Gate 4 corpus:
+   200 historical, 500 adversarial/edge, 100 high-risk, 50 multilingual/voice and a
+   24-hour retry/concurrency soak.
+6. Resolve every source-of-truth conflict and obtain a clean launch report before any
    limited live pilot.
-6. Before Production launch, resolve the existing `main` cron configuration error for
+7. Before Production launch, resolve the existing `main` cron configuration error for
    `CRON_SECRET`; do not change Production during shadow evaluation merely to silence it.
 
 ## Explicitly prohibited next steps
