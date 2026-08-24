@@ -10,7 +10,7 @@ import type {
   PolicyAssessment,
 } from "../types.js";
 
-export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.0";
+export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.1";
 
 const HUMAN_REQUEST_PATTERNS = [
   /\b(?:speak|talk|chat|connect|transfer|pass me|put me through)\b.{0,28}\b(?:human|person|receptionist|manager|staff|someone)\b/i,
@@ -340,18 +340,26 @@ function taskTypeFor(input: {
   policy: PolicyAssessment;
   proposal: AgentHandoffProposal;
 }): HandoffTaskType | null {
-  if (input.policy.risk === "black") return "medical_safety";
+  // Highest consequence wins. A request for a person changes ownership and
+  // scope, but it must not erase the underlying booking, safety or complaint action.
+  if (
+    input.policy.risk === "black" ||
+    input.decision.intent === "medical_safety"
+  ) {
+    return "medical_safety";
+  }
+  if (input.decision.intent === "privacy_legal") return "privacy_legal";
+  if (input.decision.intent === "refund_compensation") return "refund_finance";
+  if (input.decision.intent === "complaint") return "complaint_review";
+  if (input.decision.intent === "appointment_change") return "appointment_change";
+  if (input.decision.intent === "booking" || input.decision.intent === "availability") {
+    return "booking_action";
+  }
   if (HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(input.message))) {
     return "client_requested_human";
   }
-  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) return "arrival_issue";
-  if (input.decision.intent === "medical_safety") return "medical_safety";
-  if (input.decision.intent === "appointment_change") return "appointment_change";
-  if (input.decision.intent === "complaint") return "complaint_review";
-  if (input.decision.intent === "refund_compensation") return "refund_finance";
-  if (input.decision.intent === "privacy_legal") return "privacy_legal";
-  if (input.decision.intent === "booking" || input.decision.intent === "availability") {
-    return "booking_action";
+  if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) {
+    return "arrival_issue";
   }
   return input.proposal.required ? input.proposal.taskType ?? "other" : null;
 }
@@ -365,6 +373,9 @@ export function assessHumanHandoff(input: {
 }): HumanHandoffAssessment {
   const proposal = defaultProposal(input.decision);
   const facts = normalizedFacts(proposal.collectedFacts);
+  const requestedHuman = HUMAN_REQUEST_PATTERNS.some((pattern) =>
+    pattern.test(input.message),
+  );
   const taskType = taskTypeFor({
     message: input.message,
     decision: input.decision,
@@ -396,7 +407,7 @@ export function assessHumanHandoff(input: {
     // Booking readiness is deterministic. Optional preferences such as stylist
     // and flexibility can never prevent a complete request from reaching reception.
     missingFacts = bookingMissingFacts(facts);
-    if (missingFacts.length > 0) {
+    if (missingFacts.length > 0 && !requestedHuman) {
       return {
         createTask: false,
         taskType,
@@ -417,22 +428,31 @@ export function assessHumanHandoff(input: {
   }
 
   const requiredScope =
-    input.policy.risk === "black" ? "emergency" : scopeFor(taskType);
+    input.policy.risk === "black"
+      ? "emergency"
+      : requestedHuman
+        ? "full_takeover"
+        : scopeFor(taskType);
   const scope = strongestScope(proposal.scope, requiredScope);
+  const basePriority = priorityFor(taskType, input.policy, input.message);
   const requiredPriority =
     input.policy.risk === "black"
       ? "emergency"
-      : priorityFor(taskType, input.policy, input.message);
+      : requestedHuman && basePriority === "normal"
+        ? "high"
+        : basePriority;
   const priority = strongestPriority(proposal.priority, requiredPriority);
   const managerExplicitlyRequested = MANAGER_REQUEST_PATTERNS.some((pattern) =>
     pattern.test(input.message),
   );
+  const baseAssignedRole =
+    taskType === "other" && proposal.assignedRole
+      ? proposal.assignedRole
+      : assignedRoleFor(taskType);
   const assignedRole =
-    taskType === "client_requested_human" && managerExplicitlyRequested
+    managerExplicitlyRequested && baseAssignedRole === "receptionist"
       ? "salon_manager"
-      : taskType === "other" && proposal.assignedRole
-        ? proposal.assignedRole
-        : assignedRoleFor(taskType);
+      : baseAssignedRole;
   const assignedOutlet = canonicalOutlet(proposal.assignedOutlet) ?? facts.outlet;
   // Known task classes use deterministic internal wording. The model may supply
   // custom wording only for an uncategorised task, never for booking or authority claims.
@@ -447,10 +467,12 @@ export function assessHumanHandoff(input: {
   const acknowledgement =
     taskType === "medical_safety"
       ? null
-      : taskType === "other"
-        ? safeAcknowledgement(proposal.clientAcknowledgement) ??
-          defaultAcknowledgement(taskType, facts)
-        : defaultAcknowledgement(taskType, facts);
+      : requestedHuman
+        ? defaultAcknowledgement("client_requested_human", facts)
+        : taskType === "other"
+          ? safeAcknowledgement(proposal.clientAcknowledgement) ??
+            defaultAcknowledgement(taskType, facts)
+          : defaultAcknowledgement(taskType, facts);
 
   return {
     createTask: true,

@@ -100,7 +100,7 @@ test("complete booking details create one structured reception handoff", () => {
     }),
   });
 
-  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.0");
+  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.1");
   assert.equal(result.createTask, true);
   assert.equal(result.taskType, "booking_action");
   assert.equal(result.scope, "task_only");
@@ -249,6 +249,145 @@ test("explicit human requests create a full takeover task even without booking f
   assert.equal(result.taskType, "client_requested_human");
   assert.equal(result.scope, "full_takeover");
   assert.equal(result.priority, "high");
+});
+
+test("medical safety outranks arrival wording and a manager request", () => {
+  const result = assessHumanHandoff({
+    message: "I am at the salon and my scalp is burning badly. Please get a manager.",
+    conversationId: "conversation-medical-arrival",
+    sourceMessageId: "message-medical-arrival",
+    policy: policy({ risk: "red", requiresIncident: true }),
+    decision: decision({
+      intent: "medical_safety",
+      risk: "red",
+      handoff: {
+        required: true,
+        taskType: "medical_safety",
+        scope: "full_takeover",
+        priority: "urgent",
+        assignedRole: "technical_lead",
+        assignedOutlet: "Tanglin Mall",
+        summary: null,
+        requestedAction: null,
+        collectedFacts: {
+          ...emptyFacts,
+          outlet: "Tanglin Mall",
+          symptoms: "Scalp burning badly",
+        },
+        missingFacts: [],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.taskType, "medical_safety");
+  assert.equal(result.scope, "full_takeover");
+  assert.equal(result.assignedRole, "technical_lead");
+});
+
+test("a manager request preserves the underlying complaint task", () => {
+  const result = assessHumanHandoff({
+    message: "I am very unhappy and need to speak to the manager.",
+    conversationId: "conversation-complaint-manager",
+    sourceMessageId: "message-complaint-manager",
+    policy: policy({ risk: "amber", requiresIncident: true }),
+    decision: decision({
+      intent: "complaint",
+      risk: "amber",
+      handoff: {
+        required: true,
+        taskType: "complaint_review",
+        scope: "full_takeover",
+        priority: "high",
+        assignedRole: "salon_manager",
+        assignedOutlet: null,
+        summary: null,
+        requestedAction: null,
+        collectedFacts: { ...emptyFacts },
+        missingFacts: [],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.taskType, "complaint_review");
+  assert.equal(result.scope, "full_takeover");
+  assert.equal(result.assignedRole, "salon_manager");
+});
+
+test("a manager request on a complete booking keeps the booking task and pauses AI", () => {
+  const result = assessHumanHandoff({
+    message:
+      "Please let me speak to the manager about booking Irene at Tanglin Mall this Friday at 2 pm for root colour.",
+    conversationId: "conversation-booking-manager",
+    sourceMessageId: "message-booking-manager",
+    policy: policy(),
+    decision: decision({
+      intent: "booking",
+      handoff: {
+        required: true,
+        taskType: "booking_action",
+        scope: "task_only",
+        priority: "normal",
+        assignedRole: "receptionist",
+        assignedOutlet: "Tanglin Mall",
+        summary: null,
+        requestedAction: null,
+        collectedFacts: {
+          ...emptyFacts,
+          service: "root colour",
+          stylist: "Irene",
+          outlet: "Tanglin Mall",
+          date: "this Friday",
+          time: "2 pm",
+        },
+        missingFacts: [],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.taskType, "booking_action");
+  assert.equal(result.scope, "full_takeover");
+  assert.equal(result.priority, "high");
+  assert.equal(result.assignedRole, "salon_manager");
+  assert.match(result.clientReplyOverride ?? "", /direct assistance|staff member/i);
+});
+
+test("an explicit human request creates a booking task even while details are missing", () => {
+  const result = assessHumanHandoff({
+    message: "Please let me speak to a receptionist about booking Irene on Friday.",
+    conversationId: "conversation-booking-human-incomplete",
+    sourceMessageId: "message-booking-human-incomplete",
+    policy: policy(),
+    decision: decision({
+      intent: "booking",
+      handoff: {
+        required: false,
+        taskType: "booking_action",
+        scope: "task_only",
+        priority: "normal",
+        assignedRole: "receptionist",
+        assignedOutlet: null,
+        summary: null,
+        requestedAction: null,
+        collectedFacts: {
+          ...emptyFacts,
+          stylist: "Irene",
+          date: "Friday",
+        },
+        missingFacts: ["service", "outlet", "time"],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.createTask, true);
+  assert.equal(result.taskType, "booking_action");
+  assert.equal(result.scope, "full_takeover");
+  assert.equal(result.priority, "high");
+  assert.equal(result.assignedRole, "receptionist");
+  assert.deepEqual(result.missingFacts, ["service", "outlet", "time"]);
 });
 
 test("black-risk safety cases create an emergency handoff without replacing safety guidance", () => {
