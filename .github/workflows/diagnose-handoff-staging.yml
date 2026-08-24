@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   diagnose:
@@ -35,4 +35,21 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: node scripts/diagnose-handoff-staging.mjs
+        run: |
+          mkdir -p docs
+          {
+            echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            node scripts/diagnose-handoff-staging.mjs
+          } | tee docs/STAGING_HANDOFF_DIAGNOSTIC.txt
+      - name: Persist only the sanitised diagnostic result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/STAGING_HANDOFF_DIAGNOSTIC.txt
+          if git diff --cached --quiet; then
+            echo "No diagnostic change to commit."
+            exit 0
+          fi
+          git commit -m "Record sanitised staging handoff diagnosis"
+          git pull --rebase origin feat/hera-ai-receptionist-foundation
+          git push origin HEAD:feat/hera-ai-receptionist-foundation
