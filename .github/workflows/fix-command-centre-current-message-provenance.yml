@@ -1,0 +1,48 @@
+name: Fix Command Centre current-message provenance
+
+on:
+  push:
+    branches:
+      - fix/command-centre-current-message-provenance
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/command-centre-current-message-provenance
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply current-message provenance and processing-state fix
+        run: python3 scripts/fix_command_centre_current_message_provenance.py
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Strict type check, Command Centre build and complete automated suite
+        run: npm test
+      - name: Credential scan
+        run: npm run credential:scan
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Verify clean implementation
+        run: |
+          git diff --check
+          grep -q 'AI candidate for latest client turn' command-centre/src/app.ts
+          grep -q 'ConversationJobView' src/command-centre/types.ts
+          grep -q 'from("ai_jobs")' src/command-centre/repository.ts
+      - name: Remove one-time tooling and commit verified implementation
+        run: |
+          rm scripts/fix_command_centre_current_message_provenance.py
+          rm .github/workflows/fix-command-centre-current-message-provenance.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Bind Command Centre evidence to the latest client turn'
+          git push origin HEAD:fix/command-centre-current-message-provenance
