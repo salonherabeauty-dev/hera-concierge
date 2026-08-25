@@ -214,3 +214,100 @@ test("requires emergency guidance and allows a direct routine service answer", (
   });
   assert.equal(routine.passed, true);
 });
+
+test("allows an incomplete booking clarification without inventing a handoff", () => {
+  const result = assessFinalResponseQuality({
+    clientMessage: "I would like a curly haircut next week.",
+    reply: "Certainly. Which Hera outlet would you prefer, and what date and time range would suit you best?",
+    decision: decision({ intent: "booking" }),
+    policy: policy(),
+    handoff: handoff({
+      createTask: false,
+      taskType: "booking_action",
+      scope: "task_only",
+      priority: "normal",
+      assignedRole: "receptionist",
+      missingFacts: ["outlet", "date", "time"],
+      collectedFacts: {
+        ...emptyFacts,
+        service: "curly haircut",
+      },
+    }),
+    risk: "green",
+  });
+  assert.equal(result.passed, true);
+});
+
+test("blocks any human escalation claim when no durable task exists", () => {
+  const result = assessFinalResponseQuality({
+    clientMessage: "Please help me with this.",
+    reply: "I’ve sent your request to reception, and the team will contact you shortly.",
+    decision: decision({ intent: "other" }),
+    policy: policy(),
+    handoff: handoff(),
+    risk: "green",
+  });
+  assert.equal(result.passed, false);
+  assert.ok(result.issues.some((issue) => /not durably created/i.test(issue)));
+});
+
+test("accepts the neutral generic acknowledgement only when a human task exists", () => {
+  const result = assessFinalResponseQuality({
+    clientMessage: "Please let me speak to a person.",
+    reply: "Certainly. I’ve sent your request to Hera’s team for direct assistance. A staff member will continue with you as soon as available.",
+    decision: decision({ intent: "other" }),
+    policy: policy(),
+    handoff: handoff({
+      createTask: true,
+      taskType: "client_requested_human",
+      scope: "full_takeover",
+      priority: "high",
+      assignedRole: "receptionist",
+    }),
+    risk: "green",
+  });
+  assert.equal(result.passed, true);
+});
+
+test("supports a reviewed Chinese complaint acknowledgement", () => {
+  const result = assessFinalResponseQuality({
+    clientMessage: "我昨天在 Tanglin Mall 剪了卷发，层次不均，我很不满意，请经理审核。",
+    reply: "感谢您说明情况，很抱歉这次卷发剪发的结果让您不满意。我已将您在 Tanglin Mall 的卷发剪发问题交给沙龙经理仔细审核。请在方便时发送清晰照片，经理会评估详情并建议下一步。",
+    decision: decision({ intent: "complaint", risk: "amber", language: "Chinese" }),
+    policy: policy({ risk: "amber", requiresIncident: true }),
+    handoff: handoff({
+      createTask: true,
+      taskType: "complaint_review",
+      scope: "full_takeover",
+      priority: "high",
+      assignedRole: "salon_manager",
+      assignedOutlet: "Tanglin Mall",
+      collectedFacts: {
+        ...emptyFacts,
+        service: "卷发剪发",
+        outlet: "Tanglin Mall",
+        other: "层次不均",
+      },
+    }),
+    risk: "amber",
+  });
+  assert.equal(result.passed, true);
+});
+
+test("permits an explicit non-diagnosis disclaimer in an emergency reply", () => {
+  const result = assessFinalResponseQuality({
+    clientMessage: "I cannot breathe and my face is swelling.",
+    reply: "Thank you for telling me. Please stop using the product immediately. If you have breathing difficulty or severe swelling, seek urgent medical attention now. Hera’s technical lead will review the salon concern when it is safe to do so. This is not a medical diagnosis.",
+    decision: decision({ intent: "medical_safety", risk: "black" }),
+    policy: policy({ risk: "black", requiresIncident: true }),
+    handoff: handoff({
+      createTask: true,
+      taskType: "medical_safety",
+      scope: "emergency",
+      priority: "emergency",
+      assignedRole: "technical_lead",
+    }),
+    risk: "black",
+  });
+  assert.equal(result.passed, true);
+});

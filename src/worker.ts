@@ -424,7 +424,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       requestedAction: handoff.requestedAction,
       collectedFacts: handoff.collectedFacts,
       missingFacts: handoff.missingFacts,
-      clientVisibleStatus: handoff.clientVisibleStatus,
+      clientVisibleStatus: finalQuality.passed ? finalReply : null,
       dedupeKey: handoff.dedupeKey,
     });
 

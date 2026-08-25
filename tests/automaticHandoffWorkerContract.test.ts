@@ -42,3 +42,14 @@ test("the exact post-policy reply receives a second verifier and fail-closed qua
   assert.match(worker, /taskType: "system_failure"/);
   assert.match(worker, /dead-letter-handoff/);
 });
+
+test("persisted handoff status matches the exact quality-approved client reply", async () => {
+  const worker = await readFile(
+    new URL("../src/worker.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    worker,
+    /clientVisibleStatus: finalQuality\.passed \? finalReply : null/,
+  );
+});

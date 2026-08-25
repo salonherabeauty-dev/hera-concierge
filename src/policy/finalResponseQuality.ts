@@ -34,15 +34,17 @@ const GENERIC_HUMAN_ACKNOWLEDGEMENT =
 const ESCALATION_CLAIM =
   /(?:\b(?:sent|passed|routed|placed|escalated|forwarded)\b.{0,100}\b(?:team|manager|management|reception|staff)\b|\b(?:team|manager|management|reception|staff)\b.{0,100}\b(?:will|shall)\b.{0,30}\b(?:review|contact|continue|assist|follow up|check)\b|(?:已|已经)?(?:转交|提交|上报|交给).{0,20}(?:团队|经理|店长|前台|工作人员)|(?:团队|经理|店长|前台|工作人员).{0,20}(?:会|将)(?:审核|联系|跟进|协助|查询)|(?:telah|sudah)\s+(?:dihantar|diserahkan|dirujuk).{0,50}(?:pasukan|pengurus|penerimaan|kakitangan)|(?:pasukan|pengurus|penerimaan|kakitangan).{0,50}(?:akan|bakal).{0,30}(?:semak|hubungi|bantu|susulan)|(?:அனுப்பப்பட்டுள்ளது|ஒப்படைக்கப்பட்டுள்ளது|மேலிடப்பட்டுள்ளது).{0,40}(?:குழு|மேலாளர்|வரவேற்பு|பணியாளர்)|(?:குழு|மேலாளர்|வரவேற்பு|பணியாளர்).{0,40}(?:மதிப்பாய்வு|தொடர்பு|உதவ|தொடர்ந்து))/iu;
 const BOOKING_COMPLETION =
-  /(?:\b(?:i|we)(?:'|’)ve\s+(?:booked|confirmed|reserved|secured)|\b(?:appointment|booking|slot)\s+(?:is|has been|was)\s+(?:booked|confirmed|reserved|secured)\b|(?:已|已经).{0,12}(?:预订|预约|确认|保留)|预约.{0,12}(?:已确认|已预订)|(?:telah|sudah).{0,24}(?:menempah|mengesahkan|menyimpan slot)|(?:tempahan|janji temu).{0,24}(?:telah|sudah).{0,12}(?:disahkan|ditempah)|(?:முன்பதிவு|சந்திப்பு).{0,24}(?:உறுதிசெய்யப்பட்டது|செய்யப்பட்டது)|(?:நான்|நாங்கள்).{0,24}முன்பதிவு செய்துவிட்ட)/iu;
+  /(?:\b(?:i|we)(?:'|’)ve\s+(?:booked|confirmed|reserved|secured)|\b(?:appointment|booking|slot)\s+(?:is|has been|was)\s+(?:booked|confirmed|reserved|secured)\b|(?:已|已经)(?:为您|为你)?(?:预订|预约|确认|保留)(?:了|好)?|(?:预约|时段).{0,8}(?:已确认|已预订|已保留)|(?:telah|sudah).{0,24}(?:menempah|mengesahkan|menyimpan slot)|(?:tempahan|janji temu).{0,24}(?:telah|sudah).{0,12}(?:disahkan|ditempah)|(?:முன்பதிவு|சந்திப்பு).{0,24}(?:உறுதிசெய்யப்பட்டது|செய்யப்பட்டது)|(?:நான்|நாங்கள்).{0,24}முன்பதிவு செய்துவிட்ட)/iu;
 const FINANCIAL_COMPLETION =
   /(?:\b(?:refund|compensation|credit|voucher)\s+(?:is|has been|was|will be)\s+(?:approved|processed|issued|given|applied)\b|\b(?:i|we)(?:'|’)ve\s+(?:approved|processed|issued)\s+(?:a\s+)?(?:refund|compensation|credit|voucher)\b|(?:退款|赔偿|代金券|抵用金).{0,12}(?:已批准|已处理|已发放|会发放)|(?:bayaran balik|pampasan|kredit|baucar).{0,24}(?:diluluskan|diproses|dikeluarkan|akan diberikan)|(?:பணத்தைத் திருப்புதல்|இழப்பீடு|கடன்|வவுச்சர்).{0,24}(?:அங்கீகரிக்கப்பட்டது|செயலாக்கப்பட்டது|வழங்கப்படும்))/iu;
 const PRIVACY_COMPLETION =
   /(?:\b(?:your|the)\s+(?:data|number|photo|record)s?\s+(?:has|have)\s+been\s+(?:deleted|removed|erased)\b|(?:您的|你的|相关)(?:数据|号码|照片|记录).{0,12}(?:已删除|已移除|已清除)|(?:data|nombor|foto|rekod)\s+(?:anda\s+)?(?:telah|sudah)\s+(?:dipadam|dibuang)|(?:உங்கள்|அந்த)?(?:தரவு|எண்|புகைப்படம்|பதிவு).{0,20}(?:நீக்கப்பட்டது|அழிக்கப்பட்டது))/iu;
 const LIABILITY_ADMISSION =
-  /(?:\b(?:we|hera|our stylist)\s+(?:damaged|destroyed|ruined|caused|were at fault|are liable)|\bour fault\b|\bwe accept liability\b|(?:我们|Hera|我们的发型师).{0,12}(?:损坏|毁坏|造成|有过错|承担责任)|这是我们的错|kami|hera|stylist kami).{0,24}(?:merosakkan|menyebabkan|bersalah|bertanggungjawab)|(?:நாங்கள்|Hera|எங்கள் ஸ்டைலிஸ்ட்).{0,24}(?:சேதப்படுத்தினோம்|காரணம்|தவறு|பொறுப்பு))/iu;
+  /(?:\b(?:we|hera|our stylist)\s+(?:damaged|destroyed|ruined|caused|were at fault|are liable)|\bour fault\b|\bwe accept liability\b|(?:我们|Hera|我们的发型师).{0,12}(?:损坏|毁坏|造成|有过错|承担责任)|这是我们的错|(?:kami|hera|stylist kami).{0,24}(?:merosakkan|menyebabkan|bersalah|bertanggungjawab)|(?:நாங்கள்|Hera|எங்கள் ஸ்டைலிஸ்ட்).{0,24}(?:சேதப்படுத்தினோம்|காரணம்|தவறு|பொறுப்பு))/iu;
 const GUARANTEED_REMEDY =
   /(?:\b(?:guaranteed|definitely|certainly)\s+(?:fix|resolve|refund|redo)|\b(?:free|complimentary)\s+(?:redo|service|treatment|correction)\b|(?:保证|肯定|一定).{0,12}(?:修复|解决|退款|重做)|(?:免费|赠送).{0,12}(?:重做|服务|护理|修正)|(?:dijamin|pasti).{0,24}(?:baiki|selesaikan|bayar balik|buat semula)|(?:percuma|komplemen).{0,24}(?:buat semula|perkhidmatan|rawatan|pembetulan)|(?:உத்தரவாதம்|நிச்சயம்).{0,24}(?:சரி செய்வோம்|தீர்ப்போம்|பணம் திருப்புவோம்|மீண்டும் செய்வோம்)|(?:இலவச|கட்டணமில்லா).{0,24}(?:மீண்டும்|சேவை|சிகிச்சை|திருத்தம்))/iu;
+const MEDICAL_CLAIM =
+  /(?:\b(?:this is|you have|you are experiencing)\s+(?:an?\s+)?(?:allergy|allergic reaction|chemical burn|infection|alopecia|eczema|psoriasis)\b|\bmedically safe\b|(?:这是|您有|你有).{0,8}(?:过敏|化学灼伤|感染|脱发症|湿疹|银屑病)|医学上安全|(?:ini ialah|anda mempunyai|anda mengalami).{0,20}(?:alahan|reaksi alergi|melecur kimia|jangkitan|alopecia|ekzema|psoriasis)|selamat dari segi perubatan|(?:இது|உங்களுக்கு|நீங்கள் அனுபவிப்பது).{0,24}(?:ஒவ்வாமை|இரசாயன தீக்காயம்|தொற்று|அலோபீசியா|எக்சிமா|சொரியாசிஸ்)|மருத்துவ ரீதியாக பாதுகாப்பான)/iu;
 const EMOJI = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u;
 
 const EMPATHY: Record<SupportedClientLocale, RegExp> = {
@@ -263,7 +265,7 @@ export function assessFinalResponseQuality(input: {
     if (isEmergency && !matches(URGENT_SAFETY, locale, reply)) {
       issues.push("The emergency reply does not preserve urgent safety guidance.");
     }
-    if (/\bdiagnos(?:e|ed|is)|medically safe\b|诊断|医学上安全|diagnosis|selamat dari segi perubatan|நோயறிதல்|மருத்துவ ரீதியாக பாதுகாப்பான/iu.test(reply)) {
+    if (MEDICAL_CLAIM.test(reply)) {
       issues.push("The safety reply makes a diagnosis or medical-safety claim.");
     }
   }
