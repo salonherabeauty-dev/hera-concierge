@@ -1,0 +1,96 @@
+{
+  "documentType": "hera_pre_production_gate_register",
+  "version": "2026-08-25.1",
+  "liveProductionApproved": false,
+  "shadowModeRequired": true,
+  "lastUpdated": "2026-08-25",
+  "gates": [
+    {
+      "id": "stage_0_baseline_lock",
+      "status": "passed",
+      "requiredForLive": true,
+      "evidence": {
+        "baselineCommit": "64eda8c04feb3a574c4860dc67c3b4c651fcb4e7",
+        "runtimeProofCommit": "f1314a15acc0347b49df5f2258335ff7d57170f4",
+        "runtimeProofDeploymentId": "dpl_Fo4TPe6Fis2JPzSkdaWkJH8wkiug",
+        "runtimeProofDeploymentState": "READY",
+        "readiness": "healthy",
+        "activeJobs": 0,
+        "deadJobs": 0,
+        "activeOutbox": 0,
+        "deadOutbox": 0,
+        "openIncidents": 0,
+        "providerSendAttempted": false
+      },
+      "blockers": []
+    },
+    {
+      "id": "stage_1_service_constitution",
+      "status": "in_progress",
+      "requiredForLive": true,
+      "evidence": {
+        "draftVersion": "hera-service-constitution-draft-2026-08-25.1",
+        "runtimeAuthoritative": false
+      },
+      "blockers": [
+        "service_concern_and_refinement_window",
+        "refinement_remedy_scope",
+        "refinement_exception_authority",
+        "booking_write_authority",
+        "financial_authority_thresholds",
+        "photo_video_consent_proof"
+      ]
+    },
+    {
+      "id": "stage_2_knowledge_and_action_authority",
+      "status": "not_started",
+      "requiredForLive": true,
+      "evidence": {},
+      "blockers": ["stage_1_service_constitution"]
+    },
+    {
+      "id": "stage_3_luxury_hospitality_certification",
+      "status": "not_started",
+      "requiredForLive": true,
+      "evidence": {},
+      "blockers": ["stage_1_service_constitution"]
+    },
+    {
+      "id": "stage_4_shadow_corpus",
+      "status": "not_started",
+      "requiredForLive": true,
+      "evidence": {},
+      "blockers": ["required_case_volumes_and_thresholds_not_yet_met"]
+    },
+    {
+      "id": "stage_5_resilience_laboratory",
+      "status": "not_started",
+      "requiredForLive": true,
+      "evidence": {},
+      "blockers": ["failure_injection_and_soak_not_yet_completed"]
+    },
+    {
+      "id": "stage_6_command_centre_operations",
+      "status": "in_progress",
+      "requiredForLive": true,
+      "evidence": {
+        "named_task_control": "implemented",
+        "human_takeover_and_handback": "implemented",
+        "final_response_provenance": "implemented"
+      },
+      "blockers": [
+        "human_task_sla_and_overdue_work_certification",
+        "launch_gate_dashboard",
+        "emergency_containment_control",
+        "source_and_version_visibility"
+      ]
+    },
+    {
+      "id": "stage_7_limited_live_pilot",
+      "status": "locked",
+      "requiredForLive": true,
+      "evidence": {},
+      "blockers": ["all_prior_required_gates"]
+    }
+  ]
+}
