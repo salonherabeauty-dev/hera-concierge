@@ -46,6 +46,10 @@ async function main(): Promise<void> {
   getAiConfig();
   if (provider === "360dialog") getD360Config();
 
+  // Vercel and Supabase clocks can differ briefly when a fresh build worker starts.
+  // A short read-only delay avoids a false PGRST303 "JWT issued at future" result.
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+
   const client = createClient(database.url, database.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { "X-Client-Info": "hera-stage0-runtime-probe" } },
