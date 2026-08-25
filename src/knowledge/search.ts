@@ -9,11 +9,22 @@ interface KnowledgeSection {
 }
 
 export const HERA_OPERATOR_POLICIES = String.raw`
-HERA OPERATOR-APPROVED POLICIES - VERSION 2
+HERA OPERATOR-APPROVED POLICIES - VERSION 3
 - If a client has waited more than 10 minutes beyond the agreed appointment time, Hera's stated service-recovery policy is a 10% discount. The AI may explain the policy and record the concern, but must not claim the discount has been applied to a bill unless a transaction system confirms it.
 - If a strand test fails, do not proceed with bleach. Hair and client safety override the requested colour result and any sales objective.
 - Published service prices are before 9% GST unless explicitly stated otherwise.
 - Every colour service requires consultation, a clear quotation and client consent before work begins.
+
+HERA OPERATOR-APPROVED SERVICE CONSTITUTION - VERSION 2026-08-25.1
+- Owner approval: Neo Chin Chuan approved this constitution on 25 August 2026. It is runtime-authoritative for the receptionist, while live WhatsApp sending remains blocked until every remaining certification gate passes.
+- Service concern and refinement window: seven calendar days from completion of the appointment.
+- An eligible client receives a careful management review and a complimentary refinement only when the salon manager confirms that the concern relates to the original service and can be corrected safely.
+- The refinement policy does not automatically guarantee a refund, compensation, a completely different result or an entirely new service.
+- Within the seven-calendar-day policy, the salon manager may authorise an eligible complimentary refinement. Outside the standard period or in exceptional circumstances, approval is reserved to the managing director or owner.
+- Timely is the booking source of truth. The AI collects the complete request and creates a receptionist task. A receptionist checks or updates Timely and confirms the verified outcome. The AI must never claim that an appointment was created, changed, cancelled or confirmed without a certified provider result or verified human outcome.
+- The AI and receptionist have no refund or compensation authority. A salon manager may authorise a policy-based complimentary refinement and the stated 10% waiting-time recovery. Refunds, vouchers, compensation and outside-policy exceptions require the managing director or owner.
+- Separate explicit consent is required for capturing photos or video and for publishing or using the material externally. Consent proof must be stored in an approved system. Withdrawal blocks future use and creates a privacy-officer review for material already published.
+- A specialised complaint, refund, safety, privacy, legal or technical matter must never be reduced to a generic staff-handoff sentence. The exact reply must recognise the situation, identify the authorised owner and explain one useful next step without promising an unauthorised outcome.
 
 HERA OPERATOR-APPROVED CURL SERVICE MATRIX - VERSION 2
 - Hera offers specialist curly haircuts at both Tanglin Mall and Quayside Isle, Sentosa Cove.
@@ -60,7 +71,10 @@ const SYNONYMS: Record<string, string[]> = {
   curls: ["curly", "curl"],
   curly: ["curls", "curl"],
   bleach: ["lightening", "blonde"],
-  complaint: ["concern", "unhappy", "refund"],
+  complaint: ["concern", "unhappy", "refund", "refinement"],
+  concern: ["complaint", "refinement", "unhappy"],
+  refund: ["complaint", "compensation", "financial"],
+  consent: ["photo", "video", "privacy"],
   cost: ["price", "pricing"],
   price: ["cost", "pricing"],
   appointment: ["booking", "book"],
@@ -109,9 +123,15 @@ export function splitApprovedKnowledge(source = HERA_KNOWLEDGE_BASE): KnowledgeS
   return sections;
 }
 
+const SUPERSEDED_LEGACY_SECTION_TITLES = new Set([
+  "SERVICE CONCERNS, COMPLAINTS AND REFUNDS",
+]);
+
 const STATIC_SECTIONS = [
   ...splitApprovedKnowledge(HERA_OPERATOR_POLICIES),
-  ...splitApprovedKnowledge(),
+  ...splitApprovedKnowledge().filter(
+    (section) => !SUPERSEDED_LEGACY_SECTION_TITLES.has(section.title),
+  ),
 ];
 
 function queryTerms(query: string): string[] {
@@ -154,7 +174,7 @@ export function searchStaticKnowledge(query: string, limit = 5): KnowledgeResult
         ? null
         : "https://www.herabeauty.sg/",
       version: section.title.startsWith("HERA OPERATOR-APPROVED")
-        ? "hera-operator-policy-v2"
+        ? "hera-operator-policy-v3"
         : "hera-approved-v4",
       score,
     }));

@@ -1,6 +1,6 @@
 {
   "documentType": "hera_pre_production_gate_register",
-  "version": "2026-08-25.1",
+  "version": "2026-08-25.2",
   "liveProductionApproved": false,
   "shadowModeRequired": true,
   "lastUpdated": "2026-08-25",
@@ -26,57 +26,76 @@
     },
     {
       "id": "stage_1_service_constitution",
-      "status": "in_progress",
+      "status": "passed",
       "requiredForLive": true,
       "evidence": {
-        "draftVersion": "hera-service-constitution-draft-2026-08-25.1",
-        "runtimeAuthoritative": false
+        "approvedVersion": "hera-service-constitution-2026-08-25.1",
+        "effectiveDate": "2026-08-25",
+        "approvedBy": "Neo Chin Chuan, Owner",
+        "approvalRecordedAt": "2026-08-25T21:38:30+08:00",
+        "runtimeAuthoritative": true,
+        "liveUseAllowed": false,
+        "unresolvedPolicies": 0,
+        "sourceFile": "governance/hera-service-constitution.json",
+        "ownerDocument": "docs/HERA_SERVICE_CONSTITUTION.md",
+        "knowledgeMigration": "supabase/migrations/20260825000000_approve_hera_service_constitution.sql",
+        "operatorPolicyVersion": "hera-operator-policy-v3"
       },
-      "blockers": [
-        "service_concern_and_refinement_window",
-        "refinement_remedy_scope",
-        "refinement_exception_authority",
-        "booking_write_authority",
-        "financial_authority_thresholds",
-        "photo_video_consent_proof"
-      ]
+      "blockers": []
     },
     {
       "id": "stage_2_knowledge_and_action_authority",
-      "status": "not_started",
+      "status": "in_progress",
       "requiredForLive": true,
-      "evidence": {},
-      "blockers": ["stage_1_service_constitution"]
+      "evidence": {
+        "constitutionPrecedence": "implemented",
+        "supersededSevenWorkingDayPolicy": "excluded_from_receptionist_retrieval",
+        "bookingAuthority": "human_required_until_certified_write_tool"
+      },
+      "blockers": [
+        "approved_knowledge_inventory_and_conflict_scan",
+        "all_action_authority_contracts_not_yet_certified",
+        "timely_write_integration_not_certified"
+      ]
     },
     {
       "id": "stage_3_luxury_hospitality_certification",
-      "status": "not_started",
+      "status": "in_progress",
       "requiredForLive": true,
-      "evidence": {},
-      "blockers": ["stage_1_service_constitution"]
+      "evidence": {
+        "finalResponseQualityGate": "implemented",
+        "constitutionHospitalityContract": "approved"
+      },
+      "blockers": [
+        "required_shadow_quality_volume_and_human_scores_not_yet_met"
+      ]
     },
     {
       "id": "stage_4_shadow_corpus",
       "status": "not_started",
       "requiredForLive": true,
       "evidence": {},
-      "blockers": ["required_case_volumes_and_thresholds_not_yet_met"]
+      "blockers": [
+        "required_case_volumes_and_thresholds_not_yet_met"
+      ]
     },
     {
       "id": "stage_5_resilience_laboratory",
       "status": "not_started",
       "requiredForLive": true,
       "evidence": {},
-      "blockers": ["failure_injection_and_soak_not_yet_completed"]
+      "blockers": [
+        "failure_injection_and_soak_not_yet_completed"
+      ]
     },
     {
       "id": "stage_6_command_centre_operations",
       "status": "in_progress",
       "requiredForLive": true,
       "evidence": {
-        "named_task_control": "implemented",
-        "human_takeover_and_handback": "implemented",
-        "final_response_provenance": "implemented"
+        "namedTaskControl": "implemented",
+        "humanTakeoverAndHandback": "implemented",
+        "finalResponseProvenance": "implemented"
       },
       "blockers": [
         "human_task_sla_and_overdue_work_certification",
@@ -90,7 +109,9 @@
       "status": "locked",
       "requiredForLive": true,
       "evidence": {},
-      "blockers": ["all_prior_required_gates"]
+      "blockers": [
+        "all_prior_required_gates"
+      ]
     }
   ]
 }
