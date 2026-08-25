@@ -65,6 +65,7 @@ export interface ReceptionistRepository {
   ingestInbound(message: InboundMessage): Promise<IngestResult>;
   applyStatus(event: WhatsAppStatusEvent): Promise<void>;
   claimJobs(workerId: string, limit: number): Promise<ReceptionistJob[]>;
+  claimJobsByIds?(workerId: string, jobIds: string[]): Promise<ReceptionistJob[]>;
   getJobContext(job: ReceptionistJob): Promise<JobContext>;
   isInboundSuperseded(messageId: string): Promise<boolean>;
   getConversationHistory(
@@ -188,6 +189,27 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
       p_limit: limit,
     });
     const values = requireData(data, error, "claim jobs") as unknown[];
+    return values.map((value) => {
+      const item = row(value);
+      return {
+        id: requiredString(item.id, "id"),
+        kind: "process_inbound",
+        sourceMessageId: requiredString(item.source_message_id, "source_message_id"),
+        payload: (item.payload ?? {}) as JsonValue,
+        attempts: Number(item.attempts),
+        maxAttempts: Number(item.max_attempts),
+      };
+    });
+  }
+
+  async claimJobsByIds(workerId: string, jobIds: string[]): Promise<ReceptionistJob[]> {
+    const uniqueJobIds = [...new Set(jobIds.filter(Boolean))].slice(0, 25);
+    if (uniqueJobIds.length === 0) return [];
+    const { data, error } = await this.database.rpc("ai_claim_jobs_by_ids", {
+      p_worker_id: workerId,
+      p_job_ids: uniqueJobIds,
+    });
+    const values = requireData(data, error, "claim targeted jobs") as unknown[];
     return values.map((value) => {
       const item = row(value);
       return {

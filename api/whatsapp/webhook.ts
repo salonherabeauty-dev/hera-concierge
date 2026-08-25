@@ -17,7 +17,10 @@ import {
   readRawBody,
 } from "../../src/security/readRawBody.js";
 import { parseWhatsAppWebhook } from "../../src/whatsapp/webhookPayload.js";
-import { createProductionRuntime, drainReceptionist } from "../../src/worker.js";
+import {
+  createProductionRuntime,
+  drainReceptionistForJobs,
+} from "../../src/worker.js";
 
 function firstQuery(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -112,20 +115,28 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   for (const event of parsed.statuses) await repository.applyStatus(event);
   let inserted = 0;
+  const wakeableJobIds: string[] = [];
   for (const message of parsed.inbound) {
     const result = await repository.ingestInbound(message);
     if (result.inserted) inserted += 1;
+    if (result.jobId) wakeableJobIds.push(result.jobId);
   }
 
   // A valid inbound delivery is also a safe wake-up signal for eligible retry
   // jobs. Meta's dashboard may resend the same fixed sample message during
   // Preview validation; ingestion remains idempotent, while the worker can
   // recover work that was deferred by a transient provider failure.
-  if (parsed.inbound.length > 0) {
-    const drainLimit = Math.min(Math.max(inserted, parsed.inbound.length), 8);
+  if (wakeableJobIds.length > 0) {
+    const drainLimit = Math.min(Math.max(wakeableJobIds.length, 1), 8);
     waitUntil(
       Promise.resolve()
-        .then(() => drainReceptionist(createProductionRuntime(), drainLimit))
+        .then(() =>
+          drainReceptionistForJobs(
+            createProductionRuntime(),
+            wakeableJobIds,
+            drainLimit,
+          ),
+        )
         .then((summary) => {
           logOperationalEvent("info", "webhook_background_drain_completed", {
             correlationId,
@@ -146,6 +157,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     bodyBytes: rawBody.byteLength,
     inboundCount: parsed.inbound.length,
     insertedCount: inserted,
+    targetedJobCount: wakeableJobIds.length,
     statusCount: parsed.statuses.length,
     durationMs: Date.now() - startedAt,
   });

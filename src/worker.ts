@@ -181,7 +181,30 @@ export function isReplyWorthyMessage(kind: MessageKind): boolean {
   return kind !== "reaction" && kind !== "system";
 }
 
+async function completeSupersededJob(
+  runtime: WorkerRuntime,
+  job: ReceptionistJob,
+  stage: string,
+): Promise<boolean> {
+  if (!(await runtime.repository.isInboundSuperseded(job.sourceMessageId))) {
+    return false;
+  }
+  await runtime.repository.audit(
+    "out_of_order_inbound_suppressed",
+    "message",
+    job.sourceMessageId,
+    {
+      suppressionStage: stage,
+      jobId: job.id,
+      reason: "newer_inbound_recorded_before_side_effects",
+    },
+  );
+  await runtime.repository.completeJob(job.id);
+  return true;
+}
+
 async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise<void> {
+  if (await completeSupersededJob(runtime, job, "before_context_load")) return;
   const context = await runtime.repository.getJobContext(job);
   if (!isReplyWorthyMessage(context.message.kind)) {
     await runtime.repository.audit(
@@ -270,6 +293,14 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       latencyMs: verification.latencyMs,
     });
   }
+
+  if (
+    await completeSupersededJob(
+      runtime,
+      job,
+      "after_primary_and_first_verifier",
+    )
+  ) return;
 
   grounding = assessGrounding(interpreted.text, decision);
   if (!grounding.grounded && grounding.replyOverride) {
@@ -374,6 +405,14 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
         contactId: context.contact.id,
         config: runtime.ai,
       });
+  if (
+    await completeSupersededJob(
+      runtime,
+      job,
+      "after_final_response_verifier",
+    )
+  ) return;
+
   const deliveryEligible = finalQuality.passed && finalVerification.approved;
   const verificationUsage = asJson({
     initial: initialFinalVerification.usage,
@@ -442,6 +481,14 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   });
   await runtime.repository.updateConversationRisk(context.message.conversationId, policy.risk);
 
+  if (
+    await completeSupersededJob(
+      runtime,
+      job,
+      "before_operational_side_effects",
+    )
+  ) return;
+
   if (policy.requiresIncident && policy.risk !== "green") {
     await runtime.repository.openIncident({
       conversationId: context.message.conversationId,
@@ -460,6 +507,13 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
 
 
   if (handoff.createTask) {
+    if (
+      await completeSupersededJob(
+        runtime,
+        job,
+        "before_handoff_persistence",
+      )
+    ) return;
     if (
       !handoff.taskType ||
       !handoff.scope ||
@@ -548,6 +602,13 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   }
 
   if (deliveryEligible && (policy.canAutoSend || handoff.createTask)) {
+    if (
+      await completeSupersededJob(
+        runtime,
+        job,
+        "before_client_candidate_persistence",
+      )
+    ) return;
     await runtime.repository.queueOutbound({
       conversationId: context.message.conversationId,
       sourceMessageId: context.message.id,
@@ -817,12 +878,11 @@ export async function drainOutbox(input: {
   };
 }
 
-export async function drainReceptionist(
+async function drainClaimedReceptionistJobs(
   runtime: WorkerRuntime,
-  maxJobs = 8,
+  workerId: string,
+  jobs: ReceptionistJob[],
 ): Promise<DrainSummary> {
-  const workerId = `vercel:${randomUUID()}`;
-  const jobs = await runtime.repository.claimJobs(workerId, maxJobs);
   let jobsCompleted = 0;
   let jobsRetried = 0;
 
@@ -858,6 +918,50 @@ export async function drainReceptionist(
     jobsRetried,
     ...outbox,
   };
+}
+
+export async function drainReceptionist(
+  runtime: WorkerRuntime,
+  maxJobs = 8,
+): Promise<DrainSummary> {
+  const workerId = `vercel:${randomUUID()}`;
+  const jobs = await runtime.repository.claimJobs(workerId, maxJobs);
+  return drainClaimedReceptionistJobs(runtime, workerId, jobs);
+}
+
+export async function drainReceptionistForJobs(
+  runtime: WorkerRuntime,
+  jobIds: string[],
+  maxJobs = 8,
+): Promise<DrainSummary> {
+  const requestedJobIds = [...new Set(jobIds.filter(Boolean))].slice(0, 25);
+  if (requestedJobIds.length === 0) {
+    return drainReceptionist(runtime, maxJobs);
+  }
+  if (!runtime.repository.claimJobsByIds) {
+    throw new Error("Targeted job claiming is unavailable");
+  }
+
+  const workerId = `vercel:targeted:${randomUUID()}`;
+  const capacity = Math.max(
+    requestedJobIds.length,
+    Math.max(1, Math.min(maxJobs, 25)),
+  );
+  const targetedJobs = await runtime.repository.claimJobsByIds(
+    workerId,
+    requestedJobIds,
+  );
+  const targetedIds = new Set(targetedJobs.map((job) => job.id));
+  const remainingCapacity = Math.max(0, capacity - targetedJobs.length);
+  const backlogJobs = remainingCapacity > 0
+    ? await runtime.repository.claimJobs(workerId, remainingCapacity)
+    : [];
+  const jobs = [
+    ...targetedJobs,
+    ...backlogJobs.filter((job) => !targetedIds.has(job.id)),
+  ];
+
+  return drainClaimedReceptionistJobs(runtime, workerId, jobs);
 }
 
 export function createProductionRuntime(

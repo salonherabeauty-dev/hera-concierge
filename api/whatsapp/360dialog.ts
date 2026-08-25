@@ -18,7 +18,10 @@ import {
   readRawBody,
 } from "../../src/security/readRawBody.js";
 import { parseD360Webhook } from "../../src/whatsapp/d360WebhookPayload.js";
-import { createProductionRuntime, drainReceptionist } from "../../src/worker.js";
+import {
+  createProductionRuntime,
+  drainReceptionistForJobs,
+} from "../../src/worker.js";
 
 function secureHeaders(response: VercelResponse): void {
   response.setHeader("Cache-Control", "no-store");
@@ -138,11 +141,11 @@ export default async function handler(request: VercelRequest, response: VercelRe
     for (const event of parsed.statuses) await repository.applyStatus(event);
 
     let inboundInserted = 0;
-    let wakeableJobs = 0;
+    const wakeableJobIds: string[] = [];
     for (const message of parsed.inbound) {
       const result = await repository.ingestInbound(message);
       if (result.inserted) inboundInserted += 1;
-      if (result.jobId) wakeableJobs += 1;
+      if (result.jobId) wakeableJobIds.push(result.jobId);
     }
 
     if (parsed.ignored.history > 0 || parsed.ignored.appStateSync > 0) {
@@ -157,11 +160,17 @@ export default async function handler(request: VercelRequest, response: VercelRe
       );
     }
 
-    if (wakeableJobs > 0) {
-      const drainLimit = Math.min(Math.max(wakeableJobs, 1), 8);
+    if (wakeableJobIds.length > 0) {
+      const drainLimit = Math.min(Math.max(wakeableJobIds.length, 1), 8);
       waitUntil(
         Promise.resolve()
-          .then(() => drainReceptionist(createProductionRuntime(), drainLimit))
+          .then(() =>
+            drainReceptionistForJobs(
+              createProductionRuntime(),
+              wakeableJobIds,
+              drainLimit,
+            ),
+          )
           .then((summary) => {
             logOperationalEvent("info", "d360_webhook_background_drain_completed", {
               correlationId,
@@ -182,6 +191,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       bodyBytes: rawBody.byteLength,
       inboundCount: parsed.inbound.length,
       inboundInserted,
+      targetedJobCount: wakeableJobIds.length,
       statusCount: parsed.statuses.length,
       humanEchoCount: parsed.humanEchoes.length,
       humanEchoesInserted,
