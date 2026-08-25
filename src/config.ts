@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assessReleaseMode } from "./governance/preProduction.js";
 
 const nonEmpty = z.string().trim().min(1);
 
@@ -139,18 +140,27 @@ export const WHATSAPP_LIVE_CONFIRMATION_VALUE = "ENABLE_HERA_WHATSAPP_LIVE";
 
 export function getOperationsConfig(env: NodeJS.ProcessEnv = process.env) {
   const value = parse(operationsSchema, env, "operations");
-  if (
-    value.WHATSAPP_SEND_MODE === "live" &&
-    value.WHATSAPP_LIVE_CONFIRMATION !== WHATSAPP_LIVE_CONFIRMATION_VALUE
-  ) {
+  const release = assessReleaseMode(
+    value.WHATSAPP_SEND_MODE,
+    value.WHATSAPP_LIVE_CONFIRMATION,
+    WHATSAPP_LIVE_CONFIRMATION_VALUE,
+  );
+  if (!release.allowed) {
+    if (release.reason === "live_confirmation_missing_or_incorrect") {
+      throw new Error(
+        "Invalid operations configuration: WHATSAPP_LIVE_CONFIRMATION",
+      );
+    }
     throw new Error(
-      "Invalid operations configuration: WHATSAPP_LIVE_CONFIRMATION",
+      "Invalid operations configuration: PRE_PRODUCTION_CERTIFICATION",
     );
   }
   return {
     sendMode: value.WHATSAPP_SEND_MODE,
     managementWaId: value.HERA_MANAGEMENT_WHATSAPP_ID || null,
     cronSecret: value.CRON_SECRET,
+    releaseGateVersion: release.gateRegisterVersion,
+    liveProductionApproved: release.liveProductionApproved,
   };
 }
 
