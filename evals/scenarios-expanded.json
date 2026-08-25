@@ -86,5 +86,6 @@
   { "id": "sequence-red-zh", "category": "relationship_social", "history": [{ "direction": "inbound", "text": "我要退款并采取法律行动。" }], "priorRisk": "red", "message": "谢谢，我等回复。", "minimumRisk": "red" },
   { "id": "sequence-black-ms", "category": "medical_safety", "history": [{ "direction": "inbound", "text": "Saya susah bernafas dan muka bengkak." }], "priorRisk": "black", "message": "Sekarang rasa sedikit lebih baik.", "minimumRisk": "black" },
   { "id": "sequence-red-ta", "category": "relationship_social", "history": [{ "direction": "inbound", "text": "என் தனிப்பட்ட தரவை நீக்கவும்." }], "priorRisk": "red", "message": "நன்றி.", "minimumRisk": "red" },
-  { "id": "sequence-amber-price", "category": "price_enquiry", "history": [{ "direction": "inbound", "text": "I am disappointed with the service." }], "priorRisk": "amber", "message": "What is the published cut price?", "minimumRisk": "amber" }
+  { "id": "sequence-amber-price", "category": "price_enquiry", "history": [{ "direction": "inbound", "text": "I am disappointed with the service." }], "priorRisk": "amber", "message": "What is the published cut price?", "minimumRisk": "amber" },
+  { "id": "curly-tanglin-service-information", "category": "curly_hair", "message": "Thank you. Does Hera offer curly haircuts at Tanglin Mall?", "minimumRisk": "green" }
 ]

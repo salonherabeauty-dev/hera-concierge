@@ -31,8 +31,8 @@ function decision(overrides: Partial<AgentDecision> = {}): AgentDecision {
 }
 
 test("response and verifier prompts enforce the approved booking ownership principle", () => {
-  assert.equal(RESPONSE_PROMPT_VERSION, "hera-receptionist-response-1.6.0");
-  assert.equal(VERIFIER_PROMPT_VERSION, "hera-receptionist-verifier-1.6.0");
+  assert.equal(RESPONSE_PROMPT_VERSION, "hera-receptionist-response-1.6.1");
+  assert.equal(VERIFIER_PROMPT_VERSION, "hera-receptionist-verifier-1.6.1");
   assert.ok(RESPONSE_INSTRUCTIONS.includes(BOOKING_OWNERSHIP_PRINCIPLE));
   assert.ok(
     VERIFIER_INSTRUCTIONS.includes(BOOKING_OWNERSHIP_VERIFIER_PRINCIPLE),

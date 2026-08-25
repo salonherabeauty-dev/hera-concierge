@@ -100,7 +100,7 @@ test("complete booking details create one structured reception handoff", () => {
     }),
   });
 
-  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.2.0");
+  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.2.1");
   assert.equal(result.createTask, true);
   assert.equal(result.taskType, "booking_action");
   assert.equal(result.scope, "task_only");
@@ -620,9 +620,12 @@ test("an informational service question cannot resurrect a completed booking han
   assert.equal(result.createTask, false);
   assert.equal(result.taskType, null);
   assert.equal(result.dedupeKey, null);
-  assert.match(result.reason, /stale booking proposal/i);
-  assert.equal(result.clientReplyOverride, "Yes, Hera offers curly haircuts.");
+  assert.match(result.reason, /operator-approved service matrix/i);
+  assert.match(result.clientReplyOverride ?? "", /Tanglin Mall atelier offers specialist curly haircuts/i);
+  assert.match(result.clientReplyOverride ?? "", /waves, curls and coils/i);
+  assert.match(result.clientReplyOverride ?? "", /current hair photo/i);
   assert.doesNotMatch(result.clientReplyOverride ?? "", /Irene|2 pm|reception|live availability/i);
+  assert.deepEqual(result.missingFacts, []);
 });
 
 test("a genuine current-turn availability request still creates a booking handoff", () => {
