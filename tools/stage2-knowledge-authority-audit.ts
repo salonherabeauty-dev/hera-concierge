@@ -70,6 +70,10 @@ function validState(input: {
   return "approved_current";
 }
 
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function main(): Promise<void> {
   if (process.env.VERCEL_ENV !== "preview") return;
   if (process.env.VERCEL_GIT_COMMIT_REF !== EXPECTED_BRANCH) {
@@ -85,6 +89,10 @@ async function main(): Promise<void> {
   if (projectRef(database.url) !== EXPECTED_PROJECT_REF) {
     throw new Error("stage2_audit_requires_isolated_staging_project");
   }
+
+  // Vercel build workers can briefly lead Supabase's JWT clock. Waiting avoids
+  // treating a transient infrastructure skew as a knowledge-governance failure.
+  await sleep(8_000);
 
   const client = createClient(database.url, database.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
