@@ -4,6 +4,8 @@ original = Path(__file__).with_name("apply_final_response_quality_gate.py")
 source = original.read_text(encoding="utf-8")
 source = source.replace("dedent('''\n    function cleanReply", "dedent(r'''\n    function cleanReply")
 source = source.replace("dedent('''\n    function humanize", "dedent(r'''\n    function humanize")
+source = source.replace("old_queue = dedent('''", "old_queue = dedent(r'''")
+source = source.replace("new_queue = dedent('''", "new_queue = dedent(r'''")
 
 old_replace_once = '''def replace_once(path: str, old: str, new: str) -> None:
     content = read(path)
