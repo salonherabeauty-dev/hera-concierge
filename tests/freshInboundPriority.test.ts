@@ -60,3 +60,13 @@ test("supersession is rechecked before every irreversible client-facing side eff
   }
   assert.match(source, /newer_inbound_recorded_before_side_effects/);
 });
+
+test("stale work is stopped before risk, incident, handoff or dead-letter fallback", async () => {
+  const source = await readFile(workerUrl, "utf8");
+  const sideEffectGuard = source.indexOf('"before_operational_side_effects"');
+  const riskUpdate = source.indexOf("updateConversationRisk(context.message.conversationId");
+  assert.ok(sideEffectGuard >= 0);
+  assert.ok(riskUpdate > sideEffectGuard);
+  assert.match(source, /dead_letter_fallback_suppressed/);
+  assert.match(source, /newer_inbound_recorded_before_dead_letter_fallback/);
+});

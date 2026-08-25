@@ -9,10 +9,13 @@ security definer
 set search_path = ''
 as $$
   with requested as materialized (
-    select distinct requested_id as id, ordinal_position
+    select distinct on (requested_id)
+      requested_id as id,
+      ordinal_position
     from unnest(coalesce(p_job_ids, '{}'::uuid[])) with ordinality
       as input(requested_id, ordinal_position)
     where requested_id is not null
+    order by requested_id, ordinal_position
   ),
   suppressible as materialized (
     select job.id, job.source_message_id

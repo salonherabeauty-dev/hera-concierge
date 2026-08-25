@@ -479,8 +479,6 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     usage: verificationUsage,
     latencyMs: verificationLatencyMs,
   });
-  await runtime.repository.updateConversationRisk(context.message.conversationId, policy.risk);
-
   if (
     await completeSupersededJob(
       runtime,
@@ -488,6 +486,8 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       "before_operational_side_effects",
     )
   ) return;
+
+  await runtime.repository.updateConversationRisk(context.message.conversationId, policy.risk);
 
   if (policy.requiresIncident && policy.risk !== "green") {
     await runtime.repository.openIncident({
@@ -900,7 +900,19 @@ async function drainClaimedReceptionistJobs(
         ...safeErrorFields(error),
       });
       if (status === "dead") {
-        await queueDeadLetterFallback(runtime.repository, job).catch(() => undefined);
+        if (await runtime.repository.isInboundSuperseded(job.sourceMessageId)) {
+          await runtime.repository.audit(
+            "dead_letter_fallback_suppressed",
+            "job",
+            job.id,
+            {
+              sourceMessageId: job.sourceMessageId,
+              reason: "newer_inbound_recorded_before_dead_letter_fallback",
+            },
+          );
+        } else {
+          await queueDeadLetterFallback(runtime.repository, job).catch(() => undefined);
+        }
       }
     }
   }
