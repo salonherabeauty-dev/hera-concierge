@@ -22,8 +22,14 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Strict type check and complete automated suite
-        run: npm test
+      - name: Strict TypeScript validation
+        run: npm run typecheck
+      - name: Exact Vercel deployment build
+        run: npm run build
+      - name: Verify generated Command Centre assets are committed
+        run: git diff --exit-code -- public/command-centre
+      - name: Complete automated suite
+        run: npm run test:unit
       - name: Credential scan
         run: npm run credential:scan
       - name: Production dependency audit
