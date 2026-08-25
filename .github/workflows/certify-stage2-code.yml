@@ -1,0 +1,65 @@
+name: Certify Stage 2 code
+
+on:
+  push:
+    branches:
+      - feat/stage-2-knowledge-action-authority
+
+permissions:
+  contents: write
+
+concurrency:
+  group: certify-stage2-code
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/stage-2-knowledge-action-authority
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Strict TypeScript validation
+        run: npm run typecheck
+      - name: Exact Vercel deployment build
+        run: npm run build
+      - name: Verify generated Command Centre assets
+        run: git diff --exit-code -- public/command-centre/
+      - name: Complete automated suite
+        run: npm run test:unit
+      - name: Credential scan
+        run: npm run credential:scan
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Record successful code certification
+        run: |
+          COMMIT=$(git rev-parse HEAD)
+          cat > docs/STAGE_2_CODE_VERIFICATION.md <<EOF
+          # Stage 2 Code Verification
+
+          The Stage 2 Knowledge and Action Authority release candidate passed:
+
+          - strict TypeScript validation;
+          - the exact Vercel deployment build;
+          - generated Command Centre asset verification;
+          - the complete automated suite;
+          - credential scanning; and
+          - the Production dependency audit.
+
+          Verified source commit before this evidence commit: \`$COMMIT\`.
+
+          This code verification does not enable live WhatsApp sending and does not modify Production.
+          EOF
+          rm .github/workflows/certify-stage2-code.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/STAGE_2_CODE_VERIFICATION.md .github/workflows/certify-stage2-code.yml
+          git commit -m "Record successful Stage 2 code verification"
+          git push origin HEAD:feat/stage-2-knowledge-action-authority
