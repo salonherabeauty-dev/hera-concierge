@@ -14,8 +14,11 @@ if (process.env.VERCEL_ENV !== "preview") {
 if (process.env.VERCEL_GIT_COMMIT_REF !== EXPECTED_BRANCH) {
   throw new Error("diagnostic_requires_isolated_branch");
 }
-if (process.env.WHATSAPP_SEND_MODE !== "shadow") {
-  throw new Error("diagnostic_requires_shadow_mode");
+if (
+  process.env.WHATSAPP_SEND_MODE &&
+  process.env.WHATSAPP_SEND_MODE !== "shadow"
+) {
+  throw new Error("diagnostic_refuses_non_shadow_mode");
 }
 if (process.env.WHATSAPP_LIVE_CONFIRMATION === "ENABLE_HERA_WHATSAPP_LIVE") {
   throw new Error("diagnostic_refuses_live_confirmation");
@@ -111,6 +114,7 @@ console.log(
     blockingTasks: blocking,
     allTasks: safeTasks,
     recentEvents: events,
+    observedSendMode: process.env.WHATSAPP_SEND_MODE ?? null,
     databaseMutationAttempted: false,
     whatsappSendAttempted: false,
   }),
