@@ -1,0 +1,49 @@
+name: Fix fresh inbound priority drain
+
+on:
+  push:
+    branches:
+      - fix/fresh-inbound-priority-drain
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/fresh-inbound-priority-drain
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply fresh inbound priority and chronology fix
+        run: node scripts/apply-fresh-inbound-priority-fix.mjs
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Strict type check, Command Centre build and complete automated suite
+        run: npm test
+      - name: Credential scan
+        run: npm run credential:scan
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Verify expected patch
+        run: |
+          git diff --check
+          test -f supabase/migrations/20260825000000_prioritize_fresh_inbound_jobs.sql
+          test -f tests/freshInboundPriority.test.ts
+          grep -q 'drainReceptionistForJobs' api/whatsapp/360dialog.ts
+          grep -q 'ai_claim_jobs_by_ids' src/db/repository.ts
+      - name: Remove one-time patcher and workflow, then commit verified implementation
+        run: |
+          rm scripts/apply-fresh-inbound-priority-fix.mjs
+          rm .github/workflows/fix-fresh-inbound-priority.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Prioritize fresh inbound jobs and recheck chronology before side effects'
+          git push origin HEAD:fix/fresh-inbound-priority-drain
