@@ -57,3 +57,12 @@ old_queue = 'worker.indexOf("if (policy.canAutoSend || handoff.createTask)")'
 new_queue = 'worker.indexOf("if (finalQuality.passed && (policy.canAutoSend || handoff.createTask))")'
 if old_queue in contract_text:
     contract.write_text(contract_text.replace(old_queue, new_queue, 1), encoding="utf-8")
+
+# The legacy read-only Preview repository remains compiled, although the protected
+# Command Centre uses the full repository. Satisfy the expanded detail contract.
+preview_repository = original.parents[1] / "src" / "command-centre" / "previewRepository.ts"
+preview_text = preview_repository.read_text(encoding="utf-8")
+preview_old = "      incidents,\n      candidates,\n    };"
+preview_new = "      incidents,\n      candidates,\n      decisions: [],\n    };"
+if preview_old in preview_text:
+    preview_repository.write_text(preview_text.replace(preview_old, preview_new, 1), encoding="utf-8")
