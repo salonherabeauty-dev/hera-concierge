@@ -26,7 +26,6 @@ test("retrieves Hera pricing and location evidence without a model call", () => 
   assert.ok(strandTest.some((result) => /do not proceed with bleach/i.test(result.excerpt)));
 });
 
-
 test("retrieves the operator-approved curly service and specialist matrix", () => {
   const service = searchStaticKnowledge(
     "Does Hera offer curly haircuts at Tanglin Mall?",
@@ -35,7 +34,7 @@ test("retrieves the operator-approved curly service and specialist matrix", () =
   assert.ok(
     service.some(
       (result) =>
-        result.version === "hera-operator-policy-v2" &&
+        result.version === "hera-operator-policy-v3" &&
         /both Tanglin Mall and Quayside Isle/i.test(result.excerpt),
     ),
   );
@@ -49,6 +48,48 @@ test("retrieves the operator-approved curly service and specialist matrix", () =
         /Irene is known for precision cutting and curl transformations/i.test(
           result.excerpt,
         ),
+    ),
+  );
+});
+
+test("retrieves the owner-approved service concern and authority rules", () => {
+  const concern = searchStaticKnowledge(
+    "How long do I have to raise a service concern and who approves a refinement?",
+    5,
+  );
+  assert.ok(
+    concern.some(
+      (result) =>
+        result.version === "hera-operator-policy-v3" &&
+        /seven calendar days/i.test(result.excerpt) &&
+        /salon manager may authorise/i.test(result.excerpt),
+    ),
+  );
+  assert.ok(
+    concern.every((result) => !/7 working days/i.test(result.excerpt)),
+  );
+
+  const booking = searchStaticKnowledge(
+    "Can the AI confirm my Timely booking?",
+    5,
+  );
+  assert.ok(
+    booking.some(
+      (result) =>
+        /Timely is the booking source of truth/i.test(result.excerpt) &&
+        /must never claim that an appointment was created/i.test(result.excerpt),
+    ),
+  );
+
+  const consent = searchStaticKnowledge(
+    "Can Hera publish my photo without separate consent?",
+    5,
+  );
+  assert.ok(
+    consent.some(
+      (result) =>
+        /Separate explicit consent is required/i.test(result.excerpt) &&
+        /privacy-officer review/i.test(result.excerpt),
     ),
   );
 });
