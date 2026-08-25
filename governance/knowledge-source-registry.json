@@ -1,0 +1,114 @@
+{
+  "documentType": "hera_knowledge_source_registry",
+  "version": "hera-knowledge-source-registry-2026-08-25.1",
+  "effectiveDate": "2026-08-25",
+  "approvedConstitutionVersion": "hera-service-constitution-2026-08-25.1",
+  "allowedSourceHosts": [
+    "herabeauty.sg",
+    "www.herabeauty.sg"
+  ],
+  "sourceClasses": [
+    {
+      "id": "deterministic_safety_legal",
+      "authorityRank": 1000,
+      "clientClaimScope": "urgent safety, legal and privacy containment only",
+      "runtimeStatus": "authoritative",
+      "sourceIdentityRule": "built-in deterministic policy version"
+    },
+    {
+      "id": "approved_service_constitution",
+      "authorityRank": 900,
+      "clientClaimScope": "owner-approved policies and authority boundaries",
+      "runtimeStatus": "authoritative",
+      "sourceIdentityRule": "exact constitution version or approved constitution document key"
+    },
+    {
+      "id": "signed_operator_policy",
+      "authorityRank": 800,
+      "clientClaimScope": "explicit versioned operator rules and specialist matrices",
+      "runtimeStatus": "authoritative",
+      "sourceIdentityRule": "version prefix hera-operator-policy-"
+    },
+    {
+      "id": "approved_dynamic_knowledge",
+      "authorityRank": 700,
+      "clientClaimScope": "current approved internal knowledge record",
+      "runtimeStatus": "authoritative_when_current",
+      "sourceIdentityRule": "database search returns only approved, effective and unexpired records"
+    },
+    {
+      "id": "embedded_approved_knowledge",
+      "authorityRank": 600,
+      "clientClaimScope": "Hera Concierge approved knowledge base v4",
+      "runtimeStatus": "authoritative_subject_to_higher_precedence_sources",
+      "sourceIdentityRule": "version hera-approved-v4 and source id prefix hera-kb-v4:"
+    },
+    {
+      "id": "approved_website_snapshot",
+      "authorityRank": 500,
+      "clientClaimScope": "approved versioned snapshots from Hera official website hosts",
+      "runtimeStatus": "authoritative_when_approved_current_and_conflict_free",
+      "sourceIdentityRule": "HTTPS source URL on an allowed Hera host"
+    },
+    {
+      "id": "current_client_record",
+      "authorityRank": 900,
+      "clientClaimScope": "read-only records belonging to the current WhatsApp contact",
+      "runtimeStatus": "tool_evidence_only",
+      "sourceIdentityRule": "source id booking:current-client-lookup"
+    },
+    {
+      "id": "deterministic_calculation",
+      "authorityRank": 900,
+      "clientClaimScope": "exact deterministic calculation only",
+      "runtimeStatus": "tool_evidence_only",
+      "sourceIdentityRule": "source id calculation:gst-9"
+    },
+    {
+      "id": "approved_digital_tool",
+      "authorityRank": 850,
+      "clientClaimScope": "approved Hera booking and Virtual Stylist links and their limitations",
+      "runtimeStatus": "tool_evidence_only",
+      "sourceIdentityRule": "source id hera-digital-tools"
+    },
+    {
+      "id": "general_hairdressing_knowledge",
+      "authorityRank": 100,
+      "clientClaimScope": "non-Hera education and explanation only",
+      "runtimeStatus": "never_authoritative_for_hera_facts",
+      "sourceIdentityRule": "explicit factual basis general_hairdressing_knowledge"
+    }
+  ],
+  "supersededClaims": [
+    {
+      "id": "seven_working_day_concern_window",
+      "pattern": "7 working days",
+      "replacementAuthority": "hera-service-constitution-2026-08-25.1",
+      "replacementRule": "Seven calendar days from completion of the appointment.",
+      "runtimeDisposition": "exclude"
+    }
+  ],
+  "supersededSections": [
+    {
+      "title": "SERVICE CONCERNS, COMPLAINTS AND REFUNDS",
+      "reason": "The embedded legacy section was superseded by the owner-approved Service Constitution.",
+      "runtimeDisposition": "exclude_from_static_retrieval"
+    }
+  ],
+  "controlledDiscrepancies": [
+    {
+      "id": "nanosmooth_price_references",
+      "topic": "Biomimetic Nano Keratin / NanoSmooth",
+      "rule": "The main service pricelist and the individual keratin page may contain different references or promotions. State the approved references without inventing which one applies and arrange confirmation before booking or service.",
+      "automaticResolution": "prohibited"
+    }
+  ],
+  "failClosedRules": [
+    "reject_untrusted_or_invalid_source_hosts",
+    "reject_superseded_claims_even_when_lexically_relevant",
+    "reject_expired_future_draft_or_retired_dynamic_records",
+    "prefer_higher_authority_only_after_current_query_relevance_is_established",
+    "never_use_general_knowledge_for_a_hera_price_policy_stylist_outlet_promotion_or_appointment",
+    "never_treat_a_source_id_as_evidence_unless_returned_in_the_current_run"
+  ]
+}
