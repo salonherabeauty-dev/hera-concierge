@@ -66,3 +66,7 @@ preview_old = "      incidents,\n      candidates,\n    };"
 preview_new = "      incidents,\n      candidates,\n      decisions: [],\n    };"
 if preview_old in preview_text:
     preview_repository.write_text(preview_text.replace(preview_old, preview_new, 1), encoding="utf-8")
+
+# Keep the final source tree clean for git diff --check.
+receptionist = original.parents[1] / "src" / "ai" / "receptionist.ts"
+receptionist.write_text(receptionist.read_text(encoding="utf-8").rstrip() + "\n", encoding="utf-8")
