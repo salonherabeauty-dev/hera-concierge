@@ -1,0 +1,303 @@
+{
+  "documentType": "hera_action_authority_contracts",
+  "version": "2026-08-25.1",
+  "constitutionVersion": "hera-service-constitution-2026-08-25.1",
+  "status": "certification_candidate",
+  "authorityLevels": [
+    "read_only",
+    "ai_authorised_no_external_side_effect",
+    "human_required",
+    "prohibited"
+  ],
+  "globalRules": {
+    "unknownAction": "prohibited",
+    "liveProviderSend": "blocked_until_all_required_gates_pass_and_both_live_controls_are_enabled",
+    "externalMutationWithoutContract": "prohibited",
+    "humanOutcomeMustBeVerified": true,
+    "idempotencyRequiredForEveryExternalMutation": true,
+    "providerConfirmationRequiredForEveryExternalMutation": true,
+    "beforeAfterAuditRequiredForEveryExternalMutation": true,
+    "reconciliationRequiredForEveryExternalMutation": true
+  },
+  "contracts": [
+    {
+      "actionKey": "answer_approved_service_information",
+      "domain": "service_information",
+      "authority": "ai_authorised_no_external_side_effect",
+      "responsibleRole": null,
+      "taskType": null,
+      "scope": null,
+      "requiredEvidence": ["approved_current_source", "final_response_quality_pass"],
+      "allowedClaims": ["grounded_service_fact", "approved_inclusion_or_condition"],
+      "prohibitedClaims": ["invented_hera_fact", "unverified_live_availability"]
+    },
+    {
+      "actionKey": "calculate_nine_percent_gst",
+      "domain": "pricing",
+      "authority": "ai_authorised_no_external_side_effect",
+      "responsibleRole": null,
+      "taskType": null,
+      "scope": null,
+      "requiredEvidence": ["approved_base_price", "deterministic_calculation"],
+      "allowedClaims": ["calculated_gst_amount", "calculated_gst_inclusive_amount"],
+      "prohibitedClaims": ["final_service_quote_without_consultation"]
+    },
+    {
+      "actionKey": "read_current_client_booking_record",
+      "domain": "booking",
+      "authority": "read_only",
+      "responsibleRole": null,
+      "taskType": null,
+      "scope": null,
+      "requiredEvidence": ["current_client_identity_scope", "authorised_booking_record"],
+      "allowedClaims": ["verified_existing_booking_details"],
+      "prohibitedClaims": ["another_clients_booking", "inferred_or_stale_booking_state"]
+    },
+    {
+      "actionKey": "quote_live_availability",
+      "domain": "booking",
+      "authority": "human_required",
+      "responsibleRole": "receptionist",
+      "taskType": "booking_action",
+      "scope": "task_only",
+      "requiredEvidence": ["verified_live_timely_record"],
+      "allowedClaims": ["verified_available_option"],
+      "prohibitedClaims": ["invented_slot", "unverified_stylist_schedule"]
+    },
+    {
+      "actionKey": "create_booking",
+      "domain": "booking",
+      "authority": "human_required",
+      "responsibleRole": "receptionist",
+      "taskType": "booking_action",
+      "scope": "task_only",
+      "requiredEvidence": ["complete_client_request", "timely_success_or_authorised_human_outcome"],
+      "allowedClaims": ["request_received", "verified_booking_confirmation_after_success"],
+      "prohibitedClaims": ["booking_confirmed_before_success"],
+      "futureToolRequirements": ["eligibility_rule", "idempotency_key", "provider_confirmation", "before_after_audit", "reconciliation"]
+    },
+    {
+      "actionKey": "reschedule_booking",
+      "domain": "booking",
+      "authority": "human_required",
+      "responsibleRole": "receptionist",
+      "taskType": "appointment_change",
+      "scope": "task_only",
+      "requiredEvidence": ["verified_existing_booking", "requested_new_option", "timely_success_or_authorised_human_outcome"],
+      "allowedClaims": ["change_request_received", "verified_reschedule_confirmation_after_success"],
+      "prohibitedClaims": ["rescheduled_before_success"],
+      "futureToolRequirements": ["eligibility_rule", "idempotency_key", "provider_confirmation", "before_after_audit", "reconciliation"]
+    },
+    {
+      "actionKey": "cancel_booking",
+      "domain": "booking",
+      "authority": "human_required",
+      "responsibleRole": "receptionist",
+      "taskType": "appointment_change",
+      "scope": "task_only",
+      "requiredEvidence": ["verified_existing_booking", "client_cancellation_request", "timely_success_or_authorised_human_outcome"],
+      "allowedClaims": ["cancellation_request_received", "verified_cancellation_confirmation_after_success"],
+      "prohibitedClaims": ["cancelled_before_success"],
+      "futureToolRequirements": ["eligibility_rule", "idempotency_key", "provider_confirmation", "before_after_audit", "reconciliation"]
+    },
+    {
+      "actionKey": "confirm_booking_outcome",
+      "domain": "booking",
+      "authority": "human_required",
+      "responsibleRole": "receptionist",
+      "taskType": "booking_action",
+      "scope": "task_only",
+      "requiredEvidence": ["timely_success_or_authorised_human_outcome"],
+      "allowedClaims": ["verified_booking_outcome"],
+      "prohibitedClaims": ["confirmation_from_client_request_alone"]
+    },
+    {
+      "actionKey": "complaint_review",
+      "domain": "service_recovery",
+      "authority": "human_required",
+      "responsibleRole": "salon_manager",
+      "taskType": "complaint_review",
+      "scope": "full_takeover",
+      "requiredEvidence": ["client_concern", "service_context", "authorised_review"],
+      "allowedClaims": ["manager_review_arranged", "review_process_explained"],
+      "prohibitedClaims": ["liability_admission", "automatic_refund", "automatic_redo", "blame_assignment"]
+    },
+    {
+      "actionKey": "authorise_policy_refinement",
+      "domain": "service_recovery",
+      "authority": "human_required",
+      "responsibleRole": "salon_manager",
+      "taskType": "complaint_review",
+      "scope": "full_takeover",
+      "requiredEvidence": ["within_seven_calendar_days", "original_service_relationship_confirmed", "safe_correction_confirmed"],
+      "allowedClaims": ["authorised_complimentary_refinement"],
+      "prohibitedClaims": ["automatic_eligibility", "completely_different_result", "entirely_new_service"]
+    },
+    {
+      "actionKey": "authorise_outside_policy_exception",
+      "domain": "service_recovery",
+      "authority": "human_required",
+      "responsibleRole": "managing_director_or_owner",
+      "taskType": "complaint_review",
+      "scope": "full_takeover",
+      "requiredEvidence": ["documented_exception_reason", "senior_approval"],
+      "allowedClaims": ["verified_exception_outcome"],
+      "prohibitedClaims": ["predicted_exception_approval"]
+    },
+    {
+      "actionKey": "apply_waiting_time_recovery",
+      "domain": "service_recovery",
+      "authority": "human_required",
+      "responsibleRole": "salon_manager",
+      "taskType": "complaint_review",
+      "scope": "task_only",
+      "requiredEvidence": ["wait_exceeded_ten_minutes_beyond_agreed_time", "transaction_record_or_manager_confirmation"],
+      "allowedClaims": ["policy_explanation", "verified_discount_application"],
+      "prohibitedClaims": ["discount_applied_without_transaction_evidence"]
+    },
+    {
+      "actionKey": "approve_refund",
+      "domain": "finance",
+      "authority": "human_required",
+      "responsibleRole": "managing_director_or_owner",
+      "taskType": "refund_finance",
+      "scope": "full_takeover",
+      "requiredEvidence": ["case_review", "senior_approval", "transaction_confirmation"],
+      "allowedClaims": ["verified_refund_decision", "verified_refund_completion"],
+      "prohibitedClaims": ["refund_promised_by_ai", "refund_promised_by_receptionist"]
+    },
+    {
+      "actionKey": "approve_voucher",
+      "domain": "finance",
+      "authority": "human_required",
+      "responsibleRole": "managing_director_or_owner",
+      "taskType": "refund_finance",
+      "scope": "full_takeover",
+      "requiredEvidence": ["case_review", "senior_approval", "voucher_record"],
+      "allowedClaims": ["verified_voucher_decision"],
+      "prohibitedClaims": ["voucher_promised_without_approval"]
+    },
+    {
+      "actionKey": "approve_compensation",
+      "domain": "finance",
+      "authority": "human_required",
+      "responsibleRole": "managing_director_or_owner",
+      "taskType": "refund_finance",
+      "scope": "full_takeover",
+      "requiredEvidence": ["case_review", "senior_approval", "transaction_confirmation"],
+      "allowedClaims": ["verified_compensation_decision"],
+      "prohibitedClaims": ["compensation_promised_without_approval"]
+    },
+    {
+      "actionKey": "provide_urgent_safety_containment",
+      "domain": "medical_safety",
+      "authority": "ai_authorised_no_external_side_effect",
+      "responsibleRole": "salon_manager",
+      "taskType": "medical_safety",
+      "scope": "emergency",
+      "requiredEvidence": ["deterministic_symptom_trigger"],
+      "allowedClaims": ["urgent_medical_attention_guidance", "stop_service_or_product_guidance", "hera_follow_up_arranged"],
+      "prohibitedClaims": ["medical_diagnosis", "guaranteed_safety", "delay_urgent_care"]
+    },
+    {
+      "actionKey": "diagnose_medical_condition",
+      "domain": "medical_safety",
+      "authority": "prohibited",
+      "responsibleRole": null,
+      "taskType": "medical_safety",
+      "scope": "emergency",
+      "requiredEvidence": [],
+      "allowedClaims": [],
+      "prohibitedClaims": ["diagnosis", "prescription", "medical_clearance"]
+    },
+    {
+      "actionKey": "determine_technical_damage_or_fault",
+      "domain": "technical_review",
+      "authority": "human_required",
+      "responsibleRole": "technical_lead_or_salon_manager",
+      "taskType": "technical_review",
+      "scope": "full_takeover",
+      "requiredEvidence": ["service_records", "hair_or_scalp_evidence", "qualified_review"],
+      "allowedClaims": ["verified_technical_findings"],
+      "prohibitedClaims": ["ai_damage_diagnosis", "fault_assignment_before_review"]
+    },
+    {
+      "actionKey": "admit_legal_liability",
+      "domain": "legal",
+      "authority": "prohibited",
+      "responsibleRole": null,
+      "taskType": "privacy_legal",
+      "scope": "full_takeover",
+      "requiredEvidence": [],
+      "allowedClaims": [],
+      "prohibitedClaims": ["liability_admission", "legal_conclusion"]
+    },
+    {
+      "actionKey": "process_privacy_access_request",
+      "domain": "privacy",
+      "authority": "human_required",
+      "responsibleRole": "privacy_officer",
+      "taskType": "privacy_legal",
+      "scope": "full_takeover",
+      "requiredEvidence": ["identity_verification", "request_scope", "approved_response_record"],
+      "allowedClaims": ["request_received", "verified_completion"],
+      "prohibitedClaims": ["completed_without_verified_record", "another_clients_data"]
+    },
+    {
+      "actionKey": "process_privacy_deletion_request",
+      "domain": "privacy",
+      "authority": "human_required",
+      "responsibleRole": "privacy_officer",
+      "taskType": "privacy_legal",
+      "scope": "full_takeover",
+      "requiredEvidence": ["identity_verification", "retention_and_legal_review", "verified_action_record"],
+      "allowedClaims": ["request_received", "verified_completion_or_lawful_limitation"],
+      "prohibitedClaims": ["deletion_completed_without_record"]
+    },
+    {
+      "actionKey": "record_media_capture_consent",
+      "domain": "privacy",
+      "authority": "human_required",
+      "responsibleRole": "privacy_officer_or_authorised_staff",
+      "taskType": "consent_media",
+      "scope": "task_only",
+      "requiredEvidence": ["explicit_capture_consent", "approved_consent_record"],
+      "allowedClaims": ["verified_capture_consent_status"],
+      "prohibitedClaims": ["consent_assumed_from_attendance"]
+    },
+    {
+      "actionKey": "record_media_publication_consent",
+      "domain": "privacy",
+      "authority": "human_required",
+      "responsibleRole": "privacy_officer_or_authorised_staff",
+      "taskType": "consent_media",
+      "scope": "task_only",
+      "requiredEvidence": ["separate_explicit_publication_consent", "approved_consent_record"],
+      "allowedClaims": ["verified_publication_consent_status"],
+      "prohibitedClaims": ["capture_consent_treated_as_publication_consent"]
+    },
+    {
+      "actionKey": "withdraw_media_consent",
+      "domain": "privacy",
+      "authority": "human_required",
+      "responsibleRole": "privacy_officer",
+      "taskType": "consent_media",
+      "scope": "full_takeover",
+      "requiredEvidence": ["verified_withdrawal_request", "future_use_block", "published_material_review_if_applicable"],
+      "allowedClaims": ["request_received", "verified_future_use_block", "verified_review_outcome"],
+      "prohibitedClaims": ["all_published_material_removed_without_verification"]
+    },
+    {
+      "actionKey": "send_ai_generated_whatsapp_reply",
+      "domain": "messaging",
+      "authority": "prohibited",
+      "responsibleRole": null,
+      "taskType": null,
+      "scope": null,
+      "requiredEvidence": ["all_required_gates_passed", "immutable_release_approved", "healthy_readiness", "live_send_mode", "independent_live_confirmation", "chronology_guard", "human_takeover_guard", "final_quality_pass"],
+      "allowedClaims": [],
+      "prohibitedClaims": ["provider_send_while_shadow_or_gate_open"],
+      "certificationState": "blocked_until_stage_7_approval"
+    }
+  ]
+}
