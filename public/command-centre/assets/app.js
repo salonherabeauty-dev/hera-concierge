@@ -12,6 +12,7 @@ const state = {
     selected: null,
     taskFilter: "open",
     conversationSearch: "",
+    noteDrafts: {},
     busy: false,
     loadingView: true,
     notice: null,
@@ -582,7 +583,7 @@ ${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final respo
   <small>${qualityIssues.length ? escapeHtml(qualityIssues.join(" · ")) : escapeHtml(String(finalVerification?.summary ?? "Final response passed every quality dimension."))}</small>
 </div>` : ""}
             ${canAddInternalNote() ? `<form class="note-form" id="note-form" data-conversation-id="${escapeHtml(conversation.id)}" data-task-id="${escapeHtml(activeTask?.id ?? "")}">
-              <label class="field"><span>Internal note</span><textarea name="note" rows="3" maxlength="4000" placeholder="Record a clear internal note. This is never sent to the client."></textarea></label>
+              <label class="field"><span>Internal note</span><textarea name="note" rows="3" maxlength="4000" placeholder="Record a clear internal note. This is never sent to the client.">${escapeHtml(state.noteDrafts[conversation.id] ?? "")}</textarea></label>
               <button type="submit" class="button button--secondary button--full">Add internal note</button>
             </form>` : ""}
             ${detail.notes.length ? `<div class="notes-list"><p class="eyebrow">Recent notes</p>${detail.notes.slice(0, 6).map((note) => `<article><p>${escapeHtml(note.body)}</p><small>${escapeHtml(note.authorDisplayName)} · ${formatDate(note.createdAt)}</small></article>`).join("")}</div>` : ""}
@@ -591,8 +592,54 @@ ${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final respo
       </div>
     </aside>`;
 }
+let renderGeneration = 0;
+function captureDrawerRenderSnapshot() {
+    const conversationId = state.selected?.conversation.id;
+    if (!conversationId)
+        return null;
+    const drawerBody = root.querySelector(".drawer__body");
+    const transcript = root.querySelector(".transcript");
+    const note = root.querySelector('#note-form textarea[name="note"]');
+    if (note)
+        state.noteDrafts[conversationId] = note.value;
+    return {
+        conversationId,
+        bodyScrollTop: drawerBody?.scrollTop ?? 0,
+        transcriptScrollTop: transcript?.scrollTop ?? 0,
+        noteFocused: document.activeElement === note,
+        noteSelectionStart: note?.selectionStart ?? null,
+        noteSelectionEnd: note?.selectionEnd ?? null,
+    };
+}
+function restoreDrawerRenderSnapshot(snapshot) {
+    if (state.selected?.conversation.id !== snapshot.conversationId)
+        return;
+    const drawerBody = root.querySelector(".drawer__body");
+    const transcript = root.querySelector(".transcript");
+    const note = root.querySelector('#note-form textarea[name="note"]');
+    if (drawerBody)
+        drawerBody.scrollTop = snapshot.bodyScrollTop;
+    if (transcript)
+        transcript.scrollTop = snapshot.transcriptScrollTop;
+    if (note && snapshot.noteFocused) {
+        note.focus({ preventScroll: true });
+        if (snapshot.noteSelectionStart !== null &&
+            snapshot.noteSelectionEnd !== null) {
+            note.setSelectionRange(snapshot.noteSelectionStart, snapshot.noteSelectionEnd);
+        }
+    }
+}
 function render() {
+    const snapshot = captureDrawerRenderSnapshot();
+    const generation = ++renderGeneration;
     root.innerHTML = shell();
+    if (!snapshot)
+        return;
+    window.requestAnimationFrame(() => {
+        if (generation !== renderGeneration)
+            return;
+        restoreDrawerRenderSnapshot(snapshot);
+    });
 }
 async function loadDashboard() {
     const result = await commandApi.dashboard();
@@ -684,6 +731,10 @@ root.addEventListener("submit", (event) => {
         void commandApi
             .addNote(conversationId, note, taskId)
             .then(async () => {
+            state.noteDrafts[conversationId] = "";
+            const noteField = root.querySelector('#note-form textarea[name="note"]');
+            if (noteField)
+                noteField.value = "";
             setNotice("success", "Internal note recorded.");
             const result = await commandApi.conversation(conversationId);
             state.selected = result.detail;
@@ -698,6 +749,13 @@ root.addEventListener("submit", (event) => {
 let searchTimer = 0;
 root.addEventListener("input", (event) => {
     const target = event.target;
+    if (target instanceof HTMLTextAreaElement && target.name === "note") {
+        const form = target.closest("#note-form");
+        const conversationId = form?.dataset.conversationId;
+        if (conversationId)
+            state.noteDrafts[conversationId] = target.value;
+        return;
+    }
     if (!(target instanceof HTMLInputElement) || target.id !== "conversation-search")
         return;
     state.conversationSearch = target.value;
@@ -722,7 +780,7 @@ root.addEventListener("click", (event) => {
         void loadView("tasks");
         return;
     }
-    const conversationControl = target.closest("[data-conversation-id]");
+    const conversationControl = target.closest("button[data-conversation-id]");
     const actionControl = target.closest("[data-action]");
     if (conversationControl?.dataset.conversationId && !actionControl) {
         void openConversation(conversationControl.dataset.conversationId);
@@ -750,6 +808,7 @@ root.addEventListener("click", (event) => {
             state.tasks = [];
             state.conversations = [];
             state.selected = null;
+            state.noteDrafts = {};
             state.busy = false;
             render();
         });
