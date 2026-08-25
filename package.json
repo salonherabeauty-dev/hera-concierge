@@ -13,7 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build:command-centre": "tsc -p tsconfig.command-centre.json",
-    "build": "npm run build:command-centre",
+    "build": "npm run build:command-centre && node --import tsx scripts/prove-pricing-retry-after-failover.ts",
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "test": "npm run typecheck && npm run build:command-centre && npm run test:unit",
     "credential:scan": "node scripts/scan-secrets.mjs",
