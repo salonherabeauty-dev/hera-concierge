@@ -1,0 +1,290 @@
+{
+  "documentType": "hera_action_authority_registry",
+  "version": "hera-action-authority-registry-2026-08-25.1",
+  "effectiveDate": "2026-08-25",
+  "approvedConstitutionVersion": "hera-service-constitution-2026-08-25.1",
+  "principles": [
+    "A client-facing statement that an action is complete requires verified completion evidence, not model intent.",
+    "Read access never implies write authority.",
+    "A proposed human handoff is not complete until a durable task is stored.",
+    "Financial, consent, privacy, liability and medical decisions remain outside AI authority.",
+    "An unavailable integration is an explicit human-required boundary, not permission to improvise."
+  ],
+  "actions": [
+    {
+      "id": "answer_grounded_hera_information",
+      "authorityClass": "ai_authorised_read_only",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["approved_current_hera_source", "final_response_quality_pass"],
+      "idempotency": "not_applicable",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "response_and_policy_decisions"
+    },
+    {
+      "id": "explain_general_hairdressing_concept",
+      "authorityClass": "ai_authorised_educational",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["explicit_general_hairdressing_factual_basis", "no_hera_specific_claim"],
+      "idempotency": "not_applicable",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "response_decision"
+    },
+    {
+      "id": "calculate_nine_percent_gst",
+      "authorityClass": "ai_authorised_deterministic",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["calculation:gst-9"],
+      "idempotency": "deterministic_input_value",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "tool_evidence_in_response_decision"
+    },
+    {
+      "id": "read_current_client_booking_record",
+      "authorityClass": "ai_authorised_read_only",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["booking:current-client-lookup", "current_contact_scope"],
+      "idempotency": "read_only",
+      "providerConfirmation": "current_read_result",
+      "auditRequirement": "tool_evidence_in_response_decision"
+    },
+    {
+      "id": "share_official_booking_or_virtual_stylist_link",
+      "authorityClass": "ai_authorised_read_only",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["hera-digital-tools"],
+      "idempotency": "not_applicable",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "tool_evidence_in_response_decision"
+    },
+    {
+      "id": "ask_clarifying_question",
+      "authorityClass": "ai_authorised_conversation",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["minimum_necessary_information_only"],
+      "idempotency": "conversation_context",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "response_decision"
+    },
+    {
+      "id": "request_appointment_details",
+      "authorityClass": "ai_authorised_information_collection",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["current_client_request_requires_booking_or_change_information"],
+      "idempotency": "conversation_context",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "response_decision"
+    },
+    {
+      "id": "request_photos",
+      "authorityClass": "ai_authorised_information_collection",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["photos_are_relevant_and_not_already_supplied"],
+      "idempotency": "conversation_context",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "response_decision"
+    },
+    {
+      "id": "create_human_action_task",
+      "authorityClass": "ai_authorised_durable_handoff",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["complete_task_contract", "appropriate_role_scope_priority", "database_persistence_success"],
+      "idempotency": "task_dedupe_key",
+      "providerConfirmation": "database_task_id_and_status",
+      "auditRequirement": "automatic_handoff_created_or_refreshed"
+    },
+    {
+      "id": "open_incident",
+      "authorityClass": "ai_authorised_safety_record",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["deterministic_policy_requires_incident", "non_green_risk"],
+      "idempotency": "source_message_and_category",
+      "providerConfirmation": "database_incident_record",
+      "auditRequirement": "incident_and_policy_record"
+    },
+    {
+      "id": "notify_management",
+      "authorityClass": "review_only_management_alert",
+      "runtimeStatus": "implemented_shadow_or_management_authorised_only",
+      "requiredEvidence": ["policy_requires_management_notification"],
+      "idempotency": "management_alert_source_message_id",
+      "providerConfirmation": "not_client_delivery_authority",
+      "auditRequirement": "management_outbox_record"
+    },
+    {
+      "id": "give_urgent_safety_guidance",
+      "authorityClass": "ai_authorised_deterministic_safety",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["red_or_black_risk_or_explicit_safety_policy"],
+      "idempotency": "source_message_id",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "policy_and_incident_record"
+    },
+    {
+      "id": "create_booking",
+      "authorityClass": "human_required_until_certified_write_integration",
+      "runtimeStatus": "not_implemented",
+      "requiredEvidence": ["authorised_human_or_certified_timely_write_tool", "before_after_state", "provider_success"],
+      "idempotency": "required_before_future_implementation",
+      "providerConfirmation": "required_before_client_confirmation",
+      "auditRequirement": "required_before_future_implementation"
+    },
+    {
+      "id": "reschedule_booking",
+      "authorityClass": "human_required_until_certified_write_integration",
+      "runtimeStatus": "not_implemented",
+      "requiredEvidence": ["authorised_human_or_certified_timely_write_tool", "before_after_state", "provider_success"],
+      "idempotency": "required_before_future_implementation",
+      "providerConfirmation": "required_before_client_confirmation",
+      "auditRequirement": "required_before_future_implementation"
+    },
+    {
+      "id": "cancel_booking",
+      "authorityClass": "human_required_until_certified_write_integration",
+      "runtimeStatus": "not_implemented",
+      "requiredEvidence": ["authorised_human_or_certified_timely_write_tool", "before_after_state", "provider_success"],
+      "idempotency": "required_before_future_implementation",
+      "providerConfirmation": "required_before_client_confirmation",
+      "auditRequirement": "required_before_future_implementation"
+    },
+    {
+      "id": "confirm_live_availability",
+      "authorityClass": "human_required_without_verified_live_record",
+      "runtimeStatus": "not_implemented",
+      "requiredEvidence": ["current_timely_availability_result"],
+      "idempotency": "time_bounded_read",
+      "providerConfirmation": "required",
+      "auditRequirement": "availability_source_and_timestamp"
+    },
+    {
+      "id": "confirm_booking_outcome_to_client",
+      "authorityClass": "human_required_or_certified_tool_result",
+      "runtimeStatus": "human_workflow_only",
+      "requiredEvidence": ["verified_timely_or_authorised_human_outcome"],
+      "idempotency": "booking_reference_and_action",
+      "providerConfirmation": "required",
+      "auditRequirement": "task_resolution_and_verified_outcome"
+    },
+    {
+      "id": "authorise_complimentary_refinement",
+      "authorityClass": "salon_manager_within_policy",
+      "runtimeStatus": "human_only",
+      "requiredEvidence": ["management_review", "original_service_relationship", "safe_to_refine", "within_seven_calendar_days_or_senior_exception"],
+      "idempotency": "service_concern_case",
+      "providerConfirmation": "authorised_human_decision",
+      "auditRequirement": "complaint_task_resolution"
+    },
+    {
+      "id": "apply_waiting_time_recovery",
+      "authorityClass": "salon_manager",
+      "runtimeStatus": "human_only",
+      "requiredEvidence": ["wait_exceeded_ten_minutes", "transaction_confirmation"],
+      "idempotency": "appointment_and_recovery_type",
+      "providerConfirmation": "billing_or_authorised_human_confirmation",
+      "auditRequirement": "service_recovery_record"
+    },
+    {
+      "id": "approve_refund_voucher_or_compensation",
+      "authorityClass": "managing_director_or_owner",
+      "runtimeStatus": "human_only",
+      "requiredEvidence": ["authorised_senior_decision", "transaction_confirmation_where_applicable"],
+      "idempotency": "case_and_financial_action",
+      "providerConfirmation": "required",
+      "auditRequirement": "financial_decision_and_transaction_record"
+    },
+    {
+      "id": "confirm_capture_consent",
+      "authorityClass": "verified_record_required",
+      "runtimeStatus": "human_or_certified_consent_system_only",
+      "requiredEvidence": ["separate_explicit_capture_consent_record"],
+      "idempotency": "client_media_purpose_version",
+      "providerConfirmation": "consent_record",
+      "auditRequirement": "consent_evidence"
+    },
+    {
+      "id": "confirm_publication_consent",
+      "authorityClass": "verified_record_required",
+      "runtimeStatus": "human_or_certified_consent_system_only",
+      "requiredEvidence": ["separate_explicit_publication_consent_record"],
+      "idempotency": "client_media_publication_purpose_version",
+      "providerConfirmation": "consent_record",
+      "auditRequirement": "consent_evidence"
+    },
+    {
+      "id": "complete_consent_withdrawal",
+      "authorityClass": "privacy_officer_or_certified_consent_system",
+      "runtimeStatus": "human_only",
+      "requiredEvidence": ["verified_withdrawal_record", "future_use_block", "published_material_review_when_needed"],
+      "idempotency": "client_media_withdrawal",
+      "providerConfirmation": "required",
+      "auditRequirement": "privacy_task_and_consent_record"
+    },
+    {
+      "id": "complete_privacy_deletion_or_legal_determination",
+      "authorityClass": "privacy_or_legal_human_required",
+      "runtimeStatus": "human_only",
+      "requiredEvidence": ["verified_identity_and_scope", "authorised_decision", "completion_record"],
+      "idempotency": "privacy_case_and_action",
+      "providerConfirmation": "required",
+      "auditRequirement": "privacy_legal_case_record"
+    },
+    {
+      "id": "admit_liability",
+      "authorityClass": "prohibited_for_ai",
+      "runtimeStatus": "blocked",
+      "requiredEvidence": ["not_applicable"],
+      "idempotency": "not_applicable",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "blocked_action_when_attempted"
+    },
+    {
+      "id": "diagnose_medical_condition_or_chemical_damage",
+      "authorityClass": "prohibited_for_ai",
+      "runtimeStatus": "blocked",
+      "requiredEvidence": ["not_applicable"],
+      "idempotency": "not_applicable",
+      "providerConfirmation": "not_applicable",
+      "auditRequirement": "blocked_action_when_attempted"
+    },
+    {
+      "id": "send_ai_generated_client_reply",
+      "authorityClass": "release_locked",
+      "runtimeStatus": "shadow_only",
+      "requiredEvidence": ["all_mandatory_pre_production_gates_passed", "exact_release_approval", "two_live_send_controls", "final_quality_and_action_authority_pass"],
+      "idempotency": "source_message_id",
+      "providerConfirmation": "required_only_after_live_release",
+      "auditRequirement": "durable_outbox_and_provider_id"
+    },
+    {
+      "id": "accept_human_task",
+      "authorityClass": "role_and_ownership_controlled_human",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["active_staff_profile", "permitted_role", "optimistic_version"],
+      "idempotency": "task_version",
+      "providerConfirmation": "database_transition",
+      "auditRequirement": "handoff_event_and_audit_log"
+    },
+    {
+      "id": "resolve_human_task",
+      "authorityClass": "owner_or_permitted_task_owner",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["permitted_role_or_named_owner", "optimistic_version", "resolution_record"],
+      "idempotency": "task_version",
+      "providerConfirmation": "database_transition",
+      "auditRequirement": "handoff_event_and_audit_log"
+    },
+    {
+      "id": "return_conversation_to_ai",
+      "authorityClass": "authorised_human_control",
+      "runtimeStatus": "implemented",
+      "requiredEvidence": ["explicit_reason", "no_blocking_human_task", "audited_mode_change"],
+      "idempotency": "conversation_mode",
+      "providerConfirmation": "database_transition",
+      "auditRequirement": "conversation_mode_change"
+    }
+  ],
+  "releaseDeclaration": {
+    "liveProductionApproved": false,
+    "shadowModeRequired": true,
+    "sendAuthority": "blocked_until_all_pre_production_gates_pass"
+  }
+}
