@@ -1,4 +1,5 @@
 name: Apply Stage 2 action authority to worker
+# One-time workflow; it removes itself after successful verification.
 
 on:
   push:
