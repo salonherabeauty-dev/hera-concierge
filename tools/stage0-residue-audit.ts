@@ -71,7 +71,7 @@ async function main(): Promise<void> {
         .limit(100),
       client
         .from("ai_incidents")
-        .select("id,conversation_id,source_message_id,category,severity,status,evidence,resolution,created_at,updated_at,resolved_at")
+        .select("id,conversation_id,source_message_id,category,severity,status,evidence,resolution,created_at,updated_at")
         .in("status", ["open", "monitoring"])
         .order("created_at", { ascending: true })
         .limit(100),
@@ -271,7 +271,6 @@ async function main(): Promise<void> {
         hasResolution: Boolean(incident.resolution),
         createdAt: incident.created_at,
         updatedAt: incident.updated_at,
-        resolvedAt: incident.resolved_at,
         associatedOpenTaskCount: tasks.filter(
           (task) => task.conversation_id === incident.conversation_id,
         ).length,
