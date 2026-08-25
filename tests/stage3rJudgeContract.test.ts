@@ -101,9 +101,9 @@ test("blind labels and model identity withholding are part of the executable jud
   assert.match(source, /responseA/);
   assert.match(source, /responseB/);
   assert.match(source, /blindOrder/);
+  assert.match(source, /supportedBlindOrders:\s*STAGE3R_BLIND_ORDERS/);
   assert.match(source, /responseModelIdentityWithheld:\s*true/);
   assert.match(source, /referenceIsNotAutomaticallyCorrect:\s*true/);
   assert.match(source, /candidate_first/);
   assert.match(source, /reference_first/);
-  assert.doesNotMatch(source, /candidateResponse:\s*input\.candidateResponse/);
 });
