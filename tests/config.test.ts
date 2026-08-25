@@ -13,6 +13,7 @@ test("shadow mode remains safe without a live confirmation", () => {
     WHATSAPP_SEND_MODE: "shadow",
   });
   assert.equal(config.sendMode, "shadow");
+  assert.equal(config.liveProductionApproved, false);
 });
 
 test("live mode refuses to start without the independent confirmation", () => {
@@ -38,11 +39,14 @@ test("live mode refuses an incorrect confirmation", () => {
   );
 });
 
-test("live mode starts only when both controls are explicit", () => {
-  const config = getOperationsConfig({
-    CRON_SECRET: cronSecret,
-    WHATSAPP_SEND_MODE: "live",
-    WHATSAPP_LIVE_CONFIRMATION: WHATSAPP_LIVE_CONFIRMATION_VALUE,
-  });
-  assert.equal(config.sendMode, "live");
+test("even both live controls remain locked while certification is incomplete", () => {
+  assert.throws(
+    () =>
+      getOperationsConfig({
+        CRON_SECRET: cronSecret,
+        WHATSAPP_SEND_MODE: "live",
+        WHATSAPP_LIVE_CONFIRMATION: WHATSAPP_LIVE_CONFIRMATION_VALUE,
+      }),
+    /PRE_PRODUCTION_CERTIFICATION/,
+  );
 });
