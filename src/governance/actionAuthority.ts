@@ -72,6 +72,14 @@ export const RUNTIME_ACTION_AUTHORITY_CONTRACTS = [
       "Record the cancellation request and confirm only after Timely success or an authorised human outcome.",
   },
   {
+    actionKey: "confirm_booking_outcome",
+    authority: "human_required",
+    owner: "receptionist",
+    taskType: "booking_action",
+    clientRule:
+      "State a booking outcome only from a verified Timely result or an authorised human confirmation record.",
+  },
+  {
     actionKey: "complaint_review",
     authority: "human_required",
     owner: "salon_manager",
