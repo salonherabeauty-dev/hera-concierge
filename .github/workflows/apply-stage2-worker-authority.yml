@@ -1,0 +1,219 @@
+name: Apply Stage 2 action authority to worker
+
+on:
+  push:
+    branches:
+      - feat/stage2-knowledge-action-authority
+    paths:
+      - .github/workflows/apply-stage2-worker-authority.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/stage2-knowledge-action-authority
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Patch the exact final authority gate
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/worker.ts')
+          text = path.read_text()
+
+          replacements = []
+          replacements.append((
+          '''import {
+            assessFinalResponseQuality,
+            FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+          } from "./policy/finalResponseQuality.js";
+          import { detectSupportedClientLocale } from "./policy/locale.js";''',
+          '''import {
+            assessFinalResponseQuality,
+            FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+          } from "./policy/finalResponseQuality.js";
+          import {
+            ACTION_AUTHORITY_POLICY_VERSION,
+            assessActionAuthority,
+          } from "./policy/actionAuthority.js";
+          import { detectSupportedClientLocale } from "./policy/locale.js";'''
+          ))
+
+          replacements.append((
+          '''  const deterministicDraftQuality = assessFinalResponseQuality({
+            clientMessage: interpreted.text,
+            reply: draftFinalReply,
+            decision,
+            policy,
+            handoff,
+            risk: policy.risk,
+          });
+          const initialFinalVerification = await verifyFinalClientReply({''',
+          '''  const deterministicDraftQuality = assessFinalResponseQuality({
+            clientMessage: interpreted.text,
+            reply: draftFinalReply,
+            decision,
+            policy,
+            handoff,
+            risk: policy.risk,
+          });
+          const draftActionAuthority = assessActionAuthority({
+            reply: draftFinalReply,
+            decision,
+            policy,
+            handoff,
+            risk: policy.risk,
+          });
+          const initialFinalVerification = await verifyFinalClientReply({'''
+          ))
+
+          replacements.append((
+          '''  const finalVerification = initialFinalVerification.approved
+            ? initialFinalVerification
+            : await verifyFinalClientReply({
+                originalMessage: interpreted.text,
+                history,
+                draftReply: finalReply,
+                decision,
+                evidence: responseEvidence,
+                policy,
+                handoff,
+                deterministicDraftQuality: asJson(finalQuality),
+                contactId: context.contact.id,
+                config: runtime.ai,
+              });
+          if (
+            await completeSupersededJob(''',
+          '''  const finalVerification = initialFinalVerification.approved
+            ? initialFinalVerification
+            : await verifyFinalClientReply({
+                originalMessage: interpreted.text,
+                history,
+                draftReply: finalReply,
+                decision,
+                evidence: responseEvidence,
+                policy,
+                handoff,
+                deterministicDraftQuality: asJson(finalQuality),
+                contactId: context.contact.id,
+                config: runtime.ai,
+              });
+          const finalActionAuthority = assessActionAuthority({
+            reply: finalReply,
+            decision,
+            policy,
+            handoff,
+            risk: policy.risk,
+          });
+          if (
+            await completeSupersededJob('''
+          ))
+
+          replacements.append((
+          '''  const deliveryEligible = finalQuality.passed && finalVerification.approved;''',
+          '''  const deliveryEligible =
+            finalQuality.passed &&
+            finalVerification.approved &&
+            finalActionAuthority.passed;'''
+          ))
+
+          replacements.append((
+          '''      finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+                policy,''',
+          '''      finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+                actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
+                policy,'''
+          ))
+
+          replacements.append((
+          '''      deterministicDraftQuality,
+                initialFinalVerification:''',
+          '''      deterministicDraftQuality,
+                draftActionAuthority,
+                initialFinalVerification:'''
+          ))
+
+          replacements.append((
+          '''      finalReply,
+                finalQuality,
+                finalVerification:''',
+          '''      finalReply,
+                finalQuality,
+                finalActionAuthority,
+                finalVerification:'''
+          ))
+
+          replacements.append((
+          '''        deterministicIssues: finalQuality.issues,
+                finalVerifierApproved: finalVerification.approved,''',
+          '''        deterministicIssues: finalQuality.issues,
+                actionAuthorityPassed: finalActionAuthority.passed,
+                actionAuthorityIssues: finalActionAuthority.issues,
+                actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
+                finalVerifierApproved: finalVerification.approved,'''
+          ))
+
+          replacements.append((
+          '''  if (!fallbackQuality.passed) {
+            throw new Error("Dead-letter fallback failed Hera’s deterministic quality gate");
+          }
+
+          await repository.upsertAutomaticHandoff({''',
+          '''  const fallbackActionAuthority = assessActionAuthority({
+            reply: fallbackReply,
+            decision: fallbackDecision,
+            policy: fallbackPolicy,
+            handoff: fallbackHandoff,
+            risk: "amber",
+          });
+          if (!fallbackQuality.passed || !fallbackActionAuthority.passed) {
+            throw new Error(
+              "Dead-letter fallback failed Hera’s deterministic quality or action-authority gate",
+            );
+          }
+
+          await repository.upsertAutomaticHandoff({'''
+          ))
+
+          replacements.append((
+          '''  await repository.audit("job_dead_lettered", "job", job.id, {
+            sourceMessageId: job.sourceMessageId,
+            humanHandoffCreated: true,
+          });''',
+          '''  await repository.audit("job_dead_lettered", "job", job.id, {
+            sourceMessageId: job.sourceMessageId,
+            humanHandoffCreated: true,
+            actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
+            actionAuthorityPassed: fallbackActionAuthority.passed,
+          });'''
+          ))
+
+          for old, new in replacements:
+            if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one worker patch target, found {text.count(old)} for {old[:80]!r}')
+            text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+      - name: Verify repository
+        run: |
+          npm ci
+          npm test
+          npm run credential:scan
+          npm audit --omit=dev --audit-level=high
+      - name: Remove one-time workflow and commit
+        run: |
+          rm .github/workflows/apply-stage2-worker-authority.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/worker.ts .github/workflows/apply-stage2-worker-authority.yml
+          git commit -m "Enforce action authority on the exact final client reply"
+          git push origin feat/stage2-knowledge-action-authority
