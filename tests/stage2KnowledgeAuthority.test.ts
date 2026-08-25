@@ -168,7 +168,7 @@ test("every external action is explicitly bounded and unknown action remains pro
 
 test("runtime contracts cover the machine catalogue and produce an explicit prompt", async () => {
   const catalogue = await readJson<ActionCatalog>(actionContractsUrl);
-  const runtimeKeys = new Set(
+  const runtimeKeys = new Set<string>(
     RUNTIME_ACTION_AUTHORITY_CONTRACTS.map((contract) => contract.actionKey),
   );
 
