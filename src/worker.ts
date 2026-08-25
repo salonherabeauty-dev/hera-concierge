@@ -46,6 +46,10 @@ import {
   assessFinalResponseQuality,
   FINAL_RESPONSE_QUALITY_POLICY_VERSION,
 } from "./policy/finalResponseQuality.js";
+import {
+  ACTION_AUTHORITY_POLICY_VERSION,
+  assessActionAuthority,
+} from "./policy/actionAuthority.js";
 import { detectSupportedClientLocale } from "./policy/locale.js";
 import {
   logOperationalEvent,
@@ -366,7 +370,14 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     handoff,
     risk: policy.risk,
   });
-  const initialFinalVerification = await verifyFinalClientReply({
+  const draftActionAuthority = assessActionAuthority({
+  reply: draftFinalReply,
+  decision,
+  policy,
+  handoff,
+  risk: policy.risk,
+});
+const initialFinalVerification = await verifyFinalClientReply({
     originalMessage: interpreted.text,
     history,
     draftReply: draftFinalReply,
@@ -413,7 +424,17 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     )
   ) return;
 
-  const deliveryEligible = finalQuality.passed && finalVerification.approved;
+  const finalActionAuthority = assessActionAuthority({
+  reply: finalReply,
+  decision,
+  policy,
+  handoff,
+  risk: policy.risk,
+});
+const deliveryEligible =
+  finalQuality.passed &&
+  finalVerification.approved &&
+  finalActionAuthority.passed;
   const verificationUsage = asJson({
     initial: initialFinalVerification.usage,
     exactFinal:
@@ -444,10 +465,12 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       groundingPolicyVersion: GROUNDING_POLICY_VERSION,
       handoffPolicyVersion: HUMAN_HANDOFF_POLICY_VERSION,
       finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+      actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
       policy,
       handoff,
       draftFinalReply,
       deterministicDraftQuality,
+      draftActionAuthority,
       initialFinalVerification: {
         approved: initialFinalVerification.approved,
         correctedReply: initialFinalVerification.correctedReply,
@@ -461,6 +484,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       },
       finalReply,
       finalQuality,
+      finalActionAuthority,
       finalVerification: {
         approved: finalVerification.approved,
         correctedReply: finalVerification.correctedReply,
@@ -573,7 +597,10 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
         handoffTaskType: handoff.taskType,
         handoffScope: handoff.scope,
         deterministicIssues: finalQuality.issues,
-        finalVerifierApproved: finalVerification.approved,
+      actionAuthorityPassed: finalActionAuthority.passed,
+      actionAuthorityIssues: finalActionAuthority.issues,
+      actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
+      finalVerifierApproved: finalVerification.approved,
         finalVerifierIssues: finalVerification.issues,
         finalVerifierModelId: finalVerification.modelId,
         finalVerifierPromptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
@@ -708,8 +735,17 @@ async function queueDeadLetterFallback(
     handoff: fallbackHandoff,
     risk: "amber",
   });
-  if (!fallbackQuality.passed) {
-    throw new Error("Dead-letter fallback failed Hera’s deterministic quality gate");
+  const fallbackActionAuthority = assessActionAuthority({
+  reply: fallbackReply,
+  decision: fallbackDecision,
+  policy: fallbackPolicy,
+  handoff: fallbackHandoff,
+  risk: "amber",
+});
+if (!fallbackQuality.passed || !fallbackActionAuthority.passed) {
+    throw new Error(
+    "Dead-letter fallback failed Hera’s deterministic quality or action-authority gate",
+  );
   }
 
   await repository.upsertAutomaticHandoff({
@@ -739,7 +775,9 @@ async function queueDeadLetterFallback(
   await repository.audit("job_dead_lettered", "job", job.id, {
     sourceMessageId: job.sourceMessageId,
     humanHandoffCreated: true,
-  });
+  actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
+  actionAuthorityPassed: fallbackActionAuthority.passed,
+});
 }
 
 export async function drainOutbox(input: {
