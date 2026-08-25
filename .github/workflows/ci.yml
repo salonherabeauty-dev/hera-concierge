@@ -30,6 +30,8 @@ jobs:
         run: git diff --exit-code -- public/command-centre
       - name: Complete automated suite
         run: npm run test:unit
+      - name: Validate the full Stage 3-R corpus without model calls
+        run: STAGE3R_DRY_RUN=true npm run certify:stage3r
       - name: Credential scan
         run: npm run credential:scan
       - name: Production dependency audit
