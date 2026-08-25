@@ -100,7 +100,7 @@ test("complete booking details create one structured reception handoff", () => {
     }),
   });
 
-  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.2.1");
+  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.3.0");
   assert.equal(result.createTask, true);
   assert.equal(result.taskType, "booking_action");
   assert.equal(result.scope, "task_only");

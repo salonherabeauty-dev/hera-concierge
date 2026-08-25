@@ -14,7 +14,7 @@ import {
   SERVICE_INFORMATION_POLICY_VERSION,
 } from "./serviceInformation.js";
 
-export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.2.1";
+export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.3.0";
 
 const HUMAN_REQUEST_PATTERNS = [
   /\b(?:speak|talk|chat|connect|transfer|pass me|put me through)\b.{0,28}\b(?:human|person|receptionist|manager|staff|someone)\b/i,
@@ -373,7 +373,19 @@ function defaultAcknowledgement(
     return "Certainly. I’ve sent your request to Hera’s team for direct assistance. A staff member will continue with you as soon as available.";
   }
   if (taskType === "complaint_review") {
-    return "Thank you for explaining this. I’ve placed the matter with Hera’s management team for direct review and follow-up.";
+    const service = facts.service ? ` regarding your ${facts.service}` : "";
+    const outlet = facts.outlet ? ` at ${facts.outlet}` : "";
+    const visualConcern = [facts.other, facts.desiredOutcome]
+      .filter((value): value is string => Boolean(value))
+      .join(" ");
+    const photoRequest =
+      !facts.photos &&
+      /\b(?:uneven|colour|color|cut|layers?|shape|length|fringe|hair|result|finish|breakage|damage)\b/i.test(
+        visualConcern,
+      )
+        ? " Please share clear photos of the result if convenient; they will help the manager review it carefully."
+        : "";
+    return `Thank you for explaining this, and I’m sorry this experience has left you unhappy. I’ve placed your concern${service}${outlet} with Hera’s salon manager for a careful review.${photoRequest} The manager will assess the details and advise the appropriate next step after the review.`;
   }
   if (taskType === "refund_finance") {
     return "Thank you. I’ve placed the transaction request with the authorised team for verification and a confirmed outcome.";
@@ -629,12 +641,14 @@ export function assessHumanHandoff(input: {
   const acknowledgement =
     taskType === "medical_safety"
       ? null
-      : requestedHuman
-        ? defaultAcknowledgement("client_requested_human", facts)
-        : taskType === "other"
-          ? safeAcknowledgement(proposal.clientAcknowledgement) ??
-            defaultAcknowledgement(taskType, facts)
-          : defaultAcknowledgement(taskType, facts);
+      : taskType === "complaint_review"
+        ? defaultAcknowledgement(taskType, facts)
+        : requestedHuman
+          ? defaultAcknowledgement("client_requested_human", facts)
+          : taskType === "other"
+            ? safeAcknowledgement(proposal.clientAcknowledgement) ??
+              defaultAcknowledgement(taskType, facts)
+            : defaultAcknowledgement(taskType, facts);
 
   return {
     createTask: true,
