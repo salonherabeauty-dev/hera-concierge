@@ -3,6 +3,7 @@ import type { KnowledgeResult } from "../types.js";
 export const KNOWLEDGE_AUTHORITY_VERSION = "hera-knowledge-authority-2026-08-25.1";
 
 const APPROVED_CONSTITUTION_VERSION = "hera-service-constitution-2026-08-25.1";
+const ACTION_AUTHORITY_VERSION = "hera-action-authority-2026-08-25.1";
 const OPERATOR_POLICY_VERSION = "hera-operator-policy-v3";
 const APPROVED_KNOWLEDGE_VERSION = "hera-approved-v4";
 
@@ -21,11 +22,14 @@ export function isBlockedLegacyKnowledge(result: KnowledgeResult): boolean {
 
 export function knowledgeAuthorityRank(result: KnowledgeResult): number {
   if (result.version === APPROVED_CONSTITUTION_VERSION) return 700;
+  if (result.version === ACTION_AUTHORITY_VERSION) return 650;
   if (result.version === OPERATOR_POLICY_VERSION) return 600;
   if (/^hera-operator-policy-v\d+$/i.test(result.version)) return 500;
   if (result.version === APPROVED_KNOWLEDGE_VERSION) return 300;
-  if (result.sourceUrl?.startsWith("https://www.herabeauty.sg/") ||
-      result.sourceUrl?.startsWith("https://herabeauty.sg/")) {
+  if (
+    result.sourceUrl?.startsWith("https://www.herabeauty.sg/") ||
+    result.sourceUrl?.startsWith("https://herabeauty.sg/")
+  ) {
     return 200;
   }
   return 100;
