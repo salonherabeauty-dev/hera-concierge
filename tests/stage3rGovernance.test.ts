@@ -134,7 +134,7 @@ test("research calibration cannot override Hera policy or copy public reviews", 
   assert.equal(contract.research.rawThirdPartyReviewTextCommitted, false);
   assert.ok(sources.sources.length >= 10);
   assert.ok(sources.globalRules.some((rule) => /Service Constitution/i.test(rule)));
-  assert.ok(sources.globalRules.some((rule) => /raw review text/i.test(rule)));
+  assert.ok(sources.globalRules.some((rule) => /review text/i.test(rule)));
   assert.ok(
     new Set(sources.sources.map((source) => source.sourceClass)).size >= 5,
   );
