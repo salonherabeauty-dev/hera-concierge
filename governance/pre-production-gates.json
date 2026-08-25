@@ -1,6 +1,6 @@
 {
   "documentType": "hera_pre_production_gate_register",
-  "version": "2026-08-25.2",
+  "version": "2026-08-25.3",
   "liveProductionApproved": false,
   "shadowModeRequired": true,
   "lastUpdated": "2026-08-25",
@@ -38,8 +38,23 @@
         "unresolvedPolicies": 0,
         "sourceFile": "governance/hera-service-constitution.json",
         "ownerDocument": "docs/HERA_SERVICE_CONSTITUTION.md",
+        "evidenceDocument": "docs/STAGE_1_SERVICE_CONSTITUTION_EVIDENCE.md",
         "knowledgeMigration": "supabase/migrations/20260825000000_approve_hera_service_constitution.sql",
-        "operatorPolicyVersion": "hera-operator-policy-v3"
+        "operatorPolicyVersion": "hera-operator-policy-v3",
+        "mergeCommit": "a82babd8120650c1e59428d643d346e715245da6",
+        "activationCommit": "97abc10d296e2bc79414fb993389ab18523a6421",
+        "activationDeploymentId": "dpl_J3tibc37TWj1nosxGgymEH4xTwNG",
+        "activationDeploymentState": "READY",
+        "databaseProjectRef": "zjnbheohgwfzkmbnjqjr",
+        "approvedKnowledgeDocumentKey": "hera-service-constitution-2026-08-25.1",
+        "approvedKnowledgeChecksum": "a71e2cab56b9668542917bc1e2d495e27ae134129769ae2ebdefb3c642125555",
+        "approvedLegacyConflictRecordsRemaining": 0,
+        "approvalAuditRecorded": true,
+        "cleanRuntimeCommit": "8c36c6ae1bd7bca7c104786c9f22763f6a617de0",
+        "cleanRuntimeDeploymentId": "dpl_2khQRQvLYryCpU7vSMjmYNUjvcgX",
+        "cleanRuntimeDeploymentState": "READY",
+        "providerSendAttempted": false,
+        "productionTouched": false
       },
       "blockers": []
     },
@@ -49,7 +64,8 @@
       "requiredForLive": true,
       "evidence": {
         "constitutionPrecedence": "implemented",
-        "supersededSevenWorkingDayPolicy": "excluded_from_receptionist_retrieval",
+        "supersededSevenWorkingDayPolicy": "removed_or_excluded_from_receptionist_retrieval",
+        "approvedDynamicLegacyConflictRecordsRemaining": 0,
         "bookingAuthority": "human_required_until_certified_write_tool"
       },
       "blockers": [
