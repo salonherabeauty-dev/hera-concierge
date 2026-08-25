@@ -19,6 +19,12 @@ export interface Stage3rJudgeConfiguration {
   emphasis: "hospitality" | "authority" | "forensic_pairwise";
 }
 
+export const STAGE3R_BLIND_ORDERS = [
+  "candidate_first",
+  "reference_first",
+  "pointwise",
+] as const satisfies readonly Stage3rOrder[];
+
 const scoreSchema = z.number().min(0).max(5);
 const judgeSchema = z.object({
   scores: z.object({
@@ -44,6 +50,7 @@ export const STAGE3R_JUDGE_INSTRUCTIONS = [
   "Judge only the exact final client-facing response supplied. Do not reward an unseen draft, rationale, model reputation or intended behaviour.",
   "Hera's approved policy, action-authority contract, supplied evidence and required/forbidden case elements are authoritative. Public salon and hospitality research calibrates service quality only and never overrides Hera policy.",
   "Score nine dimensions from 0 to 5. A score of 5 means the exact response is fully correct and send-ready for this case. Factual accuracy, safety and policy must be perfect for certification.",
+  "A critical failure cannot be averaged away by strong scores elsewhere. Record the appropriate critical flag and fail the affected core dimension.",
   "Luxury-hospitality tone means warm, composed, respectful, specific, anticipatory and refined. It must not be theatrical, flattering, sales-driven, defensive, bureaucratic or needlessly long.",
   "Client-effort reduction means using known details, avoiding repeated questions and moving the client to the safest useful next step with the least reasonable effort.",
   "For complaints and service recovery, assess recognition of the specific experience, fair and transparent process, correct ownership and a useful next step without blame, liability admission or an unauthorised remedy.",
@@ -172,6 +179,7 @@ export async function judgeStage3rCase(input: {
       approvedEvidence: input.approvedEvidence,
       judgeEmphasis: input.configuration.emphasis,
       blindOrder: input.order,
+      supportedBlindOrders: STAGE3R_BLIND_ORDERS,
       responseA: pair.responseA,
       responseB: pair.responseB,
       responseModelIdentityWithheld: true,
