@@ -38,11 +38,14 @@ test("live mode refuses an incorrect confirmation", () => {
   );
 });
 
-test("live mode starts only when both controls are explicit", () => {
-  const config = getOperationsConfig({
-    CRON_SECRET: cronSecret,
-    WHATSAPP_SEND_MODE: "live",
-    WHATSAPP_LIVE_CONFIRMATION: WHATSAPP_LIVE_CONFIRMATION_VALUE,
-  });
-  assert.equal(config.sendMode, "live");
+test("even both live controls remain locked while certification is incomplete", () => {
+  assert.throws(
+    () =>
+      getOperationsConfig({
+        CRON_SECRET: cronSecret,
+        WHATSAPP_SEND_MODE: "live",
+        WHATSAPP_LIVE_CONFIRMATION: WHATSAPP_LIVE_CONFIRMATION_VALUE,
+      }),
+    /pre_production_certification_incomplete/,
+  );
 });
