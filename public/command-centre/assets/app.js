@@ -541,6 +541,28 @@ function renderConversationDrawer(detail) {
     const finalReply = typeof policyOutput?.finalReply === "string" ? policyOutput.finalReply : latestCandidate?.text ?? null;
     const qualityIssues = stringArray(finalQuality?.issues);
     const deliveryEligible = policyOutput?.deliveryEligible === true;
+    const finalQualityRecorded = typeof policyOutput?.deliveryEligible === "boolean" ||
+        Boolean(finalQuality) ||
+        Boolean(finalVerification) ||
+        Boolean(record(policyOutput?.initialFinalVerification));
+    const qualityStatusLabel = finalQualityRecorded
+        ? deliveryEligible
+            ? "Passed"
+            : "Blocked"
+        : "Historical";
+    const qualityStatusClass = finalQualityRecorded
+        ? deliveryEligible
+            ? "pill--normal"
+            : "pill--urgent"
+        : "";
+    const qualitySummary = qualityIssues.length
+        ? qualityIssues.join(" · ")
+        : finalQualityRecorded
+            ? String(finalVerification?.summary ??
+                (deliveryEligible
+                    ? "Final response passed every quality dimension."
+                    : "Final response was blocked by the final quality gate."))
+            : "Historical response: no final-verifier result was recorded because this message predates the final-response quality gate.";
     return `<div class="drawer-backdrop" data-action="close-drawer" aria-hidden="true"></div>
     <aside class="drawer" role="dialog" aria-modal="true" aria-label="Conversation with ${escapeHtml(conversation.clientDisplayName)}">
       <header class="drawer__header">
@@ -571,7 +593,7 @@ function renderConversationDrawer(detail) {
               <p class="action-note">Human WhatsApp replies remain in the normal WhatsApp Business App during this Preview stage.</p>
             </div>
 ${latestCandidate ? `<div class="candidate-card"><div><p class="eyebrow">Latest AI candidate</p><span class="pill">${escapeHtml(latestCandidate.status)}</span></div><p>${escapeHtml(latestCandidate.text)}</p><small>${latestCandidate.providerMessageId ? "Provider message exists" : "Not sent to WhatsApp"}</small></div>` : ""}
-${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final response quality</p><span class="pill ${deliveryEligible ? "pill--normal" : "pill--urgent"}">${deliveryEligible ? "Passed" : "Blocked"}</span></div>
+${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final response quality</p><span class="pill ${qualityStatusClass}">${qualityStatusLabel}</span></div>
   <dl class="task-meta">
     <div><dt>Primary model</dt><dd>${escapeHtml(responseTrace?.modelId ?? "Not recorded")}</dd></div>
     <div><dt>First verifier</dt><dd>${escapeHtml(verificationTrace?.modelId ?? "Not recorded")}</dd></div>
@@ -580,7 +602,7 @@ ${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final respo
   </dl>
   ${draftFinalReply ? `<p><strong>Post-policy draft</strong><br>${escapeHtml(draftFinalReply)}</p>` : ""}
   ${finalReply ? `<p><strong>Final client reply</strong><br>${escapeHtml(finalReply)}</p>` : ""}
-  <small>${qualityIssues.length ? escapeHtml(qualityIssues.join(" · ")) : escapeHtml(String(finalVerification?.summary ?? "Final response passed every quality dimension."))}</small>
+  <small>${escapeHtml(qualitySummary)}</small>
 </div>` : ""}
             ${canAddInternalNote() ? `<form class="note-form" id="note-form" data-conversation-id="${escapeHtml(conversation.id)}" data-task-id="${escapeHtml(activeTask?.id ?? "")}">
               <label class="field"><span>Internal note</span><textarea name="note" rows="3" maxlength="4000" placeholder="Record a clear internal note. This is never sent to the client.">${escapeHtml(state.noteDrafts[conversation.id] ?? "")}</textarea></label>
