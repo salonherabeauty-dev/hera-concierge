@@ -205,22 +205,116 @@ export class SupabaseReceptionistRepository implements ReceptionistRepository {
   async claimJobsByIds(workerId: string, jobIds: string[]): Promise<ReceptionistJob[]> {
     const uniqueJobIds = [...new Set(jobIds.filter(Boolean))].slice(0, 25);
     if (uniqueJobIds.length === 0) return [];
-    const { data, error } = await this.database.rpc("ai_claim_jobs_by_ids", {
-      p_worker_id: workerId,
-      p_job_ids: uniqueJobIds,
-    });
-    const values = requireData(data, error, "claim targeted jobs") as unknown[];
-    return values.map((value) => {
-      const item = row(value);
-      return {
-        id: requiredString(item.id, "id"),
+
+    const { data, error } = await this.database
+      .from("ai_jobs")
+      .select("*")
+      .in("id", uniqueJobIds);
+    const values = requireData(data, error, "load targeted jobs") as unknown[];
+    const jobsById = new Map(
+      values.map((value) => {
+        const item = row(value);
+        return [requiredString(item.id, "id"), item] as const;
+      }),
+    );
+    const claimed: ReceptionistJob[] = [];
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const staleBefore = now.getTime() - 5 * 60 * 1000;
+
+    for (const jobId of uniqueJobIds) {
+      const item = jobsById.get(jobId);
+      if (!item) continue;
+      const status = requiredString(item.status, "status");
+      const attempts = Number(item.attempts);
+      const updatedAt = requiredString(item.updated_at, "updated_at");
+      const availableAt = Date.parse(requiredString(item.available_at, "available_at"));
+      const lockedAt =
+        typeof item.locked_at === "string" ? Date.parse(item.locked_at) : Number.NaN;
+      const eligible =
+        ((status === "pending" || status === "retry") &&
+          Number.isFinite(availableAt) &&
+          availableAt <= now.getTime()) ||
+        (status === "processing" &&
+          Number.isFinite(lockedAt) &&
+          lockedAt < staleBefore);
+      if (!eligible) continue;
+
+      const sourceMessageId = requiredString(
+        item.source_message_id,
+        "source_message_id",
+      );
+      if (await this.isInboundSuperseded(sourceMessageId)) {
+        const { data: suppressed, error: suppressError } = await this.database
+          .from("ai_jobs")
+          .update({
+            status: "completed",
+            completed_at: nowIso,
+            locked_at: null,
+            locked_by: null,
+            last_error: "superseded_by_newer_inbound",
+            updated_at: nowIso,
+          })
+          .eq("id", jobId)
+          .eq("status", status)
+          .eq("attempts", attempts)
+          .eq("updated_at", updatedAt)
+          .select("id")
+          .maybeSingle();
+        if (suppressError) {
+          throw new Error(
+            "suppress targeted superseded job: " + suppressError.message,
+          );
+        }
+        if (suppressed) {
+          await this.audit(
+            "out_of_order_inbound_suppressed",
+            "message",
+            sourceMessageId,
+            {
+              suppressionStage: "targeted_job_claim",
+              jobId,
+              reason: "newer_inbound_recorded_before_targeted_processing",
+            },
+          );
+        }
+        continue;
+      }
+
+      const { data: claimedRow, error: claimError } = await this.database
+        .from("ai_jobs")
+        .update({
+          status: "processing",
+          attempts: attempts + 1,
+          locked_at: nowIso,
+          locked_by: workerId.trim() || null,
+          updated_at: nowIso,
+        })
+        .eq("id", jobId)
+        .eq("status", status)
+        .eq("attempts", attempts)
+        .eq("updated_at", updatedAt)
+        .select("*")
+        .maybeSingle();
+      if (claimError) {
+        throw new Error("claim targeted job: " + claimError.message);
+      }
+      if (!claimedRow) continue;
+      const claimedItem = row(claimedRow);
+      claimed.push({
+        id: requiredString(claimedItem.id, "id"),
         kind: "process_inbound",
-        sourceMessageId: requiredString(item.source_message_id, "source_message_id"),
-        payload: (item.payload ?? {}) as JsonValue,
-        attempts: Number(item.attempts),
-        maxAttempts: Number(item.max_attempts),
-      };
-    });
+        sourceMessageId: requiredString(
+          claimedItem.source_message_id,
+          "source_message_id",
+        ),
+        payload: (claimedItem.payload ?? {}) as JsonValue,
+        attempts: Number(claimedItem.attempts),
+        maxAttempts: Number(claimedItem.max_attempts),
+      });
+    }
+
+    return claimed;
   }
 
   async getJobContext(job: ReceptionistJob): Promise<JobContext> {

@@ -33,6 +33,7 @@ import {
   type PolicyAssessment,
 } from "../types.js";
 import type { InterpretedInbound } from "../whatsapp/media.js";
+import { logOperationalEvent, safeErrorFields } from "../observability/log.js";
 
 export const RESPONSE_PROMPT_VERSION = "hera-receptionist-response-1.6.1";
 export const VERIFIER_PROMPT_VERSION = "hera-receptionist-verifier-1.6.1";
@@ -269,6 +270,51 @@ function jsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
+function retryableStructuredGenerationError(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return /NoObjectGenerated|NoOutputGenerated|APICall|RateLimit|Timeout|Schema|JSON|parse/i.test(
+    name + " " + message,
+  );
+}
+
+function distinctModels(models: string[]): string[] {
+  return [...new Set(models.map((model) => model.trim()).filter(Boolean))].slice(0, 2);
+}
+
+async function generateWithStructuredFallback<T>(input: {
+  stage: "response" | "verification" | "final_verification";
+  models: string[];
+  run: (modelId: string, remainingModels: string[]) => Promise<T>;
+}): Promise<T> {
+  const models = distinctModels(input.models);
+  if (models.length === 0) throw new Error("No AI model is configured");
+  let lastError: unknown = new Error("Structured generation did not run");
+
+  for (let index = 0; index < models.length; index += 1) {
+    const modelId = models[index];
+    if (!modelId) continue;
+    const nextModel = models[index + 1] ?? null;
+    try {
+      return await input.run(modelId, models.slice(index + 1));
+    } catch (error) {
+      lastError = error;
+      const canRetry =
+        nextModel !== null && retryableStructuredGenerationError(error);
+      logOperationalEvent(canRetry ? "warn" : "error", "structured_generation_failed", {
+        stage: input.stage,
+        attemptedModel: modelId,
+        fallbackModel: nextModel,
+        retrying: canRetry,
+        ...safeErrorFields(error),
+      });
+      if (!canRetry) throw error;
+    }
+  }
+
+  throw lastError;
+}
+
 function historyMessages(
   history: ConversationMessage[],
   currentMessageId: string,
@@ -404,40 +450,49 @@ export async function generateReceptionistDecision(input: {
     },
   });
 
-  const agent = new ToolLoopAgent({
-    id: "hera-whatsapp-receptionist",
-    model: gateway(input.config.primaryModel),
-    instructions: RESPONSE_INSTRUCTIONS,
-    tools: {
-      searchHeraKnowledge: searchKnowledge,
-      lookupAppointments,
-      calculateGst,
-      getHeraDigitalTools,
-    },
-    output: Output.object({ schema: agentDecisionSchema }),
-    stopWhen: isStepCount(6),
-    maxOutputTokens: 1800,
-    temperature: 0.1,
-    reasoning: "high",
-    providerOptions: {
-      gateway: {
-        models: input.config.fallbackModels,
-        tags: ["hera", "whatsapp", "receptionist", "response"],
-        user: userId,
-        serviceTier: "priority",
-        disallowPromptTraining: true,
-      },
-    },
-  });
-
   const start = Date.now();
-  const result = await agent.generate({
-    messages: historyMessages(
-      input.history,
-      input.context.message.id,
-      input.interpreted,
-    ),
-    timeout: 90_000,
+  const result = await generateWithStructuredFallback({
+    stage: "response",
+    models: [
+      input.config.primaryModel,
+      input.config.verifierModel,
+      ...input.config.fallbackModels,
+    ],
+    run: async (modelId, remainingModels) => {
+      const agent = new ToolLoopAgent({
+        id: "hera-whatsapp-receptionist",
+        model: gateway(modelId),
+        instructions: RESPONSE_INSTRUCTIONS,
+        tools: {
+          searchHeraKnowledge: searchKnowledge,
+          lookupAppointments,
+          calculateGst,
+          getHeraDigitalTools,
+        },
+        output: Output.object({ schema: agentDecisionSchema }),
+        stopWhen: isStepCount(6),
+        maxOutputTokens: 1800,
+        temperature: 0.1,
+        reasoning: "high",
+        providerOptions: {
+          gateway: {
+            ...(remainingModels.length ? { models: remainingModels } : {}),
+            tags: ["hera", "whatsapp", "receptionist", "response"],
+            user: userId,
+            serviceTier: "priority",
+            disallowPromptTraining: true,
+          },
+        },
+      });
+      return agent.generate({
+        messages: historyMessages(
+          input.history,
+          input.context.message.id,
+          input.interpreted,
+        ),
+        timeout: 75_000,
+      });
+    },
   });
   const output = result.output;
   const sources = canonicalizeSources(output.sources, seenSources);
@@ -463,40 +518,49 @@ export async function verifyReceptionistDecision(input: {
   contactId: string;
   config: AiRuntimeConfig;
 }): Promise<VerificationResult> {
-  const verifier = new ToolLoopAgent({
-    id: "hera-whatsapp-verifier",
-    model: gateway(input.config.verifierModel),
-    instructions: VERIFIER_INSTRUCTIONS,
-    tools: {},
-    output: Output.object({ schema: verificationSchema }),
-    stopWhen: isStepCount(2),
-    maxOutputTokens: 1200,
-    temperature: 0,
-    reasoning: "high",
-    providerOptions: {
-      gateway: {
-        models: [input.config.primaryModel],
-        tags: ["hera", "whatsapp", "receptionist", "verification"],
-        user: anonymousUserId(input.contactId),
-        serviceTier: "priority",
-        disallowPromptTraining: true,
-      },
-    },
-  });
-
   const start = Date.now();
-  const result = await verifier.generate({
-    prompt: JSON.stringify({
-      conversationHistory: input.history.map((message) => ({
-        direction: message.direction,
-        text: message.text.slice(0, 5000),
-        createdAt: message.createdAt,
-      })),
-      clientMessage: input.originalMessage,
-      proposedDecision: input.decision,
-      approvedEvidence: input.evidence,
-    }),
-    timeout: 60_000,
+  const result = await generateWithStructuredFallback({
+    stage: "verification",
+    models: [
+      input.config.verifierModel,
+      input.config.primaryModel,
+      ...input.config.fallbackModels,
+    ],
+    run: async (modelId, remainingModels) => {
+      const verifier = new ToolLoopAgent({
+        id: "hera-whatsapp-verifier",
+        model: gateway(modelId),
+        instructions: VERIFIER_INSTRUCTIONS,
+        tools: {},
+        output: Output.object({ schema: verificationSchema }),
+        stopWhen: isStepCount(2),
+        maxOutputTokens: 1200,
+        temperature: 0,
+        reasoning: "high",
+        providerOptions: {
+          gateway: {
+            ...(remainingModels.length ? { models: remainingModels } : {}),
+            tags: ["hera", "whatsapp", "receptionist", "verification"],
+            user: anonymousUserId(input.contactId),
+            serviceTier: "priority",
+            disallowPromptTraining: true,
+          },
+        },
+      });
+      return verifier.generate({
+        prompt: JSON.stringify({
+          conversationHistory: input.history.map((message) => ({
+            direction: message.direction,
+            text: message.text.slice(0, 5000),
+            createdAt: message.createdAt,
+          })),
+          clientMessage: input.originalMessage,
+          proposedDecision: input.decision,
+          approvedEvidence: input.evidence,
+        }),
+        timeout: 50_000,
+      });
+    },
   });
   return {
     ...result.output,
@@ -518,44 +582,53 @@ export async function verifyFinalClientReply(input: {
   contactId: string;
   config: AiRuntimeConfig;
 }): Promise<FinalResponseVerificationResult> {
-  const verifier = new ToolLoopAgent({
-    id: "hera-whatsapp-final-response-verifier",
-    model: gateway(input.config.verifierModel),
-    instructions: FINAL_RESPONSE_VERIFIER_INSTRUCTIONS,
-    tools: {},
-    output: Output.object({ schema: finalResponseVerificationSchema }),
-    stopWhen: isStepCount(2),
-    maxOutputTokens: 1400,
-    temperature: 0,
-    reasoning: "high",
-    providerOptions: {
-      gateway: {
-        models: [input.config.primaryModel, ...input.config.fallbackModels],
-        tags: ["hera", "whatsapp", "final-response-quality"],
-        user: anonymousUserId(input.contactId),
-        serviceTier: "priority",
-        disallowPromptTraining: true,
-      },
-    },
-  });
-
   const start = Date.now();
-  const result = await verifier.generate({
-    prompt: JSON.stringify({
-      conversationHistory: input.history.map((message) => ({
-        direction: message.direction,
-        text: message.text.slice(0, 5000),
-        createdAt: message.createdAt,
-      })),
-      clientMessage: input.originalMessage,
-      proposedDecision: input.decision,
-      approvedEvidence: input.evidence,
-      deterministicPolicy: input.policy,
-      finalHandoffAssessment: input.handoff,
-      exactPostPolicyDraft: input.draftReply,
-      deterministicDraftQuality: input.deterministicDraftQuality,
-    }),
-    timeout: 60_000,
+  const result = await generateWithStructuredFallback({
+    stage: "final_verification",
+    models: [
+      input.config.verifierModel,
+      input.config.primaryModel,
+      ...input.config.fallbackModels,
+    ],
+    run: async (modelId, remainingModels) => {
+      const verifier = new ToolLoopAgent({
+        id: "hera-whatsapp-final-response-verifier",
+        model: gateway(modelId),
+        instructions: FINAL_RESPONSE_VERIFIER_INSTRUCTIONS,
+        tools: {},
+        output: Output.object({ schema: finalResponseVerificationSchema }),
+        stopWhen: isStepCount(2),
+        maxOutputTokens: 1400,
+        temperature: 0,
+        reasoning: "high",
+        providerOptions: {
+          gateway: {
+            ...(remainingModels.length ? { models: remainingModels } : {}),
+            tags: ["hera", "whatsapp", "final-response-quality"],
+            user: anonymousUserId(input.contactId),
+            serviceTier: "priority",
+            disallowPromptTraining: true,
+          },
+        },
+      });
+      return verifier.generate({
+        prompt: JSON.stringify({
+          conversationHistory: input.history.map((message) => ({
+            direction: message.direction,
+            text: message.text.slice(0, 5000),
+            createdAt: message.createdAt,
+          })),
+          clientMessage: input.originalMessage,
+          proposedDecision: input.decision,
+          approvedEvidence: input.evidence,
+          deterministicPolicy: input.policy,
+          finalHandoffAssessment: input.handoff,
+          exactPostPolicyDraft: input.draftReply,
+          deterministicDraftQuality: input.deterministicDraftQuality,
+        }),
+        timeout: 50_000,
+      });
+    },
   });
 
   return {
