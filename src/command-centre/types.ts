@@ -167,6 +167,20 @@ export interface DecisionTraceView {
   createdAt: string;
 }
 
+export interface ConversationJobView {
+  id: string;
+  sourceMessageId: string;
+  status: "pending" | "processing" | "retry" | "completed" | "dead";
+  attempts: number;
+  maxAttempts: number;
+  availableAt: string;
+  lockedAt: string | null;
+  completedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ConversationDetail {
   conversation: ConversationSummary;
   messages: ConversationMessageView[];
@@ -175,6 +189,7 @@ export interface ConversationDetail {
   incidents: IncidentView[];
   candidates: CandidateReplyView[];
   decisions: DecisionTraceView[];
+  jobs: ConversationJobView[];
 }
 
 export interface CommandCentreDashboard {

@@ -86,6 +86,19 @@ candidates: Array<{ id: string; sourceMessageId: string | null; text: string; st
     latencyMs: number | null;
     createdAt: string;
   }>;
+  jobs: Array<{
+    id: string;
+    sourceMessageId: string;
+    status: "pending" | "processing" | "retry" | "completed" | "dead";
+    attempts: number;
+    maxAttempts: number;
+    availableAt: string;
+    lockedAt: string | null;
+    completedAt: string | null;
+    lastError: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
 }
 
 
