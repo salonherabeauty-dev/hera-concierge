@@ -1,5 +1,11 @@
 import { HERA_KNOWLEDGE_BASE } from "../../api/concierge.js";
 import type { ReceptionistRepository } from "../db/repository.js";
+import {
+  renderActionAuthorityPrompt,
+} from "../governance/actionAuthority.js";
+import {
+  orderKnowledgeByAuthority,
+} from "../governance/knowledgeAuthority.js";
 import type { KnowledgeResult } from "../types.js";
 
 interface KnowledgeSection {
@@ -7,6 +13,11 @@ interface KnowledgeSection {
   title: string;
   body: string;
 }
+
+const SERVICE_CONSTITUTION_VERSION = "hera-service-constitution-2026-08-25.1";
+const ACTION_AUTHORITY_VERSION = "hera-action-authority-2026-08-25.1";
+const OPERATOR_POLICY_VERSION = "hera-operator-policy-v3";
+const APPROVED_KNOWLEDGE_VERSION = "hera-approved-v4";
 
 export const HERA_OPERATOR_POLICIES = String.raw`
 HERA OPERATOR-APPROVED POLICIES - VERSION 3
@@ -91,10 +102,37 @@ function slug(value: string): string {
 
 function isHeading(line: string): boolean {
   const clean = line.trim();
-  return clean.length >= 4 && clean.length <= 120 && /^[A-Z0-9][A-Z0-9 &/(),:'’+.-]+$/.test(clean);
+  return (
+    clean.length >= 4 &&
+    clean.length <= 120 &&
+    /^[A-Z0-9][A-Z0-9 &/(),:'’+.-]+$/.test(clean)
+  );
 }
 
-export function splitApprovedKnowledge(source = HERA_KNOWLEDGE_BASE): KnowledgeSection[] {
+function sectionVersion(section: KnowledgeSection): string {
+  if (/SERVICE CONSTITUTION/i.test(section.title)) {
+    return SERVICE_CONSTITUTION_VERSION;
+  }
+  if (section.title.startsWith("HERA OPERATOR-APPROVED")) {
+    return OPERATOR_POLICY_VERSION;
+  }
+  return APPROVED_KNOWLEDGE_VERSION;
+}
+
+function actionAuthorityResult(): KnowledgeResult {
+  return {
+    id: ACTION_AUTHORITY_VERSION,
+    title: "HERA ACTION AUTHORITY CONTRACTS",
+    excerpt: renderActionAuthorityPrompt(),
+    sourceUrl: null,
+    version: ACTION_AUTHORITY_VERSION,
+    score: 1,
+  };
+}
+
+export function splitApprovedKnowledge(
+  source = HERA_KNOWLEDGE_BASE,
+): KnowledgeSection[] {
   const sections: KnowledgeSection[] = [];
   let title = "Hera approved knowledge";
   let lines: string[] = [];
@@ -144,7 +182,10 @@ function queryTerms(query: string): string[] {
   return [...new Set(base.flatMap((term) => [term, ...(SYNONYMS[term] ?? [])]))];
 }
 
-export function searchStaticKnowledge(query: string, limit = 5): KnowledgeResult[] {
+export function searchStaticKnowledge(
+  query: string,
+  limit = 5,
+): KnowledgeResult[] {
   const terms = queryTerms(query);
   if (terms.length === 0) return [];
   const normalizedQuery = query.toLowerCase().trim();
@@ -155,7 +196,12 @@ export function searchStaticKnowledge(query: string, limit = 5): KnowledgeResult
     let score = normalizedQuery && body.includes(normalizedQuery) ? 12 : 0;
     for (const term of terms) {
       if (title.includes(term)) score += 5;
-      const matches = body.match(new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"));
+      const matches = body.match(
+        new RegExp(
+          `\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+          "g",
+        ),
+      );
       score += Math.min(matches?.length ?? 0, 8);
     }
     if (score > 0 && section.title.startsWith("HERA OPERATOR-APPROVED")) {
@@ -166,18 +212,20 @@ export function searchStaticKnowledge(query: string, limit = 5): KnowledgeResult
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, Math.max(1, Math.min(limit, 8)))
-    .map(({ section, score }) => ({
-      id: section.id,
-      title: section.title,
-      excerpt: section.body.slice(0, 4500),
-      sourceUrl: section.title.startsWith("HERA OPERATOR-APPROVED")
-        ? null
-        : "https://www.herabeauty.sg/",
-      version: section.title.startsWith("HERA OPERATOR-APPROVED")
-        ? "hera-operator-policy-v3"
-        : "hera-approved-v4",
-      score,
-    }));
+    .map(({ section, score }) => {
+      const version = sectionVersion(section);
+      return {
+        id: section.id,
+        title: section.title,
+        excerpt: section.body.slice(0, 4500),
+        sourceUrl:
+          version === APPROVED_KNOWLEDGE_VERSION
+            ? "https://www.herabeauty.sg/"
+            : null,
+        version,
+        score,
+      };
+    });
 }
 
 export async function searchAllKnowledge(
@@ -190,9 +238,17 @@ export async function searchAllKnowledge(
     .searchApprovedKnowledge(query, limit)
     .catch(() => [] as KnowledgeResult[]);
   const merged = new Map<string, KnowledgeResult>();
-  for (const result of [...dynamicResults, ...staticResults]) {
-    const key = `${result.title.toLowerCase()}:${result.excerpt.slice(0, 120).toLowerCase()}`;
+
+  for (const result of [
+    ...dynamicResults,
+    ...staticResults,
+    actionAuthorityResult(),
+  ]) {
+    const key = `${result.title.toLowerCase()}:${result.excerpt
+      .slice(0, 120)
+      .toLowerCase()}`;
     if (!merged.has(key)) merged.set(key, result);
   }
-  return [...merged.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+
+  return orderKnowledgeByAuthority([...merged.values()], limit);
 }

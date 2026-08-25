@@ -60,7 +60,7 @@ test("retrieves the owner-approved service concern and authority rules", () => {
   assert.ok(
     concern.some(
       (result) =>
-        result.version === "hera-operator-policy-v3" &&
+        result.version === "hera-service-constitution-2026-08-25.1" &&
         /seven calendar days/i.test(result.excerpt) &&
         /salon manager may authorise/i.test(result.excerpt),
     ),
