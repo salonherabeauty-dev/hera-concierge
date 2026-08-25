@@ -119,3 +119,17 @@ The release candidate must pass:
 ## Stage 2 decision boundary
 
 Stage 2 can pass when the pull-request checks, protected Preview deployment and merged-branch verification succeed. This certification does not enable live WhatsApp sending. Stages 3 through 7 remain independently required.
+
+## Merged authoritative staging proof
+
+```text
+Authoritative verification commit: 096ead46283e4825838e198e1fbe49fd374d89b8
+GitHub deployment ID:             6088872082
+Protected Preview URL:            https://hera-concierge-o12qh241r-hera-concierge-team.vercel.app
+Deployment state:                 success
+Full merged-branch verification:  passed
+WhatsApp provider sends:          0
+Production touched:               no
+```
+
+The authoritative branch remained shadow-only and live Production remained locked.

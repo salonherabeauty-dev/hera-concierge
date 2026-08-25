@@ -1,6 +1,6 @@
 {
   "documentType": "hera_pre_production_gate_register",
-  "version": "2026-08-26.1",
+  "version": "2026-08-25.5",
   "liveProductionApproved": false,
   "shadowModeRequired": true,
   "lastUpdated": "2026-08-26",
@@ -86,7 +86,12 @@
         "codeVerificationDocument": "docs/STAGE_2_CODE_VERIFICATION.md",
         "evidenceDocument": "docs/STAGE_2_KNOWLEDGE_ACTION_AUTHORITY_EVIDENCE.md",
         "providerSendAttempted": false,
-        "productionTouched": false
+        "productionTouched": false,
+        "mergedBranchVerificationCommit": "096ead46283e4825838e198e1fbe49fd374d89b8",
+        "mergedBranchGithubDeploymentId": 6088872082,
+        "mergedBranchDeploymentUrl": "https://hera-concierge-o12qh241r-hera-concierge-team.vercel.app",
+        "mergedBranchDeploymentState": "success",
+        "mergedBranchFullVerification": "passed"
       },
       "blockers": []
     },
