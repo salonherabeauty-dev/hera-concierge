@@ -484,7 +484,7 @@ export async function generateReceptionistDecision(input: {
           },
         },
       });
-      return agent.generate({
+      const generated = await agent.generate({
         messages: historyMessages(
           input.history,
           input.context.message.id,
@@ -492,6 +492,8 @@ export async function generateReceptionistDecision(input: {
         ),
         timeout: 75_000,
       });
+      void generated.output;
+      return generated;
     },
   });
   const output = result.output;
@@ -547,7 +549,7 @@ export async function verifyReceptionistDecision(input: {
           },
         },
       });
-      return verifier.generate({
+      const generated = await verifier.generate({
         prompt: JSON.stringify({
           conversationHistory: input.history.map((message) => ({
             direction: message.direction,
@@ -560,6 +562,8 @@ export async function verifyReceptionistDecision(input: {
         }),
         timeout: 50_000,
       });
+      void generated.output;
+      return generated;
     },
   });
   return {
@@ -611,7 +615,7 @@ export async function verifyFinalClientReply(input: {
           },
         },
       });
-      return verifier.generate({
+      const generated = await verifier.generate({
         prompt: JSON.stringify({
           conversationHistory: input.history.map((message) => ({
             direction: message.direction,
@@ -628,6 +632,8 @@ export async function verifyFinalClientReply(input: {
         }),
         timeout: 50_000,
       });
+      void generated.output;
+      return generated;
     },
   });
 
