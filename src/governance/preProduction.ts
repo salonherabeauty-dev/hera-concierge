@@ -1,10 +1,11 @@
-export const PRE_PRODUCTION_GATE_REGISTER_VERSION = "2026-08-25.3";
+export const PRE_PRODUCTION_GATE_REGISTER_VERSION = "2026-08-25.4";
 export const LIVE_PRODUCTION_APPROVED = false;
 export const SHADOW_MODE_REQUIRED = true;
 
 export const PASSED_PRE_PRODUCTION_GATES = [
   "stage_0_baseline_lock",
   "stage_1_service_constitution",
+  "stage_2_knowledge_and_action_authority",
 ] as const;
 
 export interface ReleaseModeAssessment {
