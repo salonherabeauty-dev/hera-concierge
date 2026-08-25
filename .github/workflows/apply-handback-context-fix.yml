@@ -1,0 +1,44 @@
+name: Apply handback context isolation fix
+
+on:
+  push:
+    branches:
+      - fix/handback-context-isolation
+    paths:
+      - scripts/apply_handback_context_fix.py
+      - .github/workflows/apply-handback-context-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/handback-context-isolation
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply deterministic handback isolation patch
+        run: python3 scripts/apply_handback_context_fix.py
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run strict type check and complete automated suite
+        run: npm test
+      - name: Scan tracked files for credentials
+        run: npm run credential:scan
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit verified fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Prevent resolved booking context from leaking into new turns"
+          git push origin HEAD:fix/handback-context-isolation
