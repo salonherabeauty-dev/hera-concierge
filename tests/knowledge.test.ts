@@ -25,3 +25,30 @@ test("retrieves Hera pricing and location evidence without a model call", () => 
   const strandTest = searchStaticKnowledge("strand test failed bleach", 3);
   assert.ok(strandTest.some((result) => /do not proceed with bleach/i.test(result.excerpt)));
 });
+
+
+test("retrieves the operator-approved curly service and specialist matrix", () => {
+  const service = searchStaticKnowledge(
+    "Does Hera offer curly haircuts at Tanglin Mall?",
+    3,
+  );
+  assert.ok(
+    service.some(
+      (result) =>
+        result.version === "hera-operator-policy-v2" &&
+        /both Tanglin Mall and Quayside Isle/i.test(result.excerpt),
+    ),
+  );
+
+  const specialist = searchStaticKnowledge("Who is your curly specialist?", 3);
+  assert.ok(
+    specialist.some(
+      (result) =>
+        /Alina is Rëzocut-certified/i.test(result.excerpt) &&
+        /Phoeve is REZO Cut and Cadō Academy certified/i.test(result.excerpt) &&
+        /Irene is known for precision cutting and curl transformations/i.test(
+          result.excerpt,
+        ),
+    ),
+  );
+});

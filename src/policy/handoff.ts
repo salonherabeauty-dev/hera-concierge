@@ -9,8 +9,12 @@ import type {
   HandoffTaskType,
   PolicyAssessment,
 } from "../types.js";
+import {
+  assessServiceInformation,
+  SERVICE_INFORMATION_POLICY_VERSION,
+} from "./serviceInformation.js";
 
-export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.2.0";
+export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.2.1";
 
 const HUMAN_REQUEST_PATTERNS = [
   /\b(?:speak|talk|chat|connect|transfer|pass me|put me through)\b.{0,28}\b(?:human|person|receptionist|manager|staff|someone)\b/i,
@@ -504,6 +508,29 @@ export function assessHumanHandoff(input: {
   const requestedHuman = HUMAN_REQUEST_PATTERNS.some((pattern) =>
     pattern.test(input.message),
   );
+  const serviceInformation = assessServiceInformation({
+    message: input.message,
+    decision: input.decision,
+    policy: input.policy,
+  });
+  if (serviceInformation.matched && serviceInformation.reply) {
+    return {
+      createTask: false,
+      taskType: null,
+      scope: null,
+      priority: null,
+      assignedRole: null,
+      assignedOutlet: null,
+      summary: null,
+      requestedAction: null,
+      collectedFacts: { ...EMPTY_FACTS },
+      missingFacts: [],
+      clientReplyOverride: serviceInformation.reply,
+      clientVisibleStatus: null,
+      dedupeKey: null,
+      reason: `${serviceInformation.reason} Policy ${SERVICE_INFORMATION_POLICY_VERSION}; sources ${serviceInformation.sourceIds.join(", ")}.`,
+    };
+  }
   const taskType = taskTypeFor({
     message: input.message,
     decision: input.decision,

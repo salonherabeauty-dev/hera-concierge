@@ -9,11 +9,18 @@ interface KnowledgeSection {
 }
 
 export const HERA_OPERATOR_POLICIES = String.raw`
-HERA OPERATOR-APPROVED POLICIES - VERSION 1
+HERA OPERATOR-APPROVED POLICIES - VERSION 2
 - If a client has waited more than 10 minutes beyond the agreed appointment time, Hera's stated service-recovery policy is a 10% discount. The AI may explain the policy and record the concern, but must not claim the discount has been applied to a bill unless a transaction system confirms it.
 - If a strand test fails, do not proceed with bleach. Hair and client safety override the requested colour result and any sales objective.
 - Published service prices are before 9% GST unless explicitly stated otherwise.
 - Every colour service requires consultation, a clear quotation and client consent before work begins.
+
+HERA OPERATOR-APPROVED CURL SERVICE MATRIX - VERSION 2
+- Hera offers specialist curly haircuts at both Tanglin Mall and Quayside Isle, Sentosa Cove.
+- Curly services include curly haircuts, curl-defining and hydration care for waves, curls and coils, subject to consultation.
+- A pure service-at-outlet question must be answered directly. Do not create a receptionist handoff unless the current client turn asks to book, check live availability, change an appointment or speak to a person.
+- Do not claim a named stylist's live schedule or current atelier assignment without live confirmation.
+- Curl-specialist guidance: Alina is Rëzocut-certified and known for curl architecture; Phoeve is REZO Cut and Cadō Academy certified; Irene is known for precision cutting and curl transformations.
 `;
 
 const STOP_WORDS = new Set([
@@ -147,7 +154,7 @@ export function searchStaticKnowledge(query: string, limit = 5): KnowledgeResult
         ? null
         : "https://www.herabeauty.sg/",
       version: section.title.startsWith("HERA OPERATOR-APPROVED")
-        ? "hera-operator-policy-v1"
+        ? "hera-operator-policy-v2"
         : "hera-approved-v4",
       score,
     }));
