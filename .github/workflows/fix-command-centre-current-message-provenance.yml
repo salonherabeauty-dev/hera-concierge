@@ -22,7 +22,9 @@ jobs:
           node-version: 24
           cache: npm
       - name: Apply current-message provenance and processing-state fix
-        run: python3 scripts/fix_command_centre_current_message_provenance.py
+        run: |
+          python3 scripts/fix_command_centre_current_message_provenance.py
+          python3 scripts/fix_command_centre_preview_job_trace.py
       - name: Install locked dependencies
         run: npm ci
       - name: Strict type check, Command Centre build and complete automated suite
@@ -37,9 +39,11 @@ jobs:
           grep -q 'AI candidate for latest client turn' command-centre/src/app.ts
           grep -q 'ConversationJobView' src/command-centre/types.ts
           grep -q 'from("ai_jobs")' src/command-centre/repository.ts
+          grep -q 'jobs: \[\]' src/command-centre/previewRepository.ts
       - name: Remove one-time tooling and commit verified implementation
         run: |
           rm scripts/fix_command_centre_current_message_provenance.py
+          rm scripts/fix_command_centre_preview_job_trace.py
           rm .github/workflows/fix-command-centre-current-message-provenance.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
