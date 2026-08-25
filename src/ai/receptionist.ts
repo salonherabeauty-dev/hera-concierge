@@ -15,6 +15,7 @@ import {
   BOOKING_OWNERSHIP_VERIFIER_PRINCIPLE,
 } from "../policy/bookingExperience.js";
 import { canonicalizeSources } from "../policy/grounding.js";
+import type { HumanHandoffAssessment } from "../policy/handoff.js";
 import {
   AGENT_ACTIONS,
   AGENT_FACTUAL_BASES,
@@ -29,11 +30,14 @@ import {
   type ConversationMessage,
   type JsonValue,
   type JobContext,
+  type PolicyAssessment,
 } from "../types.js";
 import type { InterpretedInbound } from "../whatsapp/media.js";
 
 export const RESPONSE_PROMPT_VERSION = "hera-receptionist-response-1.6.1";
 export const VERIFIER_PROMPT_VERSION = "hera-receptionist-verifier-1.6.1";
+export const FINAL_RESPONSE_VERIFIER_PROMPT_VERSION =
+  "hera-final-response-verifier-1.1.0";
 
 export interface AiRuntimeConfig {
   primaryModel: string;
@@ -57,6 +61,26 @@ export interface VerificationResult {
   correctedHandoff: AgentDecision["handoff"] | null;
   risk: (typeof RISK_LEVELS)[number];
   issues: string[];
+  modelId: string;
+  usage: JsonValue;
+  latencyMs: number;
+}
+
+export interface FinalResponseVerificationResult {
+  approved: boolean;
+  correctedReply: string | null;
+  issues: string[];
+  scores: {
+    empathy: number;
+    specificity: number;
+    ownership: number;
+    nextStep: number;
+    factuality: number;
+    safety: number;
+    tone: number;
+    clientEffort: number;
+  };
+  summary: string;
   modelId: string;
   usage: JsonValue;
   latencyMs: number;
@@ -137,6 +161,41 @@ const verificationSchema = z
     }
   });
 
+const finalResponseVerificationSchema = z
+  .object({
+    approved: z.boolean(),
+    correctedReply: z.string().trim().min(1).max(3500).nullable(),
+    issues: z.array(z.string().trim().min(1).max(180)).max(12),
+    scores: z.object({
+      empathy: z.number().int().min(0).max(2),
+      specificity: z.number().int().min(0).max(2),
+      ownership: z.number().int().min(0).max(2),
+      nextStep: z.number().int().min(0).max(2),
+      factuality: z.number().int().min(0).max(2),
+      safety: z.number().int().min(0).max(2),
+      tone: z.number().int().min(0).max(2),
+      clientEffort: z.number().int().min(0).max(2),
+    }),
+    summary: z.string().trim().min(1).max(240),
+  })
+  .superRefine((value, context) => {
+    const scoreValues = Object.values(value.scores);
+    if (value.approved && (value.issues.length > 0 || scoreValues.some((score) => score !== 2))) {
+      context.addIssue({
+        code: "custom",
+        path: ["approved"],
+        message: "Approval requires no issues and perfect scores on every final-response dimension.",
+      });
+    }
+    if (!value.approved && !value.correctedReply) {
+      context.addIssue({
+        code: "custom",
+        path: ["correctedReply"],
+        message: "A rejected final response requires a complete corrected reply.",
+      });
+    }
+  });
+
 export const RESPONSE_INSTRUCTIONS = [
   "You are Hera, the AI receptionist for Hera Hair Beauty in Singapore.",
   "Deliver luxury-hospitality customer service: warm, calm, precise, concise and never defensive. Mirror the client's language when you can do so reliably. Do not use emojis, exclamation marks or sales pressure.",
@@ -187,7 +246,22 @@ export const VERIFIER_INSTRUCTIONS = [
   "Risk levels: green routine; amber service concern; red injury/refund/legal/privacy/serious complaint; black immediate health or physical-safety danger.",
 ].join("\n");
 
+export const FINAL_RESPONSE_VERIFIER_INSTRUCTIONS = [
+  "You are Hera’s final client-response quality controller. Review the exact post-policy text that would reach the WhatsApp client after every model, template, safety rule and handoff override has finished.",
+  "Approve only when the text is ready to send unchanged. This is a stricter gate than the earlier safety verifier: every score must be 2 and issues must be empty.",
+  "Use only the supplied client message, conversation history, approved evidence, decision, deterministic policy and persisted-handoff plan. Never introduce a Hera fact, appointment outcome, remedy, financial decision, privacy completion or medical conclusion that is not supported.",
+  "The latest client turn controls the current intent. Remove stale booking, stylist, outlet, date or time details that do not belong to the current request.",
+  "For a complaint, the exact final reply must recognise the client’s experience, preserve relevant known service and outlet details, identify management ownership, explain the review or useful next step, and remain neutral. Never admit liability, assign blame or promise a refund, compensation, complimentary redo or outcome.",
+  "For booking or appointment action, never claim completion. State that live records or availability must be checked and that the verified outcome will be confirmed.",
+  "For refund or finance, identify authorised verification without promising an outcome. For privacy or legal requests, identify authorised handling without claiming deletion or legal conclusions. For urgent safety, preserve immediate medical or emergency guidance before salon follow-up.",
+  "A specialised task must never be reduced to a generic ‘a staff member will continue’ message. Name the appropriate human ownership and explain the next useful step without exposing internal queues, tasks, handoffs, policy, model names or backend terminology.",
+  "Use warm, calm, precise luxury-hospitality language. No emojis, exclamation marks, sales pressure, cold bureaucracy or needless repetition. Keep the reply normally within 2 to 5 concise sentences.",
+  "Score each dimension from 0 to 2, where 2 means fully send-ready for this exact context. If anything is below 2, set approved false and provide one complete correctedReply containing only client-facing text.",
+  "The summary must be a concise quality-control reason, not private chain-of-thought.",
+].join("\n");
+
 function anonymousUserId(contactId: string): string {
+
   return `hera-contact-${createHash("sha256").update(contactId).digest("hex").slice(0, 24)}`;
 }
 
@@ -424,6 +498,66 @@ export async function verifyReceptionistDecision(input: {
     }),
     timeout: 60_000,
   });
+  return {
+    ...result.output,
+    modelId: result.response.modelId,
+    usage: jsonValue(result.usage),
+    latencyMs: Date.now() - start,
+  };
+}
+
+export async function verifyFinalClientReply(input: {
+  originalMessage: string;
+  history: ConversationMessage[];
+  draftReply: string;
+  decision: AgentDecision;
+  evidence: JsonValue;
+  policy: PolicyAssessment;
+  handoff: HumanHandoffAssessment;
+  deterministicDraftQuality: JsonValue;
+  contactId: string;
+  config: AiRuntimeConfig;
+}): Promise<FinalResponseVerificationResult> {
+  const verifier = new ToolLoopAgent({
+    id: "hera-whatsapp-final-response-verifier",
+    model: gateway(input.config.verifierModel),
+    instructions: FINAL_RESPONSE_VERIFIER_INSTRUCTIONS,
+    tools: {},
+    output: Output.object({ schema: finalResponseVerificationSchema }),
+    stopWhen: isStepCount(2),
+    maxOutputTokens: 1400,
+    temperature: 0,
+    reasoning: "high",
+    providerOptions: {
+      gateway: {
+        models: [input.config.primaryModel, ...input.config.fallbackModels],
+        tags: ["hera", "whatsapp", "final-response-quality"],
+        user: anonymousUserId(input.contactId),
+        serviceTier: "priority",
+        disallowPromptTraining: true,
+      },
+    },
+  });
+
+  const start = Date.now();
+  const result = await verifier.generate({
+    prompt: JSON.stringify({
+      conversationHistory: input.history.map((message) => ({
+        direction: message.direction,
+        text: message.text.slice(0, 5000),
+        createdAt: message.createdAt,
+      })),
+      clientMessage: input.originalMessage,
+      proposedDecision: input.decision,
+      approvedEvidence: input.evidence,
+      deterministicPolicy: input.policy,
+      finalHandoffAssessment: input.handoff,
+      exactPostPolicyDraft: input.draftReply,
+      deterministicDraftQuality: input.deterministicDraftQuality,
+    }),
+    timeout: 60_000,
+  });
+
   return {
     ...result.output,
     modelId: result.response.modelId,
