@@ -26,14 +26,14 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('src/worker.ts')
+          path = Path("src/worker.ts")
           text = path.read_text()
 
           def replace_once(old: str, new: str, label: str) -> None:
               global text
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f'{label}: expected one target, found {count}')
+                  raise SystemExit(f"{label}: expected one target, found {count}")
               text = text.replace(old, new)
 
           replace_once(
@@ -43,14 +43,12 @@ jobs:
             assessActionAuthority,
           } from "./policy/actionAuthority.js";
           import { detectSupportedClientLocale } from "./policy/locale.js";''',
-              'action authority import',
+              "action authority import",
           )
 
-          draft_marker = '  const initialFinalVerification = await verifyFinalClientReply({'
-          if text.count(draft_marker) != 1:
-              raise SystemExit('draft authority insertion marker missing or duplicated')
-          text = text.replace(
-              draft_marker,
+          initial_verifier = "  const initialFinalVerification = await verifyFinalClientReply({"
+          replace_once(
+              initial_verifier,
               '''  const draftActionAuthority = assessActionAuthority({
             reply: draftFinalReply,
             decision,
@@ -59,19 +57,15 @@ jobs:
             risk: policy.risk,
           });
           const initialFinalVerification = await verifyFinalClientReply({''',
+              "draft action authority",
           )
 
-          final_marker = '''  if (
-            await completeSupersededJob(
-              runtime,
-              job,
-              "after_final_response_verifier",
-            )
-          ) return;'''
-          if text.count(final_marker) != 1:
-              raise SystemExit('final authority insertion marker missing or duplicated')
-          text = text.replace(
-              final_marker,
+          delivery_line = (
+              "  const deliveryEligible = finalQuality.passed && "
+              "finalVerification.approved;"
+          )
+          replace_once(
+              delivery_line,
               '''  const finalActionAuthority = assessActionAuthority({
             reply: finalReply,
             decision,
@@ -79,53 +73,40 @@ jobs:
             handoff,
             risk: policy.risk,
           });
-          if (
-            await completeSupersededJob(
-              runtime,
-              job,
-              "after_final_response_verifier",
-            )
-          ) return;''',
-          )
-
-          replace_once(
-              '  const deliveryEligible = finalQuality.passed && finalVerification.approved;',
-              '''  const deliveryEligible =
+          const deliveryEligible =
             finalQuality.passed &&
             finalVerification.approved &&
             finalActionAuthority.passed;''',
-              'delivery eligibility',
+              "final action authority and delivery eligibility",
+          )
+
+          replace_once(
+              "      finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,\n      policy,",
+              "      finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,\n      actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,\n      policy,",
+              "policy version evidence",
           )
           replace_once(
-              '      finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,\n      policy,',
-              '      finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,\n      actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,\n      policy,',
-              'policy version evidence',
+              "      deterministicDraftQuality,\n      initialFinalVerification:",
+              "      deterministicDraftQuality,\n      draftActionAuthority,\n      initialFinalVerification:",
+              "draft authority evidence",
           )
           replace_once(
-              '      deterministicDraftQuality,\n      initialFinalVerification:',
-              '      deterministicDraftQuality,\n      draftActionAuthority,\n      initialFinalVerification:',
-              'draft authority evidence',
+              "      finalReply,\n      finalQuality,\n      finalVerification:",
+              "      finalReply,\n      finalQuality,\n      finalActionAuthority,\n      finalVerification:",
+              "final authority evidence",
           )
           replace_once(
-              '      finalReply,\n      finalQuality,\n      finalVerification:',
-              '      finalReply,\n      finalQuality,\n      finalActionAuthority,\n      finalVerification:',
-              'final authority evidence',
-          )
-          replace_once(
-              '        deterministicIssues: finalQuality.issues,\n        finalVerifierApproved: finalVerification.approved,',
+              "        deterministicIssues: finalQuality.issues,\n        finalVerifierApproved: finalVerification.approved,",
               '''        deterministicIssues: finalQuality.issues,
                 actionAuthorityPassed: finalActionAuthority.passed,
                 actionAuthorityIssues: finalActionAuthority.issues,
                 actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
                 finalVerifierApproved: finalVerification.approved,''',
-              'blocked response authority evidence',
+              "blocked response authority evidence",
           )
 
-          fallback_marker = '  if (!fallbackQuality.passed) {'
-          if text.count(fallback_marker) != 1:
-              raise SystemExit('fallback authority insertion marker missing or duplicated')
-          text = text.replace(
-              fallback_marker,
+          replace_once(
+              "  if (!fallbackQuality.passed) {",
               '''  const fallbackActionAuthority = assessActionAuthority({
             reply: fallbackReply,
             decision: fallbackDecision,
@@ -134,21 +115,22 @@ jobs:
             risk: "amber",
           });
           if (!fallbackQuality.passed || !fallbackActionAuthority.passed) {''',
+              "fallback action authority",
           )
           replace_once(
               '    throw new Error("Dead-letter fallback failed Hera’s deterministic quality gate");',
               '''    throw new Error(
               "Dead-letter fallback failed Hera’s deterministic quality or action-authority gate",
             );''',
-              'fallback error',
+              "fallback error",
           )
           replace_once(
-              '    humanHandoffCreated: true,\n  });',
+              "    humanHandoffCreated: true,\n  });",
               '''    humanHandoffCreated: true,
             actionAuthorityPolicyVersion: ACTION_AUTHORITY_POLICY_VERSION,
             actionAuthorityPassed: fallbackActionAuthority.passed,
           });''',
-              'fallback audit evidence',
+              "fallback audit evidence",
           )
 
           path.write_text(text)
