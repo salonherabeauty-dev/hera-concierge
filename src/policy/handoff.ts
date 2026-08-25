@@ -10,7 +10,7 @@ import type {
   PolicyAssessment,
 } from "../types.js";
 
-export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.1.1";
+export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.2.0";
 
 const HUMAN_REQUEST_PATTERNS = [
   /\b(?:speak|talk|chat|connect|transfer|pass me|put me through)\b.{0,28}\b(?:human|person|receptionist|manager|staff|someone)\b/i,
@@ -30,6 +30,28 @@ const ARRIVAL_PATTERNS = [
 const SAME_DAY_PATTERNS = [
   /\b(?:today|this afternoon|this evening|tonight|same[ -]?day|right now|as soon as possible|asap)\b/i,
   /今天|今日|下午|今晚|马上|尽快/u,
+];
+
+const BOOKING_ACTION_PATTERNS = [
+  /\b(?:book|booking|appointment|reserve|reservation|schedule|slot)\b/i,
+  /\b(?:available|availability)\b.{0,60}\b(?:today|tomorrow|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i,
+  /\b(?:can|could|may)\s+(?:i|we)\b.{0,45}\b(?:come|book|reserve|schedule|see)\b/i,
+  /\b(?:i|we)(?:'d| would)?\s+(?:like|want|need)\s+to\s+(?:book|reserve|schedule|come|see)\b/i,
+];
+
+const INFORMATIONAL_SERVICE_PATTERNS = [
+  /\b(?:do|does|is|are)\s+(?:hera|you|the salon|this outlet)\b.{0,50}\b(?:offer|provide|have|do)\b/i,
+  /\b(?:do|does)\s+(?:tanglin(?: mall)?|sentosa|quayside(?: isle)?)\b.{0,50}\b(?:offer|provide|have)\b/i,
+  /\b(?:what|which)\s+(?:services?|treatments?)\b/i,
+];
+
+const APPOINTMENT_CHANGE_PATTERNS = [
+  /\b(?:change|move|reschedule|cancel|amend)\b.{0,50}\b(?:appointment|booking|slot|time|date)\b/i,
+  /\b(?:appointment|booking|slot)\b.{0,50}\b(?:change|move|reschedule|cancel|amend)\b/i,
+];
+
+const TECHNICAL_REVIEW_PATTERNS = [
+  /\b(?:bleach|strand test|patch test|chemical|rebond|relaxer|perm|keratin|hair damage|breakage|scalp reaction)\b/i,
 ];
 
 const FALSE_COMPLETION_PATTERNS = [
@@ -149,6 +171,109 @@ function defaultProposal(decision: AgentDecision): AgentHandoffProposal {
 
 function uniqueMissing(values: HandoffFactKey[]): HandoffFactKey[] {
   return [...new Set(values)];
+}
+
+function bookingActionRequested(message: string, intent: AgentDecision["intent"]): boolean {
+  if (intent === "booking" || intent === "availability") return true;
+  const informational = INFORMATIONAL_SERVICE_PATTERNS.some((pattern) => pattern.test(message));
+  const explicitAction = BOOKING_ACTION_PATTERNS.some((pattern) => pattern.test(message));
+  return explicitAction && !informational;
+}
+
+function proposalSupportedByCurrentTurn(input: {
+  message: string;
+  decision: AgentDecision;
+  policy: PolicyAssessment;
+  proposal: AgentHandoffProposal;
+}): boolean {
+  if (!input.proposal.required) return false;
+  const taskType = input.proposal.taskType ?? "other";
+  if (taskType === "booking_action") {
+    return bookingActionRequested(input.message, input.decision.intent);
+  }
+  if (taskType === "appointment_change") {
+    return (
+      input.decision.intent === "appointment_change" ||
+      APPOINTMENT_CHANGE_PATTERNS.some((pattern) => pattern.test(input.message))
+    );
+  }
+  if (taskType === "arrival_issue") {
+    return ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message));
+  }
+  if (taskType === "client_requested_human") {
+    return HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(input.message));
+  }
+  if (taskType === "complaint_review") return input.decision.intent === "complaint";
+  if (taskType === "refund_finance") return input.decision.intent === "refund_compensation";
+  if (taskType === "privacy_legal" || taskType === "security_review") {
+    return input.decision.intent === "privacy_legal";
+  }
+  if (taskType === "medical_safety") {
+    return input.decision.intent === "medical_safety" || input.policy.risk === "black";
+  }
+  if (taskType === "technical_review") {
+    return (
+      input.policy.risk !== "green" ||
+      TECHNICAL_REVIEW_PATTERNS.some((pattern) => pattern.test(input.message))
+    );
+  }
+  return (
+    input.decision.intent === "other" &&
+    input.decision.proposedActions.includes("create_handoff_task")
+  );
+}
+
+function normalizedForComparison(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function staleInformationalReply(input: {
+  message: string;
+  decision: AgentDecision;
+  proposal: AgentHandoffProposal;
+}): string | null {
+  if (
+    input.proposal.taskType !== "booking_action" ||
+    !input.proposal.required ||
+    bookingActionRequested(input.message, input.decision.intent)
+  ) {
+    return null;
+  }
+
+  const message = normalizedForComparison(input.message);
+  const facts = normalizedFacts(input.proposal.collectedFacts);
+  const staleValues = [
+    facts.service,
+    facts.stylist,
+    facts.date,
+    facts.time,
+    facts.flexibility,
+    facts.appointmentReference,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizedForComparison)
+    .filter((value) => value.length >= 2 && !message.includes(value));
+
+  const bookingLanguage = [
+    /\blive availability\b/i,
+    /\b(?:booking|appointment|slot)\b/i,
+    /\breception\b/i,
+    /\b(?:booked|confirmed|reserved|secured)\b/i,
+  ];
+  const sentences = input.decision.reply
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const retained = sentences.filter((sentence) => {
+    const normalized = normalizedForComparison(sentence);
+    if (staleValues.some((value) => normalized.includes(value))) return false;
+    if (bookingLanguage.some((pattern) => pattern.test(sentence))) return false;
+    return true;
+  });
+  const cleaned = retained.join(" ").trim();
+  if (cleaned) return cleaned.slice(0, 1000);
+
+  return "I could not verify the outlet-specific service from the approved information. Hera’s team can confirm whether this service is offered at the requested outlet.";
 }
 
 function bookingMissingFacts(facts: AgentHandoffFacts): HandoffFactKey[] {
@@ -361,7 +486,10 @@ function taskTypeFor(input: {
   if (ARRIVAL_PATTERNS.some((pattern) => pattern.test(input.message))) {
     return "arrival_issue";
   }
-  return input.proposal.required ? input.proposal.taskType ?? "other" : null;
+  if (!input.proposal.required) return null;
+  return proposalSupportedByCurrentTurn(input)
+    ? input.proposal.taskType ?? "other"
+    : null;
 }
 
 export function assessHumanHandoff(input: {
@@ -384,6 +512,11 @@ export function assessHumanHandoff(input: {
   });
 
   if (!taskType) {
+    const replyOverride = staleInformationalReply({
+      message: input.message,
+      decision: input.decision,
+      proposal,
+    });
     return {
       createTask: false,
       taskType: null,
@@ -395,10 +528,12 @@ export function assessHumanHandoff(input: {
       requestedAction: null,
       collectedFacts: facts,
       missingFacts: uniqueMissing(proposal.missingFacts),
-      clientReplyOverride: null,
+      clientReplyOverride: replyOverride,
       clientVisibleStatus: null,
       dedupeKey: null,
-      reason: "No human authority or external action is required.",
+      reason: replyOverride
+        ? "A stale booking proposal from earlier conversation history was rejected for this informational turn."
+        : "No human authority or external action is required.",
     };
   }
 
