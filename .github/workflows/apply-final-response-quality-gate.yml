@@ -6,6 +6,7 @@ on:
       - feat/final-response-quality-gate
     paths:
       - scripts/apply_final_response_quality_gate.py
+      - scripts/run_final_response_quality_gate.py
       - .github/workflows/apply-final-response-quality-gate.yml
 
 permissions:
@@ -24,7 +25,7 @@ jobs:
           node-version: 24
           cache: npm
       - name: Apply system-wide final response quality gate
-        run: python3 scripts/apply_final_response_quality_gate.py
+        run: python3 scripts/run_final_response_quality_gate.py
       - name: Install locked dependencies
         run: npm ci
       - name: Strict type check and complete automated suite
@@ -38,6 +39,7 @@ jobs:
       - name: Remove one-time patcher and commit verified changes
         run: |
           rm scripts/apply_final_response_quality_gate.py
+          rm scripts/run_final_response_quality_gate.py
           rm .github/workflows/apply-final-response-quality-gate.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
