@@ -1,11 +1,17 @@
 import { HERA_KNOWLEDGE_BASE } from "../../api/concierge.js";
 import type { ReceptionistRepository } from "../db/repository.js";
 import type { KnowledgeResult } from "../types.js";
+import { governKnowledgeResults } from "./governance.js";
 
 interface KnowledgeSection {
   id: string;
   title: string;
   body: string;
+}
+
+interface StaticKnowledgeSection extends KnowledgeSection {
+  version: string;
+  sourceUrl: string | null;
 }
 
 export const HERA_OPERATOR_POLICIES = String.raw`
@@ -43,8 +49,10 @@ const STOP_WORDS = new Set([
   "be",
   "can",
   "do",
+  "does",
   "for",
   "from",
+  "hera",
   "how",
   "i",
   "in",
@@ -56,11 +64,13 @@ const STOP_WORDS = new Set([
   "on",
   "or",
   "please",
+  "service",
   "the",
   "to",
   "what",
   "with",
   "you",
+  "your",
 ]);
 
 const SYNONYMS: Record<string, string[]> = {
@@ -94,7 +104,10 @@ function isHeading(line: string): boolean {
   return clean.length >= 4 && clean.length <= 120 && /^[A-Z0-9][A-Z0-9 &/(),:'’+.-]+$/.test(clean);
 }
 
-export function splitApprovedKnowledge(source = HERA_KNOWLEDGE_BASE): KnowledgeSection[] {
+export function splitApprovedKnowledge(
+  source = HERA_KNOWLEDGE_BASE,
+  idPrefix = "hera-kb-v4",
+): KnowledgeSection[] {
   const sections: KnowledgeSection[] = [];
   let title = "Hera approved knowledge";
   let lines: string[] = [];
@@ -103,7 +116,7 @@ export function splitApprovedKnowledge(source = HERA_KNOWLEDGE_BASE): KnowledgeS
     const body = lines.join("\n").trim();
     if (body) {
       sections.push({
-        id: `hera-kb-v4:${slug(title) || sections.length}`,
+        id: `${idPrefix}:${slug(title) || sections.length}`,
         title,
         body,
       });
@@ -127,11 +140,21 @@ const SUPERSEDED_LEGACY_SECTION_TITLES = new Set([
   "SERVICE CONCERNS, COMPLAINTS AND REFUNDS",
 ]);
 
-const STATIC_SECTIONS = [
-  ...splitApprovedKnowledge(HERA_OPERATOR_POLICIES),
-  ...splitApprovedKnowledge().filter(
-    (section) => !SUPERSEDED_LEGACY_SECTION_TITLES.has(section.title),
+const STATIC_SECTIONS: StaticKnowledgeSection[] = [
+  ...splitApprovedKnowledge(HERA_OPERATOR_POLICIES, "hera-operator-v3").map(
+    (section) => ({
+      ...section,
+      version: "hera-operator-policy-v3",
+      sourceUrl: null,
+    }),
   ),
+  ...splitApprovedKnowledge()
+    .filter((section) => !SUPERSEDED_LEGACY_SECTION_TITLES.has(section.title))
+    .map((section) => ({
+      ...section,
+      version: "hera-approved-v4",
+      sourceUrl: "https://www.herabeauty.sg/",
+    })),
 ];
 
 function queryTerms(query: string): string[] {
@@ -149,35 +172,29 @@ export function searchStaticKnowledge(query: string, limit = 5): KnowledgeResult
   if (terms.length === 0) return [];
   const normalizedQuery = query.toLowerCase().trim();
 
-  return STATIC_SECTIONS.map((section) => {
+  const candidates = STATIC_SECTIONS.map((section) => {
     const title = section.title.toLowerCase();
     const body = section.body.toLowerCase();
     let score = normalizedQuery && body.includes(normalizedQuery) ? 12 : 0;
     for (const term of terms) {
       if (title.includes(term)) score += 5;
-      const matches = body.match(new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"));
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matches = body.match(new RegExp(`\\b${escaped}\\b`, "g"));
       score += Math.min(matches?.length ?? 0, 8);
-    }
-    if (score > 0 && section.title.startsWith("HERA OPERATOR-APPROVED")) {
-      score += 50;
     }
     return { section, score };
   })
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, Math.max(1, Math.min(limit, 8)))
     .map(({ section, score }) => ({
       id: section.id,
       title: section.title,
       excerpt: section.body.slice(0, 4500),
-      sourceUrl: section.title.startsWith("HERA OPERATOR-APPROVED")
-        ? null
-        : "https://www.herabeauty.sg/",
-      version: section.title.startsWith("HERA OPERATOR-APPROVED")
-        ? "hera-operator-policy-v3"
-        : "hera-approved-v4",
+      sourceUrl: section.sourceUrl,
+      version: section.version,
       score,
     }));
+
+  return governKnowledgeResults(query, candidates, limit);
 }
 
 export async function searchAllKnowledge(
@@ -185,14 +202,14 @@ export async function searchAllKnowledge(
   query: string,
   limit = 6,
 ): Promise<KnowledgeResult[]> {
-  const staticResults = searchStaticKnowledge(query, limit);
+  const staticResults = searchStaticKnowledge(query, 8);
   const dynamicResults = await repository
-    .searchApprovedKnowledge(query, limit)
+    .searchApprovedKnowledge(query, 8)
     .catch(() => [] as KnowledgeResult[]);
-  const merged = new Map<string, KnowledgeResult>();
-  for (const result of [...dynamicResults, ...staticResults]) {
-    const key = `${result.title.toLowerCase()}:${result.excerpt.slice(0, 120).toLowerCase()}`;
-    if (!merged.has(key)) merged.set(key, result);
-  }
-  return [...merged.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+
+  return governKnowledgeResults(
+    query,
+    [...dynamicResults, ...staticResults],
+    limit,
+  );
 }
