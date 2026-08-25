@@ -85,7 +85,7 @@ const [jobResult, decisionResult, outboxResult, taskResult] = await Promise.all(
     .order("created_at", { ascending: true }),
   supabase
     .from("ai_outbox")
-    .select("id,status,target_type,authorization,provider_message_id,created_at,updated_at")
+    .select("*")
     .eq("source_message_id", message.id)
     .order("created_at", { ascending: true }),
   supabase
@@ -130,10 +130,15 @@ console.log(
     },
     jobs,
     decisions: decisionResult.data ?? [],
-    outbox: (outboxResult.data ?? []).map((item) => ({
-      ...item,
+    outbox: (outboxResult.data ?? []).map((item: Record<string, unknown>) => ({
+      id: item.id,
+      status: item.status,
+      targetType: item.target_type,
+      authorization: item.authorization ?? item.send_authorization ?? null,
       providerMessageIdRecorded: Boolean(item.provider_message_id),
-      provider_message_id: undefined,
+      attempts: item.attempts,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
     })),
     tasks: (taskResult.data ?? []).map((task) => ({
       ...task,
