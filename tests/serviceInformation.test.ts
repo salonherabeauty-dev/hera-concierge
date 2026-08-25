@@ -43,14 +43,42 @@ test("answers a Tanglin curly service question directly and professionally", () 
     policy: policy(),
   });
 
-  assert.equal(SERVICE_INFORMATION_POLICY_VERSION, "hera-service-information-1.0.0");
+  assert.equal(SERVICE_INFORMATION_POLICY_VERSION, "hera-service-information-1.0.1");
   assert.equal(result.matched, true);
   assert.deepEqual(result.sourceIds, [CURL_SERVICE_SOURCE_ID]);
+  assert.equal(
+    CURL_SERVICE_SOURCE_ID,
+    "hera-kb-v4:hera-operator-approved-curl-service-matrix-version-2",
+  );
   assert.match(result.reply ?? "", /^Yes\./);
-  assert.match(result.reply ?? "", /Tanglin Mall atelier offers specialist curly haircuts/i);
+  assert.match(
+    result.reply ?? "",
+    /Tanglin Mall atelier offers specialist curly haircuts/i,
+  );
   assert.match(result.reply ?? "", /waves, curls and coils/i);
   assert.match(result.reply ?? "", /current hair photo/i);
-  assert.doesNotMatch(result.reply ?? "", /reception|live availability|Irene|2 pm/i);
+  assert.doesNotMatch(
+    result.reply ?? "",
+    /reception|live availability|Irene|2 pm/i,
+  );
+});
+
+test("treats outlet-level service availability and curl-pattern wording as information", () => {
+  const available = assessServiceInformation({
+    message: "Are curly haircuts available at Tanglin Mall?",
+    decision: decision({ intent: "availability" }),
+    policy: policy(),
+  });
+  assert.equal(available.matched, true);
+  assert.match(available.reply ?? "", /Tanglin Mall atelier/i);
+
+  const curlPattern = assessServiceInformation({
+    message: "Do you cut 3B hair at Tanglin?",
+    decision: decision(),
+    policy: policy(),
+  });
+  assert.equal(curlPattern.matched, true);
+  assert.match(curlPattern.reply ?? "", /waves, curls and coils/i);
 });
 
 test("answers Sentosa and no-outlet curly questions with the correct atelier scope", () => {
@@ -68,7 +96,10 @@ test("answers Sentosa and no-outlet curly questions with the correct atelier sco
     policy: policy(),
   });
   assert.equal(both.matched, true);
-  assert.match(both.reply ?? "", /both Tanglin Mall and Quayside Isle, Sentosa Cove/i);
+  assert.match(
+    both.reply ?? "",
+    /both Tanglin Mall and Quayside Isle, Sentosa Cove/i,
+  );
 });
 
 test("provides a supported curl-specialist comparison only when asked", () => {
@@ -80,18 +111,41 @@ test("provides a supported curl-specialist comparison only when asked", () => {
 
   assert.equal(result.matched, true);
   assert.match(result.reply ?? "", /Alina is Rëzocut-certified/i);
-  assert.match(result.reply ?? "", /Phoeve is REZO Cut and Cadō Academy certified/i);
-  assert.match(result.reply ?? "", /Irene is known for precision cutting and curl transformations/i);
-  assert.match(result.reply ?? "", /live schedules and atelier assignments still need confirmation/i);
+  assert.match(
+    result.reply ?? "",
+    /Phoeve is REZO Cut and Cadō Academy certified/i,
+  );
+  assert.match(
+    result.reply ?? "",
+    /Irene is known for precision cutting and curl transformations/i,
+  );
+  assert.match(
+    result.reply ?? "",
+    /live schedules and atelier assignments still need confirmation/i,
+  );
 });
 
-test("does not intercept booking, pricing, human-authority or safety turns", () => {
+test("does not intercept booking, service-action, pricing, human-authority or safety turns", () => {
   const booking = assessServiceInformation({
     message: "Do you have availability this Friday at 2 pm for a curly haircut?",
     decision: decision({ intent: "availability" }),
     policy: policy(),
   });
   assert.equal(booking.matched, false);
+
+  const namedAvailability = assessServiceInformation({
+    message: "Is Alina available for a curly cut?",
+    decision: decision({ intent: "availability" }),
+    policy: policy(),
+  });
+  assert.equal(namedAvailability.matched, false);
+
+  const serviceAction = assessServiceInformation({
+    message: "I would like to get a curly haircut at Tanglin Mall.",
+    decision: decision({ intent: "booking" }),
+    policy: policy(),
+  });
+  assert.equal(serviceAction.matched, false);
 
   const pricing = assessServiceInformation({
     message: "Do you offer curly cuts at Tanglin Mall and how much are they?",
