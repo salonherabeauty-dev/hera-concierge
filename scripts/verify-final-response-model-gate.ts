@@ -167,6 +167,37 @@ const exactFinal = await verifyFinalClientReply({
   contactId: "controlled-final-response-model-proof",
   config,
 });
+
+console.log(
+  "HERA_FINAL_RESPONSE_MODEL_DIAGNOSTIC",
+  JSON.stringify({
+    promptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+    deterministicPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+    primaryConfiguredModel: config.primaryModel,
+    configuredVerifierModel: config.verifierModel,
+    initial: {
+      approved: initial.approved,
+      issues: initial.issues,
+      scores: initial.scores,
+      summary: initial.summary,
+      actualModel: initial.modelId,
+      correctedReply,
+    },
+    correctedDeterministicQuality: correctedQuality,
+    exactFinal: {
+      approved: exactFinal.approved,
+      issues: exactFinal.issues,
+      scores: exactFinal.scores,
+      summary: exactFinal.summary,
+      actualModel: exactFinal.modelId,
+      furtherCorrection: exactFinal.correctedReply,
+    },
+    whatsappSendMode: process.env.WHATSAPP_SEND_MODE,
+    providerSendAttempted: false,
+    databaseMutationAttempted: false,
+  }),
+);
+
 if (
   !exactFinal.approved ||
   exactFinal.issues.length > 0 ||
