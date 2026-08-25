@@ -66,13 +66,18 @@ const sourceIds = [...new Set(
     .filter((value): value is string => typeof value === "string" && value.length > 0),
 )];
 
-const sourceDocuments = sourceIds.length
-  ? await supabase
-      .from("ai_knowledge_documents")
-      .select("id,document_key,title,body,source_url,version,checksum,status,valid_from,valid_until,metadata,updated_at")
-      .in("id", sourceIds)
-  : { data: [], error: null };
-if (sourceDocuments.error) throw sourceDocuments.error;
+const allApprovedDocuments = await supabase
+  .from("ai_knowledge_documents")
+  .select("id,document_key,title,body,source_url,version,checksum,status,valid_from,valid_until,metadata,updated_at")
+  .eq("status", "approved")
+  .limit(500);
+if (allApprovedDocuments.error) throw allApprovedDocuments.error;
+const sourceDocuments = {
+  data: (allApprovedDocuments.data ?? []).filter(
+    (doc) => sourceIds.includes(String(doc.id)) || sourceIds.includes(String(doc.document_key)),
+  ),
+  error: null,
+};
 
 const { data: curlyPricingDocs, error: curlyPricingDocsError } = await supabase
   .from("ai_knowledge_documents")
