@@ -17,7 +17,8 @@
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "test": "npm run typecheck && npm run build && npm run test:unit",
     "credential:scan": "node scripts/scan-secrets.mjs",
-    "eval:model": "tsx scripts/run-model-evals.ts"
+    "eval:model": "tsx scripts/run-model-evals.ts",
+    "certify:stage3r": "tsx src/certification/stage3r/run.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "4.0.59",
