@@ -565,9 +565,21 @@ function renderView(): string {
 function renderConversationDrawer(detail: ConversationDetail): string {
   const conversation = detail.conversation;
   const activeTask = detail.tasks.find((task) => !["resolved", "cancelled"].includes(task.status));
-  const latestCandidate = detail.candidates[0];
-  const latestInbound = [...detail.messages].reverse().find((message) => message.direction === "inbound");
-  const traceSourceMessageId = latestCandidate?.sourceMessageId ?? latestInbound?.id ?? null;
+  const latestInbound = [...detail.messages]
+    .reverse()
+    .find((message) => message.direction === "inbound");
+  const latestJob = latestInbound
+    ? detail.jobs.find((job) => job.sourceMessageId === latestInbound.id)
+    : undefined;
+  const latestCandidate = latestInbound
+    ? detail.candidates.find(
+        (candidate) => candidate.sourceMessageId === latestInbound.id,
+      )
+    : undefined;
+  const previousCandidate = detail.candidates.find(
+    (candidate) => candidate.sourceMessageId !== latestInbound?.id,
+  );
+  const traceSourceMessageId = latestInbound?.id ?? null;
   const currentTrace = traceSourceMessageId
     ? detail.decisions.filter((decision) => decision.sourceMessageId === traceSourceMessageId)
     : [];
@@ -606,6 +618,28 @@ function renderConversationDrawer(detail: ConversationDetail): string {
               : "Final response was blocked by the final quality gate."),
         )
       : "Historical response: no final-verifier result was recorded because this message predates the final-response quality gate.";
+  const latestJobLabel = latestJob ? humanize(latestJob.status) : "Not queued";
+  const latestJobClass =
+    latestJob?.status === "completed"
+      ? "pill--normal"
+      : latestJob?.status === "dead"
+        ? "pill--urgent"
+        : "";
+  const latestJobSummary = latestCandidate
+    ? "A response candidate is linked to this exact client message."
+    : latestJob?.status === "pending"
+      ? "This exact client message is queued and has not completed processing."
+      : latestJob?.status === "processing"
+        ? "Hera AI is currently processing this exact client message."
+        : latestJob?.status === "retry"
+          ? "Processing is safely queued for retry. No reply has been sent."
+          : latestJob?.status === "completed" && latestJob.lastError === "superseded_by_newer_inbound"
+            ? "This message was safely superseded by a newer client turn; no stale reply was created."
+            : latestJob?.status === "completed"
+              ? "Processing completed without a client candidate. Review the decision trace or human-action task."
+              : latestJob?.status === "dead"
+                ? "Protected processing retries were exhausted and human review is required."
+                : "No processing job or AI candidate is recorded for this latest client message.";
   return `<div class="drawer-backdrop" data-action="close-drawer" aria-hidden="true"></div>
     <aside class="drawer" role="dialog" aria-modal="true" aria-label="Conversation with ${escapeHtml(conversation.clientDisplayName)}">
       <header class="drawer__header">
@@ -635,8 +669,10 @@ function renderConversationDrawer(detail: ConversationDetail): string {
               ${activeTask && (activeTask.status === "new" || activeTask.status === "assigned") && canAcceptTask(activeTask) ? `<button type="button" class="button button--secondary button--full" data-action="accept-task" data-task-id="${escapeHtml(activeTask.id)}" data-version="${activeTask.version}">Accept human-action task</button>` : ""}
               <p class="action-note">Human WhatsApp replies remain in the normal WhatsApp Business App during this Preview stage.</p>
             </div>
-${latestCandidate ? `<div class="candidate-card"><div><p class="eyebrow">Latest AI candidate</p><span class="pill">${escapeHtml(latestCandidate.status)}</span></div><p>${escapeHtml(latestCandidate.text)}</p><small>${latestCandidate.providerMessageId ? "Provider message exists" : "Not sent to WhatsApp"}</small></div>` : ""}
-${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final response quality</p><span class="pill ${qualityStatusClass}">${qualityStatusLabel}</span></div>
+${latestInbound ? `<div class="candidate-card"><div><p class="eyebrow">Latest client turn</p><span class="pill ${latestJobClass}">${escapeHtml(latestJobLabel)}</span></div><p>${escapeHtml(latestInbound.text || `[${humanize(latestInbound.kind)}]`)}</p><small>${escapeHtml(latestJobSummary)}</small></div>` : ""}
+${latestCandidate ? `<div class="candidate-card"><div><p class="eyebrow">AI candidate for latest client turn</p><span class="pill">${escapeHtml(latestCandidate.status)}</span></div><p>${escapeHtml(latestCandidate.text)}</p><small>${latestCandidate.providerMessageId ? "Provider message exists" : "Not sent to WhatsApp"}</small></div>` : ""}
+${!latestCandidate && previousCandidate ? `<div class="candidate-card"><div><p class="eyebrow">Previous AI candidate</p><span class="pill">Historical</span></div><p>${escapeHtml(previousCandidate.text)}</p><small>Not associated with the latest client message. Retained for audit only and not sent to WhatsApp.</small></div>` : ""}
+${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final response quality for latest client turn</p><span class="pill ${qualityStatusClass}">${qualityStatusLabel}</span></div>
   <dl class="task-meta">
     <div><dt>Primary model</dt><dd>${escapeHtml(responseTrace?.modelId ?? "Not recorded")}</dd></div>
     <div><dt>First verifier</dt><dd>${escapeHtml(verificationTrace?.modelId ?? "Not recorded")}</dd></div>
@@ -646,7 +682,7 @@ ${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final respo
   ${draftFinalReply ? `<p><strong>Post-policy draft</strong><br>${escapeHtml(draftFinalReply)}</p>` : ""}
   ${finalReply ? `<p><strong>Final client reply</strong><br>${escapeHtml(finalReply)}</p>` : ""}
   <small>${escapeHtml(qualitySummary)}</small>
-</div>` : ""}
+</div>` : latestInbound && !latestCandidate ? `<div class="candidate-card"><div><p class="eyebrow">Final response quality for latest client turn</p><span class="pill">Not recorded</span></div><p>No final-response quality record is linked to the latest client message.</p><small>${escapeHtml(latestJobSummary)}</small></div>` : ""}
             ${canAddInternalNote() ? `<form class="note-form" id="note-form" data-conversation-id="${escapeHtml(conversation.id)}" data-task-id="${escapeHtml(activeTask?.id ?? "")}">
               <label class="field"><span>Internal note</span><textarea name="note" rows="3" maxlength="4000" placeholder="Record a clear internal note. This is never sent to the client.">${escapeHtml(state.noteDrafts[conversation.id] ?? "")}</textarea></label>
               <button type="submit" class="button button--secondary button--full">Add internal note</button>

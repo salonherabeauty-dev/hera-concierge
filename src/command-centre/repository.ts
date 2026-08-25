@@ -6,6 +6,7 @@ import type {
   CommandCentreDashboard,
   CommandCentreNoteView,
   ConversationDetail,
+  ConversationJobView,
   ConversationMessageView,
   ConversationSummary,
   CreateHandoffTaskInput,
@@ -389,6 +390,19 @@ export class SupabaseCommandCentreRepository {
     if (outboxResult.error) throw new Error(`load conversation candidates: ${outboxResult.error.message}`);
     if (decisionResult.error) throw new Error(`load conversation decision trace: ${decisionResult.error.message}`);
 
+    const transcriptMessageIds = array(messageResult.data).map((value) =>
+      string(object(value, "message").id, "message id"),
+    );
+    const jobResult = transcriptMessageIds.length
+      ? await this.database
+          .from("ai_jobs")
+          .select("id,source_message_id,status,attempts,max_attempts,available_at,locked_at,completed_at,last_error,created_at,updated_at")
+          .in("source_message_id", transcriptMessageIds)
+          .order("created_at", { ascending: false })
+          .limit(300)
+      : { data: [], error: null };
+    if (jobResult.error) throw new Error(`load conversation jobs: ${jobResult.error.message}`);
+
     const contact = object(contactResult.data, "contact");
     const noteRows = array(noteResult.data).map((value) => object(value, "note"));
     const authorIds = [
@@ -515,7 +529,34 @@ export class SupabaseCommandCentreRepository {
       };
     });
 
-    return { conversation, messages, tasks, notes, incidents, candidates, decisions };
+    const jobs: ConversationJobView[] = array(jobResult.data).map((value) => {
+      const row = object(value, "conversation job");
+      const status = string(row.status, "job status");
+      if (
+        status !== "pending" &&
+        status !== "processing" &&
+        status !== "retry" &&
+        status !== "completed" &&
+        status !== "dead"
+      ) {
+        throw new Error("Invalid conversation job status");
+      }
+      return {
+        id: string(row.id, "job id"),
+        sourceMessageId: string(row.source_message_id, "job source message id"),
+        status,
+        attempts: number(row.attempts, "job attempts"),
+        maxAttempts: number(row.max_attempts, "job max attempts"),
+        availableAt: string(row.available_at, "job available_at"),
+        lockedAt: optionalString(row.locked_at),
+        completedAt: optionalString(row.completed_at),
+        lastError: optionalString(row.last_error),
+        createdAt: string(row.created_at, "job created_at"),
+        updatedAt: string(row.updated_at, "job updated_at"),
+      };
+    });
+
+    return { conversation, messages, tasks, notes, incidents, candidates, decisions, jobs };
   }
 
   async dashboard(mode: "shadow" | "live"): Promise<CommandCentreDashboard> {

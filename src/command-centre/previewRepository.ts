@@ -321,6 +321,7 @@ export class PreviewCommandCentreRepository implements CommandCentreReadReposito
       incidents,
       candidates,
       decisions: [],
+      jobs: [],
     };
   }
 
