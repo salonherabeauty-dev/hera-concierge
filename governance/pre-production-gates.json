@@ -1,9 +1,9 @@
 {
   "documentType": "hera_pre_production_gate_register",
-  "version": "2026-08-25.3",
+  "version": "2026-08-26.1",
   "liveProductionApproved": false,
   "shadowModeRequired": true,
-  "lastUpdated": "2026-08-25",
+  "lastUpdated": "2026-08-26",
   "gates": [
     {
       "id": "stage_0_baseline_lock",
@@ -60,30 +60,47 @@
     },
     {
       "id": "stage_2_knowledge_and_action_authority",
-      "status": "in_progress",
+      "status": "passed",
       "requiredForLive": true,
       "evidence": {
-        "constitutionPrecedence": "implemented",
-        "supersededSevenWorkingDayPolicy": "removed_or_excluded_from_receptionist_retrieval",
+        "constitutionPrecedence": "implemented_and_runtime_ordered",
+        "knowledgeAuthorityVersion": "hera-knowledge-authority-2026-08-25.1",
+        "actionAuthorityVersion": "hera-action-authority-2026-08-25.1",
+        "approvedActionContracts": 25,
+        "canonicalClaims": 9,
+        "supersededSevenWorkingDayPolicy": "blocked_and_excluded_from_runtime_retrieval",
         "approvedDynamicLegacyConflictRecordsRemaining": 0,
-        "bookingAuthority": "human_required_until_certified_write_tool"
+        "expiredApprovedKnowledgeRecordsRemaining": 0,
+        "externalMutationContractsMissingControls": 0,
+        "bookingAuthority": "human_required_until_separately_certified_write_tool",
+        "sourceBranch": "feat/stage-2-knowledge-action-authority",
+        "verifiedSourceCommit": "d38642200f88d9b2bbf0869c2f0850b52f413ac2",
+        "releaseCandidateCommit": "231e12723d8a7cc5bbf0dae963366a8328d734ab",
+        "mergeCommit": "709a83bf0c5cde8d08a11ef0d9528916b942b836",
+        "mergedPreviewDeploymentId": "dpl_7jMG4HAJV1DywoCu6ybnfVytQiK8",
+        "mergedPreviewDeploymentState": "READY",
+        "databaseProjectRef": "zjnbheohgwfzkmbnjqjr",
+        "knowledgeCatalog": "governance/knowledge-authority-catalog.json",
+        "actionCatalog": "governance/action-authority-contracts.json",
+        "databaseMigration": "supabase/migrations/20260825000001_certify_knowledge_action_authority.sql",
+        "codeVerificationDocument": "docs/STAGE_2_CODE_VERIFICATION.md",
+        "evidenceDocument": "docs/STAGE_2_KNOWLEDGE_ACTION_AUTHORITY_EVIDENCE.md",
+        "providerSendAttempted": false,
+        "productionTouched": false
       },
-      "blockers": [
-        "approved_knowledge_inventory_and_conflict_scan",
-        "all_action_authority_contracts_not_yet_certified",
-        "timely_write_integration_not_certified"
-      ]
+      "blockers": []
     },
     {
       "id": "stage_3_luxury_hospitality_certification",
       "status": "in_progress",
       "requiredForLive": true,
       "evidence": {
-        "finalResponseQualityGate": "implemented",
+        "existingExactFinalResponseGate": "implemented",
         "constitutionHospitalityContract": "approved"
       },
       "blockers": [
-        "required_shadow_quality_volume_and_human_scores_not_yet_met"
+        "nine_dimension_luxury_hospitality_rubric_not_yet_certified",
+        "exact_final_response_certification_corpus_not_yet_passed"
       ]
     },
     {
