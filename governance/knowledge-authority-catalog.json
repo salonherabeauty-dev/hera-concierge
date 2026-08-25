@@ -1,0 +1,146 @@
+{
+  "documentType": "hera_knowledge_authority_catalog",
+  "version": "2026-08-25.1",
+  "constitutionVersion": "hera-service-constitution-2026-08-25.1",
+  "status": "certification_candidate",
+  "liveProductionApproved": false,
+  "sourcePrecedence": [
+    {
+      "rank": 1,
+      "sourceClass": "deterministic_safety_legal",
+      "runtimeEligible": true,
+      "conflictRule": "always_wins",
+      "examples": ["medical_safety_containment", "privacy_and_security_boundary", "no_liability_admission"]
+    },
+    {
+      "rank": 2,
+      "sourceClass": "approved_service_constitution",
+      "runtimeEligible": true,
+      "conflictRule": "wins_over_all_business_sources",
+      "requiredVersion": "hera-service-constitution-2026-08-25.1"
+    },
+    {
+      "rank": 3,
+      "sourceClass": "signed_operator_policy",
+      "runtimeEligible": true,
+      "conflictRule": "newest_effective_non_retired_version_wins"
+    },
+    {
+      "rank": 4,
+      "sourceClass": "approved_dynamic_knowledge",
+      "runtimeEligible": true,
+      "conflictRule": "only_approved_current_non_expired_records"
+    },
+    {
+      "rank": 5,
+      "sourceClass": "hera_approved_knowledge_base_v4",
+      "runtimeEligible": true,
+      "conflictRule": "lower_than_constitution_and_operator_policy"
+    },
+    {
+      "rank": 6,
+      "sourceClass": "approved_official_website_snapshot",
+      "runtimeEligible": true,
+      "conflictRule": "changed_pages_return_to_draft_until_reviewed"
+    },
+    {
+      "rank": 7,
+      "sourceClass": "general_hairdressing_knowledge",
+      "runtimeEligible": true,
+      "conflictRule": "explanation_only_never_a_hera_fact"
+    }
+  ],
+  "runtimeEligibility": {
+    "allowedStatuses": ["approved"],
+    "blockedStatuses": ["draft", "retired"],
+    "expiredRecordsBlocked": true,
+    "emptySourceOrVersionBlocked": true,
+    "unknownHeraFactsBlocked": true,
+    "conflictsResolvedByPrecedence": true
+  },
+  "canonicalClaims": [
+    {
+      "claimKey": "service_concern_window",
+      "domain": "service_recovery",
+      "value": "seven_calendar_days_from_appointment_completion",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true
+    },
+    {
+      "claimKey": "conditional_complimentary_refinement",
+      "domain": "service_recovery",
+      "value": "salon_manager_review_and_safe_original_service_correction_required",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true,
+      "outcomePromiseAllowed": false
+    },
+    {
+      "claimKey": "booking_source_of_truth",
+      "domain": "booking",
+      "value": "Timely",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true
+    },
+    {
+      "claimKey": "live_availability",
+      "domain": "booking",
+      "value": "never_invented_requires_verified_live_record",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true
+    },
+    {
+      "claimKey": "waiting_time_recovery",
+      "domain": "service_recovery",
+      "value": "ten_percent_after_more_than_ten_minutes_beyond_agreed_time",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true,
+      "transactionCompletionClaimAllowed": false
+    },
+    {
+      "claimKey": "published_price_gst",
+      "domain": "pricing",
+      "value": "published_prices_before_nine_percent_gst_unless_explicitly_stated",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true
+    },
+    {
+      "claimKey": "failed_strand_test",
+      "domain": "chemical_safety",
+      "value": "no_bleach",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true
+    },
+    {
+      "claimKey": "financial_authority",
+      "domain": "finance",
+      "value": "no_ai_or_receptionist_refund_or_compensation_authority",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true
+    },
+    {
+      "claimKey": "media_consent",
+      "domain": "privacy",
+      "value": "separate_explicit_capture_and_external_use_consent",
+      "authoritySource": "hera-service-constitution-2026-08-25.1",
+      "clientClaimAllowed": true
+    }
+  ],
+  "conflictSignaturesBlockedFromApprovedRuntime": [
+    "7 working days",
+    "automatic refund",
+    "automatic redo",
+    "guaranteed compensation",
+    "booking has been confirmed without verified provider or human outcome",
+    "consent is assumed from attendance"
+  ],
+  "certificationRequirements": [
+    "complete_approved_document_inventory",
+    "no_expired_approved_document",
+    "no_approved_legacy_policy_conflict",
+    "every_hera_claim_has_source_and_version",
+    "every_action_has_authority_contract",
+    "runtime_retrieval_respects_precedence",
+    "timely_writes_remain_human_required_until_certified",
+    "shadow_provider_send_count_zero"
+  ]
+}
