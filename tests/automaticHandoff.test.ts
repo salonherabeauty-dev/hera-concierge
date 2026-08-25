@@ -100,7 +100,7 @@ test("complete booking details create one structured reception handoff", () => {
     }),
   });
 
-  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.1.1");
+  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.2.0");
   assert.equal(result.createTask, true);
   assert.equal(result.taskType, "booking_action");
   assert.equal(result.scope, "task_only");
@@ -578,4 +578,85 @@ test("known handoff classes ignore model-written operational claims", () => {
   assert.match(result.summary ?? "", /^Booking request:/);
   assert.match(result.requestedAction ?? "", /Check live availability in Timely/);
   assert.doesNotMatch(result.clientReplyOverride ?? "", /already secured|is confirmed/i);
+});
+
+
+test("an informational service question cannot resurrect a completed booking handoff", () => {
+  const result = assessHumanHandoff({
+    message: "Thank you. Does Hera offer curly haircuts at Tanglin Mall?",
+    conversationId: "conversation-handback-info",
+    sourceMessageId: "message-handback-info",
+    policy: policy(),
+    decision: decision({
+      intent: "service_advice",
+      reply:
+        "Yes, Hera offers curly haircuts. I could not verify whether they are available specifically at Tanglin Mall, so reception will check this alongside Irene’s live availability for 2 pm.",
+      proposedActions: ["answer", "create_handoff_task"],
+      handoff: {
+        required: true,
+        taskType: "booking_action",
+        scope: "task_only",
+        priority: "normal",
+        assignedRole: "receptionist",
+        assignedOutlet: "Tanglin Mall",
+        summary: "Earlier booking plus current service question.",
+        requestedAction: "Recheck the earlier booking.",
+        collectedFacts: {
+          ...emptyFacts,
+          service: "root colour touch-up and toner",
+          stylist: "Irene",
+          outlet: "Tanglin Mall",
+          date: "Friday 28 August",
+          time: "around 2 pm",
+          flexibility: "between 1 pm and 4 pm",
+          desiredOutcome: "Confirm the earlier booking and curly haircut service.",
+        },
+        missingFacts: [],
+        clientAcknowledgement: "Reception will check live availability.",
+      },
+    }),
+  });
+
+  assert.equal(result.createTask, false);
+  assert.equal(result.taskType, null);
+  assert.equal(result.dedupeKey, null);
+  assert.match(result.reason, /stale booking proposal/i);
+  assert.equal(result.clientReplyOverride, "Yes, Hera offers curly haircuts.");
+  assert.doesNotMatch(result.clientReplyOverride ?? "", /Irene|2 pm|reception|live availability/i);
+});
+
+test("a genuine current-turn availability request still creates a booking handoff", () => {
+  const result = assessHumanHandoff({
+    message: "Is Irene available at Tanglin Mall this Friday at 2 pm for a root colour touch-up?",
+    conversationId: "conversation-current-availability",
+    sourceMessageId: "message-current-availability",
+    policy: policy(),
+    decision: decision({
+      intent: "service_advice",
+      proposedActions: ["create_handoff_task"],
+      handoff: {
+        required: true,
+        taskType: "booking_action",
+        scope: "task_only",
+        priority: "normal",
+        assignedRole: "receptionist",
+        assignedOutlet: "Tanglin Mall",
+        summary: null,
+        requestedAction: null,
+        collectedFacts: {
+          ...emptyFacts,
+          service: "root colour touch-up",
+          stylist: "Irene",
+          outlet: "Tanglin Mall",
+          date: "this Friday",
+          time: "2 pm",
+        },
+        missingFacts: [],
+        clientAcknowledgement: null,
+      },
+    }),
+  });
+
+  assert.equal(result.createTask, true);
+  assert.equal(result.taskType, "booking_action");
 });
