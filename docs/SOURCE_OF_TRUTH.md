@@ -50,3 +50,23 @@ Add each action only as a scoped tool with:
 ## Knowledge-change rule
 
 Official website changes are checksummed and versioned. A changed page returns to draft unless AUTO_APPROVE_HERA_WEBSITE_KNOWLEDGE is deliberately enabled after the knowledge-governance evaluation. This prevents an accidental web edit from silently changing client policy.
+
+## Service Constitution governance
+
+`governance/hera-service-constitution.draft.json` and
+`docs/HERA_SERVICE_CONSTITUTION_DRAFT.md` now consolidate the confirmed rules,
+authority boundaries, luxury-hospitality standard and unresolved launch-blocking
+owner decisions.
+
+The constitution is deliberately marked `draft_not_runtime_authoritative`. It cannot
+be loaded as approved runtime knowledge until:
+
+- every launch-blocking policy conflict is resolved;
+- an effective date and approving owner are recorded;
+- automated governance tests pass;
+- the exact version is stored as an approved knowledge document; and
+- the pre-production gate register authorises the transition.
+
+`governance/pre-production-gates.json` is the machine-readable release register.
+While any required gate is incomplete, `liveProductionApproved` remains false and
+shadow mode remains mandatory.
