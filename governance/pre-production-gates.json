@@ -1,6 +1,6 @@
 {
   "documentType": "hera_pre_production_gate_register",
-  "version": "2026-08-25.3",
+  "version": "2026-08-25.4",
   "liveProductionApproved": false,
   "shadowModeRequired": true,
   "lastUpdated": "2026-08-25",
@@ -60,19 +60,47 @@
     },
     {
       "id": "stage_2_knowledge_and_action_authority",
-      "status": "in_progress",
+      "status": "passed",
       "requiredForLive": true,
       "evidence": {
-        "constitutionPrecedence": "implemented",
-        "supersededSevenWorkingDayPolicy": "removed_or_excluded_from_receptionist_retrieval",
-        "approvedDynamicLegacyConflictRecordsRemaining": 0,
-        "bookingAuthority": "human_required_until_certified_write_tool"
+        "standardDocument": "docs/STAGE_2_KNOWLEDGE_ACTION_AUTHORITY.md",
+        "evidenceDocument": "docs/STAGE_2_KNOWLEDGE_ACTION_AUTHORITY_EVIDENCE.md",
+        "knowledgeSourceRegistry": "governance/knowledge-source-registry.json",
+        "knowledgeSourceRegistryVersion": "hera-knowledge-source-registry-2026-08-25.1",
+        "knowledgeGovernanceVersion": "hera-knowledge-governance-2026-08-25.1",
+        "actionAuthorityRegistry": "governance/action-authority-registry.json",
+        "actionAuthorityRegistryVersion": "hera-action-authority-registry-2026-08-25.1",
+        "actionAuthorityPolicyVersion": "hera-action-authority-2026-08-25.1",
+        "releaseGateVersion": "2026-08-25.4",
+        "databaseProjectRef": "zjnbheohgwfzkmbnjqjr",
+        "knowledgeAuditCommit": "0d3258147bbe021a4fc3ff2715b77dd8a511a187",
+        "knowledgeAuditDeploymentId": "dpl_2hxvh1uXP7H4tVUwHAPuusq8HHt9",
+        "knowledgeAuditDeploymentState": "READY",
+        "totalDynamicDocuments": 1,
+        "approvedCurrentDynamicDocuments": 1,
+        "draftDynamicDocuments": 0,
+        "retiredDynamicDocuments": 0,
+        "approvedExpiredOrFutureDocuments": 0,
+        "approvedLegacySevenWorkingDayDocuments": 0,
+        "approvedUntrustedHostDocuments": 0,
+        "exactApprovedConstitutionRecords": 1,
+        "constitutionApprovalAuditRecords": 1,
+        "staticOperatorSourceNamespace": "hera-operator-v3",
+        "embeddedKnowledgeSourceNamespace": "hera-kb-v4",
+        "supersededLegacyComplaintSection": "excluded",
+        "controlledPriceDiscrepancy": "nanosmooth_price_references",
+        "registeredActionContracts": 30,
+        "modelProposedActionsCovered": 9,
+        "finalPostPolicyReplyAuthorityGate": "implemented",
+        "deadLetterFallbackAuthorityGate": "implemented",
+        "timelyWriteAuthority": "human_required_until_certified_write_integration",
+        "financialAuthority": "human_only_by_approved_role",
+        "consentAndPrivacyCompletionAuthority": "verified_human_or_certified_system_only",
+        "liveModeIndependentCertificationLock": "implemented",
+        "providerSendAttempted": false,
+        "productionTouched": false
       },
-      "blockers": [
-        "approved_knowledge_inventory_and_conflict_scan",
-        "all_action_authority_contracts_not_yet_certified",
-        "timely_write_integration_not_certified"
-      ]
+      "blockers": []
     },
     {
       "id": "stage_3_luxury_hospitality_certification",
@@ -80,7 +108,8 @@
       "requiredForLive": true,
       "evidence": {
         "finalResponseQualityGate": "implemented",
-        "constitutionHospitalityContract": "approved"
+        "constitutionHospitalityContract": "approved",
+        "actionAuthorityGate": "implemented"
       },
       "blockers": [
         "required_shadow_quality_volume_and_human_scores_not_yet_met"
