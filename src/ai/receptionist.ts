@@ -37,7 +37,7 @@ import type { InterpretedInbound } from "../whatsapp/media.js";
 export const RESPONSE_PROMPT_VERSION = "hera-receptionist-response-1.6.1";
 export const VERIFIER_PROMPT_VERSION = "hera-receptionist-verifier-1.6.1";
 export const FINAL_RESPONSE_VERIFIER_PROMPT_VERSION =
-  "hera-final-response-verifier-1.0.0";
+  "hera-final-response-verifier-1.1.0";
 
 export interface AiRuntimeConfig {
   primaryModel: string;

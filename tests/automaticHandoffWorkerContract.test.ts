@@ -8,7 +8,7 @@ test("the worker persists a required handoff before queuing any client acknowled
     "utf8",
   );
   const persist = worker.indexOf("upsertAutomaticHandoff");
-  const queue = worker.indexOf("if (finalQuality.passed && (policy.canAutoSend || handoff.createTask))");
+  const queue = worker.indexOf("if (deliveryEligible && (policy.canAutoSend || handoff.createTask))");
   assert.ok(persist >= 0);
   assert.ok(queue >= 0);
   assert.ok(persist < queue);
@@ -32,7 +32,7 @@ test("the exact post-policy reply receives a second verifier and fail-closed qua
   );
   const verify = worker.indexOf("verifyFinalClientReply");
   const quality = worker.indexOf("assessFinalResponseQuality");
-  const queue = worker.indexOf("if (finalQuality.passed && (policy.canAutoSend || handoff.createTask))");
+  const queue = worker.indexOf("if (deliveryEligible && (policy.canAutoSend || handoff.createTask))");
   assert.ok(verify >= 0);
   assert.ok(quality >= 0);
   assert.ok(queue >= 0);
@@ -50,6 +50,31 @@ test("persisted handoff status matches the exact quality-approved client reply",
   );
   assert.match(
     worker,
-    /clientVisibleStatus: finalQuality\.passed \? finalReply : null/,
+    /clientVisibleStatus: deliveryEligible \? finalReply : null/,
   );
+});
+
+test("a corrected final reply is re-verified before becoming delivery eligible", async () => {
+  const worker = await readFile(
+    new URL("../src/worker.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(worker, /initialFinalVerification/);
+  assert.match(worker, /const finalVerification = initialFinalVerification\.approved/);
+  assert.match(worker, /draftReply: finalReply/);
+  assert.match(
+    worker,
+    /const deliveryEligible = finalQuality\.passed && finalVerification\.approved/,
+  );
+});
+
+test("dead-letter client text is localized, deterministically checked and backed by a durable manager task", async () => {
+  const worker = await readFile(
+    new URL("../src/worker.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(worker, /deadLetterFallbackReply/);
+  assert.match(worker, /detectSupportedClientLocale/);
+  assert.match(worker, /Dead-letter fallback failed Hera’s deterministic quality gate/);
+  assert.match(worker, /dead-letter-handoff/);
 });

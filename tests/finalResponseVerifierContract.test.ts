@@ -7,7 +7,7 @@ import {
 } from "../src/ai/receptionist.js";
 
 test("the final verifier reviews the exact post-policy client text", async () => {
-  assert.equal(FINAL_RESPONSE_VERIFIER_PROMPT_VERSION, "hera-final-response-verifier-1.0.0");
+  assert.equal(FINAL_RESPONSE_VERIFIER_PROMPT_VERSION, "hera-final-response-verifier-1.1.0");
   assert.match(FINAL_RESPONSE_VERIFIER_INSTRUCTIONS, /exact post-policy text/i);
   assert.match(FINAL_RESPONSE_VERIFIER_INSTRUCTIONS, /specialised task/i);
   assert.match(FINAL_RESPONSE_VERIFIER_INSTRUCTIONS, /complaint/i);

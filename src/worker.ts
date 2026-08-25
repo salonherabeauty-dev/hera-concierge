@@ -27,6 +27,7 @@ import {
 import {
   assessHumanHandoff,
   HUMAN_HANDOFF_POLICY_VERSION,
+  type HumanHandoffAssessment,
 } from "./policy/handoff.js";
 import {
   assessPolicy,
@@ -45,6 +46,7 @@ import {
   assessFinalResponseQuality,
   FINAL_RESPONSE_QUALITY_POLICY_VERSION,
 } from "./policy/finalResponseQuality.js";
+import { detectSupportedClientLocale } from "./policy/locale.js";
 import {
   logOperationalEvent,
   safeErrorFields,
@@ -53,6 +55,7 @@ import type {
   AgentDecision,
   AgentHandoffFacts,
   DrainSummary,
+  PolicyAssessment,
   JsonValue,
   MessageKind,
   ReceptionistJob,
@@ -104,6 +107,20 @@ function emptyHandoffFacts(): AgentHandoffFacts {
     photos: null,
     other: null,
   };
+}
+
+function deadLetterFallbackReply(clientMessage: string): string {
+  const locale = detectSupportedClientLocale(clientMessage);
+  if (locale === "zh") {
+    return "感谢您的消息。很抱歉，我目前无法安全地完成这项查询。我已将您的消息交给 Hera 的沙龙经理直接审核，团队将继续协助您。如果您出现呼吸困难、严重肿胀、眼睛接触化学品或剧烈疼痛，请立即就医。";
+  }
+  if (locale === "ms") {
+    return "Terima kasih atas mesej anda. Maaf, saya tidak dapat melengkapkan semakan ini dengan selamat buat masa ini. Saya telah menyerahkan mesej anda kepada pengurus salon Hera untuk semak secara langsung, dan pasukan akan membantu anda seterusnya. Jika anda mengalami kesukaran bernafas, bengkak teruk, bahan kimia terkena mata atau sakit yang teruk, dapatkan rawatan perubatan segera.";
+  }
+  if (locale === "ta") {
+    return "உங்கள் செய்திக்கு நன்றி. மன்னிக்கவும், இப்போது இந்தச் சரிபார்ப்பை பாதுகாப்பாக முடிக்க முடியவில்லை. உங்கள் செய்தியை நேரடி மதிப்பாய்விற்காக Hera சலூன் மேலாளரிடம் ஒப்படைத்துள்ளேன்; குழு தொடர்ந்து உங்களுக்கு உதவும். மூச்சுத் திணறல், கடுமையான வீக்கம், கண்ணில் இரசாயனம் படுதல் அல்லது கடுமையான வலி இருந்தால், உடனடியாக மருத்துவ உதவி பெறுங்கள்.";
+  }
+  return "Thank you for your message. I’m sorry, but I’m unable to complete the check safely just now. I’ve placed your message with Hera’s salon manager for direct review, and the team will assist you from here. If you are experiencing breathing difficulty, severe swelling, eye exposure or severe pain, please seek urgent medical attention immediately.";
 }
 
 function staticUrgentDecision(input: string): AgentDecision {
@@ -318,7 +335,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     handoff,
     risk: policy.risk,
   });
-  const finalVerification = await verifyFinalClientReply({
+  const initialFinalVerification = await verifyFinalClientReply({
     originalMessage: interpreted.text,
     history,
     draftReply: draftFinalReply,
@@ -331,9 +348,9 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     config: runtime.ai,
   });
   const finalReply = cleanReply(
-    finalVerification.approved
+    initialFinalVerification.approved
       ? draftFinalReply
-      : finalVerification.correctedReply!,
+      : initialFinalVerification.correctedReply!,
   );
   const finalQuality = assessFinalResponseQuality({
     clientMessage: interpreted.text,
@@ -343,6 +360,33 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     handoff,
     risk: policy.risk,
   });
+  const finalVerification = initialFinalVerification.approved
+    ? initialFinalVerification
+    : await verifyFinalClientReply({
+        originalMessage: interpreted.text,
+        history,
+        draftReply: finalReply,
+        decision,
+        evidence: responseEvidence,
+        policy,
+        handoff,
+        deterministicDraftQuality: asJson(finalQuality),
+        contactId: context.contact.id,
+        config: runtime.ai,
+      });
+  const deliveryEligible = finalQuality.passed && finalVerification.approved;
+  const verificationUsage = asJson({
+    initial: initialFinalVerification.usage,
+    exactFinal:
+      finalVerification === initialFinalVerification
+        ? null
+        : finalVerification.usage,
+  });
+  const verificationLatencyMs =
+    initialFinalVerification.latencyMs +
+    (finalVerification === initialFinalVerification
+      ? 0
+      : finalVerification.latencyMs);
   await runtime.repository.recordDecision({
     conversationId: context.message.conversationId,
     sourceMessageId: context.message.id,
@@ -351,7 +395,9 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     promptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
     policyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
     risk: policy.risk,
-    confidence: finalQuality.passed ? decision.confidence : Math.min(decision.confidence, 0.2),
+    confidence: deliveryEligible
+      ? decision.confidence
+      : Math.min(decision.confidence, 0.2),
     output: asJson({
       responsePromptVersion: RESPONSE_PROMPT_VERSION,
       verifierPromptVersion: VERIFIER_PROMPT_VERSION,
@@ -363,6 +409,19 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       handoff,
       draftFinalReply,
       deterministicDraftQuality,
+      initialFinalVerification: {
+        approved: initialFinalVerification.approved,
+        correctedReply: initialFinalVerification.correctedReply,
+        issues: initialFinalVerification.issues,
+        scores: initialFinalVerification.scores,
+        summary: initialFinalVerification.summary,
+        modelId: initialFinalVerification.modelId,
+        promptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+        latencyMs: initialFinalVerification.latencyMs,
+        usage: initialFinalVerification.usage,
+      },
+      finalReply,
+      finalQuality,
       finalVerification: {
         approved: finalVerification.approved,
         correctedReply: finalVerification.correctedReply,
@@ -374,12 +433,12 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
         latencyMs: finalVerification.latencyMs,
         usage: finalVerification.usage,
       },
-      finalReply,
-      finalQuality,
-      deliveryEligible: finalQuality.passed,
+      correctionReverified:
+        initialFinalVerification.approved || finalVerification.approved,
+      deliveryEligible,
     }),
-    usage: finalVerification.usage,
-    latencyMs: finalVerification.latencyMs,
+    usage: verificationUsage,
+    latencyMs: verificationLatencyMs,
   });
   await runtime.repository.updateConversationRisk(context.message.conversationId, policy.risk);
 
@@ -424,7 +483,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       requestedAction: handoff.requestedAction,
       collectedFacts: handoff.collectedFacts,
       missingFacts: handoff.missingFacts,
-      clientVisibleStatus: finalQuality.passed ? finalReply : null,
+      clientVisibleStatus: deliveryEligible ? finalReply : null,
       dedupeKey: handoff.dedupeKey,
     });
 
@@ -448,7 +507,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     );
   }
 
-  if (!finalQuality.passed) {
+  if (!deliveryEligible) {
     await runtime.repository.audit(
       "final_response_quality_blocked",
       "message",
@@ -459,7 +518,9 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
         risk: policy.risk,
         handoffTaskType: handoff.taskType,
         handoffScope: handoff.scope,
-        issues: finalQuality.issues,
+        deterministicIssues: finalQuality.issues,
+        finalVerifierApproved: finalVerification.approved,
+        finalVerifierIssues: finalVerification.issues,
         finalVerifierModelId: finalVerification.modelId,
         finalVerifierPromptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
         finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
@@ -486,7 +547,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     }
   }
 
-  if (finalQuality.passed && (policy.canAutoSend || handoff.createTask)) {
+  if (deliveryEligible && (policy.canAutoSend || handoff.createTask)) {
     await runtime.repository.queueOutbound({
       conversationId: context.message.conversationId,
       sourceMessageId: context.message.id,
@@ -501,7 +562,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   if (policy.requiresManagementNotification && runtime.managementWaId) {
     const displayName = context.contact.profileName?.slice(0, 80) || "client";
     const summary = interpreted.text.replace(/[\r\n]+/g, " ").slice(0, 600);
-    const containmentStatus = finalQuality.passed
+    const containmentStatus = deliveryEligible
       ? "The AI prepared a final quality-checked containment response for the client."
       : "The final client response was blocked by Hera’s quality gate and requires human handling.";
     await runtime.repository.queueOutbound({
@@ -525,12 +586,10 @@ async function queueDeadLetterFallback(
   job: ReceptionistJob,
 ): Promise<void> {
   const context = await repository.getJobContext(job);
-  const fallbackReply =
-    "Thank you for your message. I’m sorry, but I’m unable to complete the check safely just now. I’ve placed your message with Hera’s salon manager for direct review, and the team will assist you from here. If you are experiencing breathing difficulty, severe swelling, eye exposure or severe pain, please seek urgent medical attention immediately.";
-
-  await repository.upsertAutomaticHandoff({
-    conversationId: context.message.conversationId,
-    sourceMessageId: context.message.id,
+  const fallbackReply = deadLetterFallbackReply(context.message.text);
+  const fallbackFacts = emptyHandoffFacts();
+  const fallbackHandoff: HumanHandoffAssessment = {
+    createTask: true,
     taskType: "system_failure",
     scope: "full_takeover",
     priority: "high",
@@ -539,10 +598,73 @@ async function queueDeadLetterFallback(
     summary: "AI processing failed after all protected retries.",
     requestedAction:
       "Review the client’s exact message and respond directly before returning the conversation to AI.",
-    collectedFacts: emptyHandoffFacts(),
+    collectedFacts: fallbackFacts,
     missingFacts: [],
+    clientReplyOverride: fallbackReply,
     clientVisibleStatus: fallbackReply,
     dedupeKey: `dead-letter-handoff:${context.message.id}`,
+    reason: "Protected AI processing could not complete after all retries.",
+  };
+  const fallbackDecision: AgentDecision = {
+    reply: fallbackReply,
+    intent: "other",
+    risk: "amber",
+    confidence: 1,
+    language: "same as client where reliably supported",
+    sources: [],
+    factualBasis: ["safety_policy"],
+    proposedActions: ["create_handoff_task"],
+    requiresManagementNotification: true,
+    handoff: {
+      required: true,
+      taskType: "system_failure",
+      scope: "full_takeover",
+      priority: "high",
+      assignedRole: "salon_manager",
+      assignedOutlet: null,
+      summary: fallbackHandoff.summary,
+      requestedAction: fallbackHandoff.requestedAction,
+      collectedFacts: fallbackFacts,
+      missingFacts: [],
+      clientAcknowledgement: fallbackReply,
+    },
+    rationale: "Fail-closed human ownership after protected AI processing failed.",
+  };
+  const fallbackPolicy: PolicyAssessment = {
+    risk: "amber",
+    canAutoSend: true,
+    requiresManagementNotification: true,
+    requiresIncident: true,
+    blockedActions: [],
+    securityFlags: [],
+    replyOverride: null,
+  };
+  const fallbackQuality = assessFinalResponseQuality({
+    clientMessage: context.message.text,
+    reply: fallbackReply,
+    decision: fallbackDecision,
+    policy: fallbackPolicy,
+    handoff: fallbackHandoff,
+    risk: "amber",
+  });
+  if (!fallbackQuality.passed) {
+    throw new Error("Dead-letter fallback failed Hera’s deterministic quality gate");
+  }
+
+  await repository.upsertAutomaticHandoff({
+    conversationId: context.message.conversationId,
+    sourceMessageId: context.message.id,
+    taskType: fallbackHandoff.taskType!,
+    scope: fallbackHandoff.scope!,
+    priority: fallbackHandoff.priority!,
+    assignedRole: fallbackHandoff.assignedRole,
+    assignedOutlet: fallbackHandoff.assignedOutlet,
+    summary: fallbackHandoff.summary!,
+    requestedAction: fallbackHandoff.requestedAction!,
+    collectedFacts: fallbackHandoff.collectedFacts,
+    missingFacts: fallbackHandoff.missingFacts,
+    clientVisibleStatus: fallbackReply,
+    dedupeKey: fallbackHandoff.dedupeKey!,
   });
   await repository.queueOutbound({
     conversationId: context.message.conversationId,
