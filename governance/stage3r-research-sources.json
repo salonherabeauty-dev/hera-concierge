@@ -1,0 +1,206 @@
+{
+  "documentType": "hera_stage3r_research_source_register",
+  "version": "2026-08-26.1",
+  "approvedBy": {
+    "name": "Neo Chin Chuan",
+    "role": "Owner",
+    "approvalMethod": "explicit_owner_approval_in_project_conversation",
+    "approvedAt": "2026-08-26"
+  },
+  "purpose": "Calibrate Hera's automated luxury-hospitality certification without allowing public research to override Hera policy, current business facts or authorised human decisions.",
+  "globalRules": [
+    "Hera's approved Service Constitution and Stage 2 authority catalogues remain the only authority for Hera-specific facts, policies and actions.",
+    "Research sources may define evaluation methods, service-quality dimensions, scenario patterns and judge-bias controls only.",
+    "Public reviews and datasets must never be copied into client replies, treated as Hera facts or used to infer a real person's identity, condition or appointment.",
+    "No source creates or implies an affiliation between Hera and The Ritz-Carlton, Marriott, Yelp, NIST or any research publisher.",
+    "Copyrighted review text is not committed to this repository. Only anonymised themes, statistics, hashes and independently written scenarios may be retained.",
+    "A source disagreement with the approved Hera constitution is resolved in favour of the Hera constitution."
+  ],
+  "sources": [
+    {
+      "id": "nist-ai-rmf-genai-profile-600-1",
+      "title": "Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile",
+      "publisher": "National Institute of Standards and Technology",
+      "sourceClass": "official_government_guidance",
+      "url": "https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence",
+      "published": "2024-07-26",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "risk-based evaluation design",
+        "governance and documentation controls",
+        "adversarial and lifecycle evaluation framing"
+      ],
+      "prohibitedUses": [
+        "claiming NIST certification or endorsement",
+        "replacing Hera policy or Singapore legal advice"
+      ]
+    },
+    {
+      "id": "nist-ai-metrology-center",
+      "title": "AI Metrology Center",
+      "publisher": "National Institute of Standards and Technology",
+      "sourceClass": "official_government_measurement_resource",
+      "url": "https://airc.nist.gov/metrology/",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "testing, evaluation, verification and validation structure",
+        "measurement-method selection",
+        "evidence and traceability requirements"
+      ],
+      "prohibitedUses": [
+        "claiming that inclusion of a method is NIST endorsement",
+        "treating a generic metric as automatically suitable for Hera"
+      ]
+    },
+    {
+      "id": "nist-tevv-athlon-draft-2026",
+      "title": "The TEVV-Athlon Framework for Evaluating AI Systems",
+      "publisher": "National Institute of Standards and Technology",
+      "sourceClass": "official_government_public_draft",
+      "url": "https://www.nist.gov/artificial-intelligence/ai-research/tevv-athlon-framework-evaluating-ai-systems",
+      "published": "2026-08-07",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "customised use-case evaluation design",
+        "measurement-event and evidence-block architecture",
+        "real-world outcome assessment planning"
+      ],
+      "prohibitedUses": [
+        "representing a public draft as a final standard",
+        "claiming NIST approval of Hera"
+      ]
+    },
+    {
+      "id": "ritz-carlton-gold-standards",
+      "title": "Foundations of Our Brand — Gold Standards",
+      "publisher": "The Ritz-Carlton Leadership Center",
+      "sourceClass": "official_luxury_hospitality_principles",
+      "url": "https://ritzcarltonleadershipcenter.com/about-us/about-us-foundations-of-our-brand/",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "warm and sincere acknowledgement",
+        "anticipation and fulfilment of guest needs",
+        "personal, relaxed and refined service-quality calibration"
+      ],
+      "prohibitedUses": [
+        "copying protected brand language into Hera replies",
+        "claiming affiliation, endorsement, certification or equivalence",
+        "using hospitality principles to override safety or action authority"
+      ]
+    },
+    {
+      "id": "yelp-open-dataset-2026",
+      "title": "Yelp Open Dataset",
+      "publisher": "Yelp",
+      "sourceClass": "licensed_educational_review_dataset",
+      "url": "https://business.yelp.com/data/resources/open-dataset/",
+      "lastVerified": "2026-08-26",
+      "datasetSnapshot": {
+        "reviews": 6990280,
+        "businesses": 150346,
+        "metropolitanAreas": 11
+      },
+      "allowedUses": [
+        "discovering anonymised salon-service themes",
+        "constructing independently written evaluation scenarios",
+        "measuring vocabulary and complaint-pattern coverage"
+      ],
+      "prohibitedUses": [
+        "committing raw review text or user identifiers",
+        "using the dataset as Hera policy or proof of a Hera fact",
+        "using it outside its applicable licence and educational-use conditions",
+        "representing its metropolitan coverage as Singapore market coverage"
+      ]
+    },
+    {
+      "id": "shi-position-bias-2024",
+      "title": "Judging the Judges: A Systematic Study of Position Bias in LLM-as-a-Judge",
+      "publisher": "arXiv",
+      "sourceClass": "primary_research",
+      "url": "https://arxiv.org/abs/2406.07791",
+      "published": "2024-06-12",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "order-reversal testing",
+        "position-consistency measurement",
+        "repeated blind pairwise judging"
+      ],
+      "prohibitedUses": [
+        "assuming a single ordering is unbiased",
+        "treating one judge result as conclusive"
+      ]
+    },
+    {
+      "id": "wataoka-self-preference-2024",
+      "title": "Self-Preference Bias in LLM-as-a-Judge",
+      "publisher": "arXiv",
+      "sourceClass": "primary_research",
+      "url": "https://arxiv.org/abs/2410.21819",
+      "published": "2024-10-29",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "generator-judge separation",
+        "multi-provider judge design",
+        "style-familiarity bias controls"
+      ],
+      "prohibitedUses": [
+        "allowing the generating model to be the sole certifier",
+        "equating familiar wording with service quality"
+      ]
+    },
+    {
+      "id": "yang-self-preference-mitigation-2026",
+      "title": "Quantifying and Mitigating Self-Preference Bias of LLM Judges",
+      "publisher": "arXiv",
+      "sourceClass": "primary_research",
+      "url": "https://arxiv.org/abs/2604.22891",
+      "published": "2026-04-24",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "multi-dimensional judge decomposition",
+        "self-preference monitoring",
+        "bias-audit design"
+      ],
+      "prohibitedUses": [
+        "assuming model capability implies unbiased judging",
+        "using automated bias mitigation as a substitute for fail-closed controls"
+      ]
+    },
+    {
+      "id": "beauty-service-recovery-justice-2023",
+      "title": "Perceived Justice and Customer Loyalty in the Situation of Beauty Service Failure",
+      "publisher": "SAGE Open",
+      "sourceClass": "peer_reviewed_beauty_service_research",
+      "url": "https://doi.org/10.1177/21582440231217729",
+      "published": "2023-12-14",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "service-recovery fairness dimensions",
+        "courteous acknowledgement and transparent process evaluation",
+        "complaint and recovery scenario design"
+      ],
+      "prohibitedUses": [
+        "automatically granting compensation",
+        "transferring findings from one market directly into Hera policy"
+      ]
+    },
+    {
+      "id": "beauty-salon-satisfaction-attributes-2013",
+      "title": "Determinants of Satisfaction and Quality Attributes in Beauty Salon Services",
+      "publisher": "Production",
+      "sourceClass": "peer_reviewed_beauty_service_research",
+      "url": "https://doi.org/10.1590/S0103-65132012005000080",
+      "published": "2013",
+      "lastVerified": "2026-08-26",
+      "allowedUses": [
+        "expectation-confirmation scenarios",
+        "reliability, punctuality, technical assurance and clarity evaluation",
+        "salon-service coverage design"
+      ],
+      "prohibitedUses": [
+        "making technical competence claims about a named Hera employee without approved evidence",
+        "using generic satisfaction findings as a client-specific diagnosis"
+      ]
+    }
+  ]
+}
