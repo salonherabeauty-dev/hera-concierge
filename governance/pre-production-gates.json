@@ -1,6 +1,6 @@
 {
   "documentType": "hera_pre_production_gate_register",
-  "version": "2026-08-25.5",
+  "version": "2026-08-26.1",
   "liveProductionApproved": false,
   "shadowModeRequired": true,
   "lastUpdated": "2026-08-26",
@@ -100,12 +100,35 @@
       "status": "in_progress",
       "requiredForLive": true,
       "evidence": {
+        "programme": "stage_3r_research_calibrated_automated_certification",
+        "programmeVersion": "hera-stage3r-2026-08-26.1",
+        "ownerApproval": "Neo Chin Chuan, Owner",
+        "ownerApprovedAt": "2026-08-26",
+        "mandatoryManualPanelReplaced": true,
+        "ownerFinalAuthorisationStillRequired": true,
         "existingExactFinalResponseGate": "implemented",
-        "constitutionHospitalityContract": "approved"
+        "constitutionHospitalityContract": "approved",
+        "researchSourceRegister": "governance/stage3r-research-sources.json",
+        "certificationContract": "governance/stage3r-certification.json",
+        "salonFailurePatterns": "governance/stage3r-salon-failure-patterns.json",
+        "goldCaseLibrary": "evals/stage3r-gold-cases.json",
+        "certificationDocument": "docs/STAGE_3R_RESEARCH_CALIBRATED_CERTIFICATION.md",
+        "databaseMigration": "supabase/migrations/20260826000000_add_stage3r_research_certification.sql",
+        "targetExactFinalResponses": 2010,
+        "minimumMessageFamilies": 40,
+        "minimumJudgeConfigurations": 3,
+        "minimumJudgeProviders": 2,
+        "generatorMayBeSoleJudge": false,
+        "positionReversalRequired": true,
+        "repeatedJudgingForHighConsequence": true,
+        "whatsappSendMode": "shadow",
+        "productionTouched": false
       },
       "blockers": [
-        "nine_dimension_luxury_hospitality_rubric_not_yet_certified",
-        "exact_final_response_certification_corpus_not_yet_passed"
+        "stage3r_database_migration_not_yet_applied",
+        "full_2010_case_release_candidate_run_not_yet_completed",
+        "stage3r_thresholds_not_yet_independently_verified",
+        "owner_final_stage3r_authorisation_not_yet_recorded"
       ]
     },
     {
