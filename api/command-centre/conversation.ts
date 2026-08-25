@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   authenticateCommandCentre,
-  isCommandCentrePasswordlessPreview,
   requireCommandCentreCsrf,
 } from "../../src/command-centre/auth.js";
+import { CommandCentreGuardRepository } from "../../src/command-centre/guardRepository.js";
 import {
   clientSafeError,
   methodNotAllowed,
@@ -11,6 +11,7 @@ import {
   requireSameOrigin,
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
+import { returnToAiBlocker } from "../../src/command-centre/operationPolicy.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
 import { createCommandCentreReadRepository } from "../../src/command-centre/readRepository.js";
 import { SupabaseCommandCentreRepository } from "../../src/command-centre/repository.js";
@@ -45,12 +46,6 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
     requireSameOrigin(request);
     requireCommandCentreCsrf(request);
-    if (isCommandCentrePasswordlessPreview()) {
-      return response.status(403).json({
-        error: "This protected Preview is currently read-only. No conversation state was changed.",
-        code: "preview_read_only",
-      });
-    }
 
     const body = parseSchema(conversationActionBodySchema, parseJsonBody<unknown>(request));
     const repository = new SupabaseCommandCentreRepository();
@@ -71,6 +66,19 @@ export default async function handler(request: VercelRequest, response: VercelRe
     if (!hasCapability(session.staff.role, "control_conversation")) {
       return response.status(403).json({ error: "Forbidden" });
     }
+
+    if (body.action === "return_to_ai") {
+      const guard = new CommandCentreGuardRepository();
+      const openTasks = await guard.listOpenTasks(body.conversationId);
+      const blocker = returnToAiBlocker(openTasks);
+      if (blocker) {
+        return response.status(409).json({
+          error: blocker,
+          code: "open_human_action_blocks_ai_return",
+        });
+      }
+    }
+
     const result = await repository.setConversationMode({
       conversationId: body.conversationId,
       actorUserId: session.staff.userId,
