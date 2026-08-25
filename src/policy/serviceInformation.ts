@@ -1,7 +1,8 @@
 import type { AgentDecision, PolicyAssessment } from "../types.js";
 
-export const SERVICE_INFORMATION_POLICY_VERSION = "hera-service-information-1.0.0";
-export const CURL_SERVICE_SOURCE_ID = "hera-operator-curly-service-matrix-v2";
+export const SERVICE_INFORMATION_POLICY_VERSION = "hera-service-information-1.0.1";
+export const CURL_SERVICE_SOURCE_ID =
+  "hera-kb-v4:hera-operator-approved-curl-service-matrix-version-2";
 
 export interface ServiceInformationAssessment {
   matched: boolean;
@@ -10,23 +11,47 @@ export interface ServiceInformationAssessment {
   sourceIds: string[];
 }
 
-const CURL_TERMS = /\b(?:curly|curl|curls|wavy|waves|coily|coils|textured hair)\b/i;
-const SERVICE_TERMS = /\b(?:haircut|haircuts|cut|cuts|service|services|specialist|specialise|specialize|offer|offers|provide|provides|have|has|do)\b/i;
-const SPECIALIST_MATCH = /(?:\b(?:who|which|recommend|recommended|best|most suitable|specialist|stylist)\b.{0,80}\b(?:curly|curl|curls|wavy|waves|coily|coils)\b|\b(?:curly|curl|curls|wavy|waves|coily|coils)\b.{0,80}\b(?:specialist|stylist|recommend|best|most suitable)\b)/i;
-const BOOKING_OR_LIVE_ACTION = /\b(?:book|booking|appointment|reserve|reservation|schedule|slot|slots|available|availability|reschedule|cancel|change my appointment|today|tomorrow|this friday|this saturday|this sunday|next week|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
-const HUMAN_AUTHORITY = /\b(?:human|person|receptionist|manager|owner|staff member|take over|speak to|talk to|call me)\b/i;
-const HIGH_CONSEQUENCE = /\b(?:complaint|unhappy|refund|compensation|damage|damaged|burn|burning|pain|allergy|allergic|swelling|rash|hair loss|lawyer|legal|cctv|privacy|pdpa|delete my data|chargeback)\b/i;
+const CURL_TERMS =
+  /\b(?:curly|curl|curls|wavy|waves|coily|coils|afro|textured hair|[234][abc])\b/i;
+const SERVICE_TERMS =
+  /\b(?:haircut|haircuts|cut|cuts|service|services|specialist|specialise|specialize|offer|offers|provide|provides|have|has|do)\b/i;
+const SPECIALIST_MATCH =
+  /(?:\b(?:who|which|recommend|recommended|best|most suitable|specialist|stylist)\b.{0,80}\b(?:curly|curl|curls|wavy|waves|coily|coils|afro|[234][abc])\b|\b(?:curly|curl|curls|wavy|waves|coily|coils|afro|[234][abc])\b.{0,80}\b(?:specialist|stylist|recommend|best|most suitable)\b)/i;
+const EXPLICIT_BOOKING_ACTION =
+  /\b(?:book|booking|appointment|reserve|reservation|schedule|slot|slots|reschedule|cancel|change my appointment)\b/i;
+const SERVICE_ACTION_REQUEST =
+  /(?:\b(?:i|we)(?:'d| would)?\s+(?:like|want|need)\s+(?:to\s+)?(?:get|have|book|schedule)\b|\b(?:can|could|may)\s+(?:i|we)\s+(?:get|have|book|schedule)\b)/i;
+const AVAILABILITY_TERMS = /\b(?:available|availability)\b/i;
+const SCHEDULE_AVAILABILITY_REQUEST =
+  /(?:\b(?:do you have|is there|are there)\s+(?:any\s+)?(?:appointment|appointments|booking|bookings|slot|slots|availability)\b|\b(?:check|show|find)\b.{0,30}\b(?:availability|available)\b|\bwhen\b.{0,30}\bavailable\b)/i;
+const DATE_OR_TIME =
+  /\b(?:today|tomorrow|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
+const NAMED_STYLIST_AVAILABILITY =
+  /\b(?:is|are)\s+[A-Z][A-Za-z'-]{1,40}\s+available\b/;
+const HUMAN_AUTHORITY =
+  /\b(?:human|person|receptionist|manager|owner|staff member|take over|speak to|talk to|call me)\b/i;
+const HIGH_CONSEQUENCE =
+  /\b(?:complaint|unhappy|refund|compensation|damage|damaged|destroyed|burn|burning|pain|allergy|allergic|swelling|rash|hair loss|lawyer|legal|cctv|privacy|pdpa|delete my data|chargeback)\b/i;
 const PRICE_TERMS = /\b(?:price|prices|pricing|cost|how much|gst)\b/i;
 
-const TANGIN = /\btanglin(?: mall)?\b/i;
+const TANGLIN = /\btanglin(?: mall)?\b/i;
 const SENTOSA = /\b(?:sentosa(?: cove)?|quayside(?: isle)?)\b/i;
 
 function noMatch(reason: string): ServiceInformationAssessment {
   return { matched: false, reply: null, reason, sourceIds: [] };
 }
 
+function requestsLiveAvailability(message: string): boolean {
+  if (!AVAILABILITY_TERMS.test(message)) return false;
+  return (
+    SCHEDULE_AVAILABILITY_REQUEST.test(message) ||
+    DATE_OR_TIME.test(message) ||
+    NAMED_STYLIST_AVAILABILITY.test(message)
+  );
+}
+
 function curlyServiceReply(message: string): string {
-  if (TANGIN.test(message)) {
+  if (TANGLIN.test(message)) {
     return "Yes. Hera’s Tanglin Mall atelier offers specialist curly haircuts for waves, curls and coils, with curl-defining and hydration care available where suitable. For the most accurate stylist match, share a current hair photo and the shape or concern you would like us to address.";
   }
   if (SENTOSA.test(message)) {
@@ -44,7 +69,10 @@ export function assessServiceInformation(input: {
   decision: AgentDecision;
   policy: PolicyAssessment;
 }): ServiceInformationAssessment {
-  const message = input.message.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+  const message = input.message
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!message) return noMatch("No current client message was supplied.");
   if (
     input.policy.risk !== "green" ||
@@ -55,12 +83,16 @@ export function assessServiceInformation(input: {
     return noMatch("Higher-consequence policy handling takes precedence.");
   }
   if (
-    BOOKING_OR_LIVE_ACTION.test(message) ||
+    EXPLICIT_BOOKING_ACTION.test(message) ||
+    SERVICE_ACTION_REQUEST.test(message) ||
+    requestsLiveAvailability(message) ||
     HUMAN_AUTHORITY.test(message) ||
     HIGH_CONSEQUENCE.test(message) ||
     PRICE_TERMS.test(message)
   ) {
-    return noMatch("The current turn requests an action, authority or additional answer beyond pure service information.");
+    return noMatch(
+      "The current turn requests an action, authority or additional answer beyond pure service information.",
+    );
   }
   if (!CURL_TERMS.test(message)) {
     return noMatch("The current turn is not a curly-service information question.");
@@ -70,7 +102,8 @@ export function assessServiceInformation(input: {
     return {
       matched: true,
       reply: curlySpecialistReply(),
-      reason: "Answered a pure curl-specialist matching question from the operator-approved service matrix.",
+      reason:
+        "Answered a pure curl-specialist matching question from the operator-approved service matrix.",
       sourceIds: [CURL_SERVICE_SOURCE_ID],
     };
   }
@@ -82,7 +115,8 @@ export function assessServiceInformation(input: {
   return {
     matched: true,
     reply: curlyServiceReply(message),
-    reason: "Answered a pure curly-service-at-outlet question directly from the operator-approved service matrix.",
+    reason:
+      "Answered a pure curly-service-at-outlet question directly from the operator-approved service matrix.",
     sourceIds: [CURL_SERVICE_SOURCE_ID],
   };
 }
