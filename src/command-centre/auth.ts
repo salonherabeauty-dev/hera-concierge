@@ -15,23 +15,11 @@ import {
   safeEqual,
   serializeCookie,
 } from "./http.js";
+import { ensurePreviewOwner } from "./previewOwner.js";
 
 export const COMMAND_CENTRE_ACCESS_COOKIE = "__Host-hera_cc_access";
 export const COMMAND_CENTRE_REFRESH_COOKIE = "__Host-hera_cc_refresh";
 export const COMMAND_CENTRE_CSRF_COOKIE = "__Host-hera_cc_csrf";
-
-const PREVIEW_OWNER: CommandCentreStaff = {
-  userId: "00000000-0000-4000-8000-000000000001",
-  email: "vercel-preview-owner@herabeauty.sg",
-  displayName: "Neo Chin Chuan",
-  role: "owner",
-  outletScope: ["Tanglin Mall", "Sentosa Quayside Isle"],
-  status: "active",
-  permissions: {
-    previewReadOnly: true,
-    accessBoundary: "vercel-authenticated-preview",
-  },
-};
 
 interface StaffProfileRow {
   user_id: string;
@@ -175,13 +163,13 @@ export async function authenticateCommandCentre(
   request: VercelRequest,
   response: VercelResponse,
 ): Promise<CommandCentreSession> {
-  // The staging Command Centre Preview is already protected by Vercel
-  // Authentication. While customer delivery remains locked to shadow mode,
-  // that upstream access boundary is sufficient for passwordless owner review.
-  // This path cannot activate on Production or main.
+  // Vercel Authentication is the upstream identity boundary for this isolated
+  // non-main Preview. A real Supabase-backed Neo Chin Chuan operator profile is
+  // provisioned once so task ownership, optimistic locking and audit records use
+  // a genuine foreign-key-safe staff identity. No user-facing password is used.
   if (isCommandCentrePasswordlessPreview()) {
     return {
-      staff: PREVIEW_OWNER,
+      staff: await ensurePreviewOwner(),
       csrfToken: ensurePreviewCsrf(request, response),
     };
   }
