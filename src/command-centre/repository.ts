@@ -9,6 +9,7 @@ import type {
   ConversationMessageView,
   ConversationSummary,
   CreateHandoffTaskInput,
+  DecisionTraceView,
   HandoffPriority,
   HandoffStatus,
   HandoffTaskSummary,
@@ -342,7 +343,7 @@ export class SupabaseCommandCentreRepository {
     const conversationRow = object(conversationData, "conversation");
     const contactId = string(conversationRow.contact_id, "contact id");
 
-    const [contactResult, messageResult, taskList, noteResult, incidentResult, outboxResult] = await Promise.all([
+    const [contactResult, messageResult, taskList, noteResult, incidentResult, outboxResult, decisionResult] = await Promise.all([
       this.database
         .from("ai_contacts")
         .select("id,profile_name,wa_id,preferred_language")
@@ -374,12 +375,19 @@ export class SupabaseCommandCentreRepository {
         .eq("target_type", "client")
         .order("created_at", { ascending: false })
         .limit(100),
+      this.database
+        .from("ai_decisions")
+        .select("id,source_message_id,stage,model_id,prompt_version,policy_version,risk,confidence,output,latency_ms,created_at")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(300),
     ]);
     if (contactResult.error || !contactResult.data) throw new Error("Conversation contact not found");
     if (messageResult.error) throw new Error(`load conversation transcript: ${messageResult.error.message}`);
     if (noteResult.error) throw new Error(`load conversation notes: ${noteResult.error.message}`);
     if (incidentResult.error) throw new Error(`load conversation incidents: ${incidentResult.error.message}`);
     if (outboxResult.error) throw new Error(`load conversation candidates: ${outboxResult.error.message}`);
+    if (decisionResult.error) throw new Error(`load conversation decision trace: ${decisionResult.error.message}`);
 
     const contact = object(contactResult.data, "contact");
     const noteRows = array(noteResult.data).map((value) => object(value, "note"));
@@ -484,7 +492,30 @@ export class SupabaseCommandCentreRepository {
       };
     });
 
-    return { conversation, messages, tasks, notes, incidents, candidates };
+    const decisions: DecisionTraceView[] = array(decisionResult.data).map((value) => {
+      const row = object(value, "decision trace");
+      const stage = string(row.stage, "decision stage");
+      if (stage !== "response" && stage !== "verification" && stage !== "policy") {
+        throw new Error("Invalid decision stage");
+      }
+      return {
+        id: string(row.id, "decision id"),
+        sourceMessageId: string(row.source_message_id, "decision source message id"),
+        stage,
+        modelId: optionalString(row.model_id),
+        promptVersion: string(row.prompt_version, "decision prompt version"),
+        policyVersion: string(row.policy_version, "decision policy version"),
+        risk: risk(row.risk),
+        confidence: number(row.confidence, "decision confidence"),
+        output: (row.output ?? {}) as JsonValue,
+        latencyMs: row.latency_ms === null || row.latency_ms === undefined
+          ? null
+          : number(row.latency_ms, "decision latency"),
+        createdAt: string(row.created_at, "decision created_at"),
+      };
+    });
+
+    return { conversation, messages, tasks, notes, incidents, candidates, decisions };
   }
 
   async dashboard(mode: "shadow" | "live"): Promise<CommandCentreDashboard> {

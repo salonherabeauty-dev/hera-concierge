@@ -72,8 +72,22 @@ export interface ConversationDetail {
   tasks: Task[];
   notes: Array<{ id: string; body: string; authorDisplayName: string; createdAt: string }>;
   incidents: Array<{ id: string; category: string; severity: Risk; status: string; clientSummary: string; createdAt: string }>;
-  candidates: Array<{ id: string; text: string; status: string; authorization: string; providerMessageId: string | null; createdAt: string }>;
+candidates: Array<{ id: string; sourceMessageId: string | null; text: string; status: string; authorization: string; providerMessageId: string | null; createdAt: string }>;
+  decisions: Array<{
+    id: string;
+    sourceMessageId: string;
+    stage: "response" | "verification" | "policy";
+    modelId: string | null;
+    promptVersion: string;
+    policyVersion: string;
+    risk: Risk;
+    confidence: number;
+    output: unknown;
+    latencyMs: number | null;
+    createdAt: string;
+  }>;
 }
+
 
 export interface Dashboard {
   generatedAt: string;

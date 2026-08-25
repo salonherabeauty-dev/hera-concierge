@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
+  FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
   generateReceptionistDecision,
   RESPONSE_PROMPT_VERSION,
   VERIFIER_PROMPT_VERSION,
+  verifyFinalClientReply,
   verifyReceptionistDecision,
   type AiRuntimeConfig,
 } from "./ai/receptionist.js";
@@ -40,11 +42,16 @@ import {
 } from "./policy/grounding.js";
 import { assessCustomerCareWindow } from "./policy/customerCareWindow.js";
 import {
+  assessFinalResponseQuality,
+  FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+} from "./policy/finalResponseQuality.js";
+import {
   logOperationalEvent,
   safeErrorFields,
 } from "./observability/log.js";
 import type {
   AgentDecision,
+  AgentHandoffFacts,
   DrainSummary,
   JsonValue,
   MessageKind,
@@ -81,6 +88,22 @@ function cleanReply(value: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim()
     .slice(0, 4000);
+}
+
+function emptyHandoffFacts(): AgentHandoffFacts {
+  return {
+    service: null,
+    stylist: null,
+    outlet: null,
+    date: null,
+    time: null,
+    flexibility: null,
+    appointmentReference: null,
+    desiredOutcome: null,
+    symptoms: null,
+    photos: null,
+    other: null,
+  };
 }
 
 function staticUrgentDecision(input: string): AgentDecision {
@@ -284,24 +307,79 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     conversationId: context.message.conversationId,
     sourceMessageId: context.message.id,
   });
-  const finalReply = cleanReply(
+  const draftFinalReply = cleanReply(
     handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
   );
+  const deterministicDraftQuality = assessFinalResponseQuality({
+    clientMessage: interpreted.text,
+    reply: draftFinalReply,
+    decision,
+    policy,
+    handoff,
+    risk: policy.risk,
+  });
+  const finalVerification = await verifyFinalClientReply({
+    originalMessage: interpreted.text,
+    history,
+    draftReply: draftFinalReply,
+    decision,
+    evidence: responseEvidence,
+    policy,
+    handoff,
+    deterministicDraftQuality: asJson(deterministicDraftQuality),
+    contactId: context.contact.id,
+    config: runtime.ai,
+  });
+  const finalReply = cleanReply(
+    finalVerification.approved
+      ? draftFinalReply
+      : finalVerification.correctedReply!,
+  );
+  const finalQuality = assessFinalResponseQuality({
+    clientMessage: interpreted.text,
+    reply: finalReply,
+    decision,
+    policy,
+    handoff,
+    risk: policy.risk,
+  });
   await runtime.repository.recordDecision({
     conversationId: context.message.conversationId,
     sourceMessageId: context.message.id,
     stage: "policy",
-    modelId: null,
-    promptVersion: RESPONSE_PROMPT_VERSION,
-    policyVersion: POLICY_VERSION,
+    modelId: finalVerification.modelId,
+    promptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+    policyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
     risk: policy.risk,
-    confidence: decision.confidence,
+    confidence: finalQuality.passed ? decision.confidence : Math.min(decision.confidence, 0.2),
     output: asJson({
-      policy,
+      responsePromptVersion: RESPONSE_PROMPT_VERSION,
+      verifierPromptVersion: VERIFIER_PROMPT_VERSION,
+      deterministicPolicyVersion: POLICY_VERSION,
+      groundingPolicyVersion: GROUNDING_POLICY_VERSION,
       handoffPolicyVersion: HUMAN_HANDOFF_POLICY_VERSION,
+      finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+      policy,
       handoff,
+      draftFinalReply,
+      deterministicDraftQuality,
+      finalVerification: {
+        approved: finalVerification.approved,
+        correctedReply: finalVerification.correctedReply,
+        issues: finalVerification.issues,
+        scores: finalVerification.scores,
+        summary: finalVerification.summary,
+        modelId: finalVerification.modelId,
+        promptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+        latencyMs: finalVerification.latencyMs,
+        usage: finalVerification.usage,
+      },
       finalReply,
+      finalQuality,
+      deliveryEligible: finalQuality.passed,
     }),
+    usage: finalVerification.usage,
+    latencyMs: finalVerification.latencyMs,
   });
   await runtime.repository.updateConversationRisk(context.message.conversationId, policy.risk);
 
@@ -370,7 +448,45 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     );
   }
 
-  if (policy.canAutoSend || handoff.createTask) {
+  if (!finalQuality.passed) {
+    await runtime.repository.audit(
+      "final_response_quality_blocked",
+      "message",
+      context.message.id,
+      asJson({
+        conversationId: context.message.conversationId,
+        intent: decision.intent,
+        risk: policy.risk,
+        handoffTaskType: handoff.taskType,
+        handoffScope: handoff.scope,
+        issues: finalQuality.issues,
+        finalVerifierModelId: finalVerification.modelId,
+        finalVerifierPromptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+        finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+      }),
+    );
+
+    if (!handoff.createTask || handoff.scope === "task_only") {
+      await runtime.repository.upsertAutomaticHandoff({
+        conversationId: context.message.conversationId,
+        sourceMessageId: context.message.id,
+        taskType: "system_failure",
+        scope: "full_takeover",
+        priority: "high",
+        assignedRole: "salon_manager",
+        assignedOutlet: handoff.assignedOutlet,
+        summary: "Final client response failed Hera’s quality gate.",
+        requestedAction:
+          "Review the exact client message and prepare a safe, specific and service-led response before returning the conversation to AI.",
+        collectedFacts: handoff.collectedFacts,
+        missingFacts: [],
+        clientVisibleStatus: null,
+        dedupeKey: `final-response-quality:${context.message.id}`,
+      });
+    }
+  }
+
+  if (finalQuality.passed && (policy.canAutoSend || handoff.createTask)) {
     await runtime.repository.queueOutbound({
       conversationId: context.message.conversationId,
       sourceMessageId: context.message.id,
@@ -385,8 +501,9 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   if (policy.requiresManagementNotification && runtime.managementWaId) {
     const displayName = context.contact.profileName?.slice(0, 80) || "client";
     const summary = interpreted.text.replace(/[\r\n]+/g, " ").slice(0, 600);
-    const containmentStatus =
-      "The AI prepared a policy-checked containment response for the client.";
+    const containmentStatus = finalQuality.passed
+      ? "The AI prepared a final quality-checked containment response for the client."
+      : "The final client response was blocked by Hera’s quality gate and requires human handling.";
     await runtime.repository.queueOutbound({
       conversationId: context.message.conversationId,
       sourceMessageId: context.message.id,
@@ -408,18 +525,37 @@ async function queueDeadLetterFallback(
   job: ReceptionistJob,
 ): Promise<void> {
   const context = await repository.getJobContext(job);
+  const fallbackReply =
+    "Thank you for your message. I’m sorry, but I’m unable to complete the check safely just now. I’ve placed your message with Hera’s salon manager for direct review, and the team will assist you from here. If you are experiencing breathing difficulty, severe swelling, eye exposure or severe pain, please seek urgent medical attention immediately.";
+
+  await repository.upsertAutomaticHandoff({
+    conversationId: context.message.conversationId,
+    sourceMessageId: context.message.id,
+    taskType: "system_failure",
+    scope: "full_takeover",
+    priority: "high",
+    assignedRole: "salon_manager",
+    assignedOutlet: null,
+    summary: "AI processing failed after all protected retries.",
+    requestedAction:
+      "Review the client’s exact message and respond directly before returning the conversation to AI.",
+    collectedFacts: emptyHandoffFacts(),
+    missingFacts: [],
+    clientVisibleStatus: fallbackReply,
+    dedupeKey: `dead-letter-handoff:${context.message.id}`,
+  });
   await repository.queueOutbound({
     conversationId: context.message.conversationId,
     sourceMessageId: context.message.id,
     toWaId: context.contact.waId,
     targetType: "client",
-    body:
-      "Thank you for your message. I’m sorry—Hera’s concierge could not complete the check just now. Please resend your message in a few minutes, or use our secure booking page for bookings: https://bookings.gettimely.com/herabeauty1/bb/book. If this concerns breathing difficulty, severe swelling, eye exposure or another urgent symptom, seek urgent medical attention now.",
+    body: fallbackReply,
     dedupeKey: `dead-letter-reply:${context.message.id}`,
     authorization: "auto",
   });
   await repository.audit("job_dead_lettered", "job", job.id, {
     sourceMessageId: job.sourceMessageId,
+    humanHandoffCreated: true,
   });
 }
 

@@ -153,6 +153,20 @@ export interface CandidateReplyView {
   createdAt: string;
 }
 
+export interface DecisionTraceView {
+  id: string;
+  sourceMessageId: string;
+  stage: "response" | "verification" | "policy";
+  modelId: string | null;
+  promptVersion: string;
+  policyVersion: string;
+  risk: RiskLevel;
+  confidence: number;
+  output: JsonValue;
+  latencyMs: number | null;
+  createdAt: string;
+}
+
 export interface ConversationDetail {
   conversation: ConversationSummary;
   messages: ConversationMessageView[];
@@ -160,6 +174,7 @@ export interface ConversationDetail {
   notes: CommandCentreNoteView[];
   incidents: IncidentView[];
   candidates: CandidateReplyView[];
+  decisions: DecisionTraceView[];
 }
 
 export interface CommandCentreDashboard {

@@ -85,6 +85,18 @@ function humanize(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 function formatDate(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -552,6 +564,21 @@ function renderConversationDrawer(detail: ConversationDetail): string {
   const conversation = detail.conversation;
   const activeTask = detail.tasks.find((task) => !["resolved", "cancelled"].includes(task.status));
   const latestCandidate = detail.candidates[0];
+  const latestInbound = [...detail.messages].reverse().find((message) => message.direction === "inbound");
+  const traceSourceMessageId = latestCandidate?.sourceMessageId ?? latestInbound?.id ?? null;
+  const currentTrace = traceSourceMessageId
+    ? detail.decisions.filter((decision) => decision.sourceMessageId === traceSourceMessageId)
+    : [];
+  const responseTrace = currentTrace.find((decision) => decision.stage === "response");
+  const verificationTrace = currentTrace.find((decision) => decision.stage === "verification");
+  const policyTrace = currentTrace.find((decision) => decision.stage === "policy");
+  const policyOutput = record(policyTrace?.output);
+  const finalVerification = record(policyOutput?.finalVerification);
+  const finalQuality = record(policyOutput?.finalQuality);
+  const draftFinalReply = typeof policyOutput?.draftFinalReply === "string" ? policyOutput.draftFinalReply : null;
+  const finalReply = typeof policyOutput?.finalReply === "string" ? policyOutput.finalReply : latestCandidate?.text ?? null;
+  const qualityIssues = stringArray(finalQuality?.issues);
+  const deliveryEligible = policyOutput?.deliveryEligible === true;
   return `<div class="drawer-backdrop" data-action="close-drawer" aria-hidden="true"></div>
     <aside class="drawer" role="dialog" aria-modal="true" aria-label="Conversation with ${escapeHtml(conversation.clientDisplayName)}">
       <header class="drawer__header">
@@ -581,7 +608,18 @@ function renderConversationDrawer(detail: ConversationDetail): string {
               ${activeTask && (activeTask.status === "new" || activeTask.status === "assigned") && canAcceptTask(activeTask) ? `<button type="button" class="button button--secondary button--full" data-action="accept-task" data-task-id="${escapeHtml(activeTask.id)}" data-version="${activeTask.version}">Accept human-action task</button>` : ""}
               <p class="action-note">Human WhatsApp replies remain in the normal WhatsApp Business App during this Preview stage.</p>
             </div>
-            ${latestCandidate ? `<div class="candidate-card"><div><p class="eyebrow">Latest AI candidate</p><span class="pill">${escapeHtml(latestCandidate.status)}</span></div><p>${escapeHtml(latestCandidate.text)}</p><small>${latestCandidate.providerMessageId ? "Provider message exists" : "Not sent to WhatsApp"}</small></div>` : ""}
+${latestCandidate ? `<div class="candidate-card"><div><p class="eyebrow">Latest AI candidate</p><span class="pill">${escapeHtml(latestCandidate.status)}</span></div><p>${escapeHtml(latestCandidate.text)}</p><small>${latestCandidate.providerMessageId ? "Provider message exists" : "Not sent to WhatsApp"}</small></div>` : ""}
+${policyTrace ? `<div class="candidate-card"><div><p class="eyebrow">Final response quality</p><span class="pill ${deliveryEligible ? "pill--normal" : "pill--urgent"}">${deliveryEligible ? "Passed" : "Blocked"}</span></div>
+  <dl class="task-meta">
+    <div><dt>Primary model</dt><dd>${escapeHtml(responseTrace?.modelId ?? "Not recorded")}</dd></div>
+    <div><dt>First verifier</dt><dd>${escapeHtml(verificationTrace?.modelId ?? "Not recorded")}</dd></div>
+    <div><dt>Final verifier</dt><dd>${escapeHtml(String(finalVerification?.modelId ?? policyTrace.modelId ?? "Not recorded"))}</dd></div>
+    <div><dt>Policy</dt><dd>${escapeHtml(policyTrace.policyVersion)}</dd></div>
+  </dl>
+  ${draftFinalReply ? `<p><strong>Post-policy draft</strong><br>${escapeHtml(draftFinalReply)}</p>` : ""}
+  ${finalReply ? `<p><strong>Final client reply</strong><br>${escapeHtml(finalReply)}</p>` : ""}
+  <small>${qualityIssues.length ? escapeHtml(qualityIssues.join(" · ")) : escapeHtml(String(finalVerification?.summary ?? "Final response passed every quality dimension."))}</small>
+</div>` : ""}
             ${canAddInternalNote() ? `<form class="note-form" id="note-form" data-conversation-id="${escapeHtml(conversation.id)}" data-task-id="${escapeHtml(activeTask?.id ?? "")}">
               <label class="field"><span>Internal note</span><textarea name="note" rows="3" maxlength="4000" placeholder="Record a clear internal note. This is never sent to the client."></textarea></label>
               <button type="submit" class="button button--secondary button--full">Add internal note</button>
