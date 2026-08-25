@@ -27,7 +27,7 @@ const SCHEDULE_AVAILABILITY_REQUEST =
 const DATE_OR_TIME =
   /\b(?:today|tomorrow|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
 const NAMED_STYLIST_AVAILABILITY =
-  /\b(?:is|are)\s+[A-Z][A-Za-z'-]{1,40}\s+available\b/;
+  /\b(?:is|are)\s+(?:(?:Alina|Phoeve|Irene|Adam|Ilze|Tamson|Aleksandra|Monica|Rain|Leah|Johnny|Aldy|Gabriela)|(?:(?:my|your|the|a|any)\s+)?(?:stylist|colourist|hairdresser|specialist))\s+available\b/i;
 const HUMAN_AUTHORITY =
   /\b(?:human|person|receptionist|manager|owner|staff member|take over|speak to|talk to|call me)\b/i;
 const HIGH_CONSEQUENCE =
