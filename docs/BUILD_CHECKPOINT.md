@@ -22,8 +22,8 @@ is not the source of truth.
 
 - Branch: `feat/hera-ai-receptionist-foundation`
 - Automatic human-handoff merge: `86b019e81bff0d64097302a688aaff090be99956`
-- Current cleaned Preview commit after the controlled recovery and removal of temporary
-  diagnostics: `e8498b02f4f1fbf405b769e685afd0fc436e5fed`
+- Latest cleaned code commit after the controlled takeover verification and removal of
+  its one-time verifier: `5bad6989e28cac054a4f3635e9439071bd5100be`
 - Current stable Preview alias:
   `hera-concierge-git-feat-hera-ai-rece-3023b8-hera-concierge-team.vercel.app`
 
@@ -148,6 +148,29 @@ Verified result:
 - conversation remained in `ai` mode because the booking handoff is task-scoped
 - original retry job completed with its prior attempt count preserved
 
+### Controlled real staff-takeover suppression proof
+
+A Hera staff member replied to the same booking conversation through the ordinary
+WhatsApp Business App. The separate client test phone then sent: `Thank you. Please let
+me know whether 2 pm is available.`
+
+Verified result:
+
+- 360dialog recorded the staff reply as a human outbound echo, not a client message
+- the client follow-up was preserved as a received inbound message
+- the conversation was in `management` mode when the client follow-up arrived
+- the human-takeover expiry existed and was active at receipt time
+- audit event: `message_recorded_human_takeover`
+- `suppressedByHumanTakeover`: `true`
+- AI jobs created for the client follow-up: `0`
+- AI decisions created for the client follow-up: `0`
+- outbox records created for the client follow-up: `0`
+- provider-send evidence for the client follow-up: `0`
+- WhatsApp provider sends: `0`
+- the booking task remained `assigned` to the receptionist role at Tanglin Mall
+- no named staff owner had yet accepted the task
+- the one-time read-only verifier was removed immediately after the proof
+
 ## Latest verified engineering gates
 
 - Strict TypeScript checking: pass
@@ -159,7 +182,9 @@ Verified result:
 - Command Centre foundation and automatic-handoff staging migrations: installed and
   verified
 - Controlled booking handoff: pass
-- Controlled handoff provider sends: 0
+- Controlled staff takeover: pass
+- Client-during-takeover suppression: pass
+- Controlled handoff and takeover provider sends: 0
 
 ## Non-negotiable safety state
 
@@ -184,20 +209,22 @@ restricted to explicit human review.
 
 ## Required next actions
 
-1. Verify the controlled `booking_action` card is visible under **Needs Human Action** in
-   the Command Centre with the correct structured details.
-2. Run the real staff-engagement proof: a Hera staff member replies through the WhatsApp
-   Business App, 360dialog records the human echo and the AI remains silent.
-3. Resolve the booking task explicitly and prove controlled return to AI without reopening
-   or duplicating the task.
-4. Extend the same real shadow proof to complaints, refunds, safety, privacy/legal,
+1. Activate a safe writable Command Centre Preview for named staff task ownership without
+   enabling any WhatsApp send action.
+2. Connect **Accept human-action task** to durable owner assignment, optimistic locking and
+   audit history so two staff members cannot unknowingly handle the same case.
+3. Add explicit task outcomes and resolution controls, then prove controlled return to AI
+   without reopening or duplicating the booking task.
+4. Link a qualifying WhatsApp Business App staff echo to the open task so the task records
+   who began handling the case rather than remaining role-routed but ownerless.
+5. Extend the same real shadow proof to complaints, refunds, safety, privacy/legal,
    same-day arrival and explicit-human-request cases.
-5. Continue named human quality review and build the representative Gate 4 corpus:
+6. Continue named human quality review and build the representative Gate 4 corpus:
    200 historical, 500 adversarial/edge, 100 high-risk, 50 multilingual/voice and a
    24-hour retry/concurrency soak.
-6. Resolve every source-of-truth conflict and obtain a clean launch report before any
+7. Resolve every source-of-truth conflict and obtain a clean launch report before any
    limited live pilot.
-7. Before Production launch, resolve the existing `main` cron configuration error for
+8. Before Production launch, resolve the existing `main` cron configuration error for
    `CRON_SECRET`; do not change Production during shadow evaluation merely to silence it.
 
 ## Explicitly prohibited next steps
