@@ -1,77 +1,4 @@
-from pathlib import Path
-
-HANDOFF = Path("src/policy/handoff.ts")
-TEST = Path("tests/complaintAcknowledgement.test.ts")
-
-text = HANDOFF.read_text(encoding="utf-8")
-
-replacements = [
-    (
-        'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.2.1";',
-        'export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.3.0";',
-    ),
-    (
-        '''  if (taskType === "complaint_review") {
-    return "Thank you for explaining this. I’ve placed the matter with Hera’s management team for direct review and follow-up.";
-  }''',
-        '''  if (taskType === "complaint_review") {
-    const service = facts.service ? ` regarding your ${facts.service}` : "";
-    const outlet = facts.outlet ? ` at ${facts.outlet}` : "";
-    const visualConcern = [facts.other, facts.desiredOutcome]
-      .filter((value): value is string => Boolean(value))
-      .join(" ");
-    const photoRequest =
-      !facts.photos &&
-      /\\b(?:uneven|colour|color|cut|layers?|shape|length|fringe|hair|result|finish|breakage|damage)\\b/i.test(
-        visualConcern,
-      )
-        ? " Please share clear photos of the result if convenient; they will help the manager review it carefully."
-        : "";
-    return `Thank you for explaining this, and I’m sorry this experience has left you unhappy. I’ve placed your concern${service}${outlet} with Hera’s salon manager for a careful review.${photoRequest} The manager will assess the details and advise the appropriate next step after the review.`;
-  }''',
-    ),
-    (
-        '''  const acknowledgement =
-    taskType === "medical_safety"
-      ? null
-      : requestedHuman
-        ? defaultAcknowledgement("client_requested_human", facts)
-        : taskType === "other"
-          ? safeAcknowledgement(proposal.clientAcknowledgement) ??
-            defaultAcknowledgement(taskType, facts)
-          : defaultAcknowledgement(taskType, facts);''',
-        '''  const acknowledgement =
-    taskType === "medical_safety"
-      ? null
-      : taskType === "complaint_review"
-        ? defaultAcknowledgement(taskType, facts)
-        : requestedHuman
-          ? defaultAcknowledgement("client_requested_human", facts)
-          : taskType === "other"
-            ? safeAcknowledgement(proposal.clientAcknowledgement) ??
-              defaultAcknowledgement(taskType, facts)
-            : defaultAcknowledgement(taskType, facts);''',
-    ),
-]
-
-for old, new in replacements:
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"Expected exactly one handoff replacement, found {count}: {old[:80]!r}")
-    text = text.replace(old, new)
-
-HANDOFF.write_text(text, encoding="utf-8")
-
-existing_test = Path("tests/automaticHandoff.test.ts")
-existing_text = existing_test.read_text(encoding="utf-8")
-old_version = 'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.2.1");'
-new_version = 'assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.3.0");'
-if existing_text.count(old_version) != 1:
-    raise SystemExit("Expected one existing human handoff policy version assertion")
-existing_test.write_text(existing_text.replace(old_version, new_version), encoding="utf-8")
-
-TEST.write_text(
-    '''import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assessHumanHandoff,
@@ -213,8 +140,3 @@ test("a generic request for a human still receives the neutral direct-assistance
   assert.equal(result.taskType, "client_requested_human");
   assert.match(result.clientReplyOverride ?? "", /direct assistance|staff member/i);
 });
-''',
-    encoding="utf-8",
-)
-
-print("Applied complaint acknowledgement quality gate")
