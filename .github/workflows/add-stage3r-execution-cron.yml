@@ -1,0 +1,60 @@
+name: Configure Stage 3-R execution cron
+
+on:
+  push:
+    branches:
+      - feat/stage3r-execution-final-v7
+
+permissions:
+  contents: write
+
+concurrency:
+  group: configure-stage3r-execution-cron
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/stage3r-execution-final-v7
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Add idempotent protected cron entry
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('vercel.json')
+          config = json.loads(path.read_text()) if path.exists() else {}
+          crons = [
+              item for item in config.get('crons', [])
+              if item.get('path') != '/api/stage3r/worker'
+          ]
+          crons.append({
+              'path': '/api/stage3r/worker',
+              'schedule': '* * * * *',
+          })
+          config['crons'] = crons
+          path.write_text(json.dumps(config, indent=2) + '\n')
+          PY
+      - name: Verify repository
+        run: |
+          npm ci
+          npm test
+          npm run credential:scan
+          npm audit --omit=dev --audit-level=high
+      - name: Remove one-time workflow and commit
+        run: |
+          rm .github/workflows/add-stage3r-execution-cron.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vercel.json .github/workflows/add-stage3r-execution-cron.yml
+          git commit -m "Schedule protected Stage 3-R execution worker"
+          git push origin HEAD:feat/stage3r-execution-final-v7
