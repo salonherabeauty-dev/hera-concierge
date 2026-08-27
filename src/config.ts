@@ -147,7 +147,8 @@ const operationsSchema = z.object({
 export const WHATSAPP_LIVE_CONFIRMATION_VALUE = "ENABLE_HERA_WHATSAPP_LIVE";
 export const WHATSAPP_PILOT_CONFIRMATION_VALUE =
   "ENABLE_HERA_INTERNAL_PILOT";
-export const HERA_INTERNAL_PILOT_BRANCH = "pilot/urgent-green-lane";
+export const HERA_INTERNAL_PILOT_BRANCH =
+  "feat/hera-ai-receptionist-foundation";
 export const HERA_INTERNAL_PILOT_ID = "urgent-green-lane-2026-08-27";
 export const HERA_INTERNAL_PILOT_MAX_ALLOWED_SEND_ATTEMPTS = 10;
 
