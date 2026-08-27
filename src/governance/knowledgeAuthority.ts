@@ -1,6 +1,8 @@
 import type { KnowledgeResult } from "../types.js";
 
 export const KNOWLEDGE_AUTHORITY_VERSION = "hera-knowledge-authority-2026-08-25.1";
+export const OWNER_SERVICE_PRICE_EXPERTISE_VERSION =
+  "hera-service-price-expertise-master-v1.2-2026-08-27";
 
 const APPROVED_CONSTITUTION_VERSION = "hera-service-constitution-2026-08-25.1";
 const ACTION_AUTHORITY_VERSION = "hera-action-authority-2026-08-25.1";
@@ -24,6 +26,7 @@ export function knowledgeAuthorityRank(result: KnowledgeResult): number {
   if (result.version === APPROVED_CONSTITUTION_VERSION) return 700;
   if (result.version === ACTION_AUTHORITY_VERSION) return 650;
   if (result.version === OPERATOR_POLICY_VERSION) return 600;
+  if (result.version === OWNER_SERVICE_PRICE_EXPERTISE_VERSION) return 550;
   if (/^hera-operator-policy-v\d+$/i.test(result.version)) return 500;
   if (result.version === APPROVED_KNOWLEDGE_VERSION) return 300;
   if (
