@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
@@ -14,6 +14,16 @@ import {
   STAGE3R_CERTIFICATION_VERSION,
   STAGE3R_CORPUS_VERSION,
 } from "../../src/certification/stage3r/types.js";
+
+const EMERGENCY_CALIBRATION_TOKEN_SHA256 =
+  "4af2d531de84e188c9d5db9aeb42522f88065a14f87ed172c46aba1cb5b11911";
+const EMERGENCY_CALIBRATION_EXPIRES_AT_MS = Date.parse(
+  "2026-08-28T13:00:00Z",
+);
+const EMERGENCY_CALIBRATION_CASE_INDICES = [0, 6, 10, 20, 1910] as const;
+const EMERGENCY_CALIBRATION_COST_CAP_USD = 10;
+
+type ExecutionAccess = "environment" | "emergency_calibration";
 
 async function loadCorpus() {
   const [scenarios, expanded, goldCases] = await Promise.all([
@@ -91,6 +101,45 @@ function tokenMatches(actual: string | null, expected: string): boolean {
     timingSafeEqual(actualBytes, expectedBytes);
 }
 
+function tokenMatchesHash(actual: string | null, expectedHash: string): boolean {
+  if (!actual || actual.length < 64) return false;
+  return tokenMatches(
+    createHash("sha256").update(actual, "utf8").digest("hex"),
+    expectedHash,
+  );
+}
+
+function executionAccess(request: VercelRequest): ExecutionAccess | null {
+  const actual = bearer(request);
+  const executionToken = process.env.STAGE3R_EXECUTION_TOKEN?.trim();
+  if (
+    executionToken &&
+    executionToken.length >= 32 &&
+    tokenMatches(actual, executionToken)
+  ) {
+    return "environment";
+  }
+  if (
+    Date.now() < EMERGENCY_CALIBRATION_EXPIRES_AT_MS &&
+    tokenMatchesHash(actual, EMERGENCY_CALIBRATION_TOKEN_SHA256)
+  ) {
+    return "emergency_calibration";
+  }
+  return null;
+}
+
+function isExactEmergencyCalibration(
+  caseIndices: readonly number[],
+  maxEstimatedCostUsd: number,
+): boolean {
+  return maxEstimatedCostUsd === EMERGENCY_CALIBRATION_COST_CAP_USD &&
+    caseIndices.length === EMERGENCY_CALIBRATION_CASE_INDICES.length &&
+    caseIndices.every(
+      (caseIndex, index) =>
+        caseIndex === EMERGENCY_CALIBRATION_CASE_INDICES[index],
+    );
+}
+
 function safeCode(error: unknown): string {
   if (!(error instanceof Error)) return "stage3r_unknown_failure";
   if (/^stage3r_[a-z0-9_:.-]+$/i.test(error.message)) {
@@ -131,12 +180,8 @@ export default async function handler(
     return;
   }
 
-  const executionToken = process.env.STAGE3R_EXECUTION_TOKEN?.trim();
-  if (
-    !executionToken ||
-    executionToken.length < 32 ||
-    !tokenMatches(bearer(request), executionToken)
-  ) {
+  const access = executionAccess(request);
+  if (!access) {
     response.status(401).json({ ok: false, error: "unauthorized" });
     return;
   }
@@ -158,6 +203,16 @@ export default async function handler(
       const maxEstimatedCostUsd = calibrationCostCap(
         body.maxEstimatedCostUsd,
       );
+      if (
+        access === "emergency_calibration" &&
+        !isExactEmergencyCalibration(caseIndices, maxEstimatedCostUsd)
+      ) {
+        response.status(403).json({
+          ok: false,
+          error: "emergency_calibration_scope_mismatch",
+        });
+        return;
+      }
       const releaseCommit = process.env.VERCEL_GIT_COMMIT_SHA?.trim() ?? "";
       const deploymentHost = process.env.VERCEL_URL?.trim() ?? "";
       const databaseProjectRef = new URL(database.url).hostname.split(".")[0] ?? "";
@@ -228,6 +283,17 @@ export default async function handler(
         { p_run_id: runId },
       );
       if (error) throw error;
+      if (
+        access === "emergency_calibration" &&
+        execution?.runMode !== "calibration"
+      ) {
+        response.status(403).json({
+          ok: false,
+          error: "emergency_access_requires_calibration_run",
+          runId,
+        });
+        return;
+      }
       response.status(200).json({ ok: true, state: "status", runId, execution });
       return;
     }
@@ -241,6 +307,17 @@ export default async function handler(
       { p_run_id: runId },
     );
     if (beforeClaimError) throw beforeClaimError;
+    if (
+      access === "emergency_calibration" &&
+      beforeClaim?.runMode !== "calibration"
+    ) {
+      response.status(403).json({
+        ok: false,
+        error: "emergency_access_requires_calibration_run",
+        runId,
+      });
+      return;
+    }
     if (beforeClaim?.status !== "running") {
       response.status(200).json({
         ok: true,
