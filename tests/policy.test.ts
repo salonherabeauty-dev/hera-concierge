@@ -11,6 +11,7 @@ import {
   SAFE_PRIVACY_LEGAL_REPLY,
   SAFE_STRAND_TEST_REPLY,
   SAFE_WAIT_RECOVERY_REPLY,
+  urgentSafetyReplyFor,
   URGENT_SAFETY_REPLY,
 } from "../src/policy/risk.js";
 import type { AgentDecision } from "../src/types.js";
@@ -40,6 +41,8 @@ test("deterministic safety rules override model optimism", () => {
   const urgent = assessPolicy("I cannot breathe after the product", decision());
   assert.equal(urgent.risk, "black");
   assert.equal(urgent.replyOverride, URGENT_SAFETY_REPLY);
+  assert.match(URGENT_SAFETY_REPLY, /\b995\b/);
+  assert.match(URGENT_SAFETY_REPLY, /do not wait for the salon/i);
   assert.equal(urgent.requiresManagementNotification, true);
 });
 
@@ -112,6 +115,20 @@ test("detects urgent and complaint risk across Hera's reviewed languages", () =>
   assert.equal(chineseUrgent.risk, "black");
   assert.match(chineseUrgent.replyOverride ?? "", /立即|紧急/);
   assert.notEqual(chineseUrgent.replyOverride, URGENT_SAFETY_REPLY);
+  assert.match(chineseUrgent.replyOverride ?? "", /995/);
+  assert.match(chineseUrgent.replyOverride ?? "", /不要等待沙龙回复/);
+
+  const malayUrgent = urgentSafetyReplyFor(
+    "Saya tidak boleh bernafas dan muka saya bengkak",
+  );
+  assert.match(malayUrgent, /\b995\b/);
+  assert.match(malayUrgent, /jangan tunggu jawapan salon/i);
+
+  const tamilUrgent = urgentSafetyReplyFor(
+    "மூச்சு விட முடியவில்லை; முகம் வீக்கம்",
+  );
+  assert.match(tamilUrgent, /995/);
+  assert.match(tamilUrgent, /காத்திருக்க வேண்டாம்/u);
 
   assert.equal(
     classifyDeterministicRisk("Saya mahu bayaran balik dan akan hubungi peguam").risk,

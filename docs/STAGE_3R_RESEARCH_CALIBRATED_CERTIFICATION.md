@@ -4,14 +4,16 @@
 
 **Owner-approved and in progress. Not yet passed. Not approved for live Production.**
 
-Execution-integrity version `hera-stage3r-2026-08-27.4` supersedes
-`hera-stage3r-2026-08-27.3`. It retains per-judge order reversal, repeat-evidence
-separation, protected manual execution, versioned non-inferiority semantics and bounded
-detailed issue evidence. A numeric judge score above 5 and no higher than 6 is now
-conservatively capped down to the governed maximum of 5, with its dimension and raw
-value persisted in the issues evidence. Negative scores, non-numeric scores, values
-above 6 and every other material schema failure continue to fail closed; arbitrary
-scale conversion is prohibited. Final owner authorisation remains required.
+Execution-integrity version `hera-stage3r-2026-08-27.5` supersedes
+`hera-stage3r-2026-08-27.4`. It retains all multi-provider, order-reversal,
+repeat-evidence, non-inferiority and bounded-output controls. Calibration exposed a
+substantive black-risk containment defect: a final verifier could replace deterministic
+emergency wording and omit Singapore emergency number 995 or the instruction not to
+wait for the salon. Current-turn black-risk replies are now deterministic in English,
+Chinese, Malay and Tamil; they require 995, immediate cessation of the product or
+service, and emergency care before salon follow-up. Model corrections cannot replace
+this containment, and the final quality gate independently enforces every element.
+Final owner authorisation remains required.
 
 Neo Chin Chuan approved replacing the mandatory 80-review human panel with a substantially larger research-calibrated automated certification programme on 26 August 2026. The owner still retains the final certification decision after the complete evidence report has passed every machine threshold.
 

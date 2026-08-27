@@ -379,9 +379,11 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
     config: runtime.ai,
   });
   const finalReply = cleanReply(
-    initialFinalVerification.approved
-      ? draftFinalReply
-      : initialFinalVerification.correctedReply!,
+    deterministic.risk === "black"
+      ? urgentSafetyReplyFor(interpreted.text)
+      : initialFinalVerification.approved
+        ? draftFinalReply
+        : initialFinalVerification.correctedReply!,
   );
   const finalQuality = assessFinalResponseQuality({
     clientMessage: interpreted.text,

@@ -87,6 +87,10 @@ test("the Stage 3-R pipeline reproduces final verification without provider or p
   assert.match(source, /assessHumanHandoff/);
   assert.match(source, /assessFinalResponseQuality/);
   assert.match(source, /verifyFinalClientReply/);
+  assert.match(
+    source,
+    /deterministic\.risk === "black"[\s\S]{0,100}urgentSafetyReplyFor\(input\.case\.message\)/,
+  );
   assert.match(source, /providerSendCount:\s*0/);
   assert.match(source, /duplicateFinalCandidates:\s*0/);
   assert.doesNotMatch(

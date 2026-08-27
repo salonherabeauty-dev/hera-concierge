@@ -116,6 +116,10 @@ test("one queue item evaluates one exact final response and records forensic evi
   assert.match(source, /assessHumanHandoff/);
   assert.match(source, /assessFinalResponseQuality/);
   assert.match(source, /verifyFinalClientReply/);
+  assert.match(
+    source,
+    /deterministic\.risk === "black"[\s\S]{0,100}urgentSafetyReplyFor\(caseItem\.message\)/,
+  );
   assert.match(source, /judgeStage3rCaseWithUsage/);
   assert.match(source, /providerSendCount:\s*0/);
   assert.match(source, /duplicateFinalCandidates:\s*0/);

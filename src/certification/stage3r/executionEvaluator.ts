@@ -516,9 +516,11 @@ export async function evaluateStage3rExecutionCase(
     usage: initialFinalVerification.usage,
   });
   const exactFinalResponse = cleanReply(
-    initialFinalVerification.approved
-      ? draftFinalReply
-      : initialFinalVerification.correctedReply!,
+    deterministic.risk === "black"
+      ? urgentSafetyReplyFor(caseItem.message)
+      : initialFinalVerification.approved
+        ? draftFinalReply
+        : initialFinalVerification.correctedReply!,
   );
   const finalQuality = assessFinalResponseQuality({
     clientMessage: caseItem.message,
