@@ -6,6 +6,10 @@ import { buildStage3rCorpus } from "../../src/certification/stage3r/corpus.js";
 import { evaluateStage3rExecutionCase } from "../../src/certification/stage3r/executionEvaluator.js";
 import { getStage3rJudgeConfigurations } from "../../src/certification/stage3r/judge.js";
 import { getAiConfig, getDatabaseConfig, getOperationsConfig } from "../../src/config.js";
+import {
+  logOperationalEvent,
+  safeErrorFields,
+} from "../../src/observability/log.js";
 import type {
   Stage3rGoldCase,
   Stage3rSeedScenario,
@@ -147,6 +151,9 @@ function safeCode(error: unknown): string {
       .replace(/[^a-z0-9]+/gi, "_")
       .toLowerCase()
       .slice(0, 120);
+  }
+  if (/^fetch failed$/i.test(error.message.trim())) {
+    return "stage3r_dependency_fetch_failed";
   }
   return error.name
     .replace(/[^a-z0-9]+/gi, "_")
@@ -461,6 +468,13 @@ export default async function handler(
       });
     }
   } catch (error) {
-    response.status(500).json({ ok: false, error: safeCode(error) });
+    const errorCode = safeCode(error);
+    logOperationalEvent("error", "stage3r_worker_request_failed", {
+      errorCode,
+      ...safeErrorFields(error),
+    });
+    response.status(
+      errorCode === "stage3r_dependency_fetch_failed" ? 503 : 500,
+    ).json({ ok: false, error: errorCode });
   }
 }

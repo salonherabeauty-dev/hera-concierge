@@ -90,6 +90,10 @@ test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp
   assert.match(source, /stage3r_calibration_cost_cap_must_be_at_most_25_usd/);
   assert.match(source, /paidCallsStarted:\s*false/);
   assert.match(source, /APPROVED_FULL_2010_CASE_RUN/);
+  assert.match(source, /stage3r_dependency_fetch_failed/);
+  assert.match(source, /stage3r_worker_request_failed/);
+  assert.match(source, /safeErrorFields\(error\)/);
+  assert.match(source, /errorCode === "stage3r_dependency_fetch_failed" \? 503 : 500/);
   assert.doesNotMatch(source, /CRON_SECRET/);
   assert.doesNotMatch(
     source,
