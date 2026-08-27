@@ -16,7 +16,7 @@ export const stage3rJudgeOutputSchema = z.object({
     concisionNaturalness: scoreSchema,
   }),
   criticalFlags: z.array(z.string().trim().min(1).max(100)).max(20),
-  issues: z.array(z.string().trim().min(1).max(220)).max(20),
+  issues: z.array(z.string().trim().min(1).max(4000)).max(20),
   preferredLabel: z.enum(["A", "B", "tie", "not_applicable"]),
   confidence: z.number().min(0).max(1),
 });

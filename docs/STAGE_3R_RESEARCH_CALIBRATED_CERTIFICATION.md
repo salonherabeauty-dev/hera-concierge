@@ -4,11 +4,12 @@
 
 **Owner-approved and in progress. Not yet passed. Not approved for live Production.**
 
-Execution-integrity version `hera-stage3r-2026-08-27.2` supersedes
-`hera-stage3r-2026-08-27.1`. It retains per-judge order reversal, repeat-evidence
-separation and protected manual execution, and corrects the pairwise semantics exposed
-by calibration: a tie against an owner-grounded gold anchor proves non-inferiority,
-while only an explicit reference preference counts against that rate. Final owner
+Execution-integrity version `hera-stage3r-2026-08-27.3` supersedes
+`hera-stage3r-2026-08-27.2`. It retains per-judge order reversal, repeat-evidence
+separation, protected manual execution and the versioned non-inferiority semantics.
+It also permits bounded detailed judge issue evidence (up to 4,000 characters per
+issue) so explanatory length alone cannot replace an otherwise complete judgment with
+invalid zero scores. Material schema failures continue to fail closed. Final owner
 authorisation remains required.
 
 Neo Chin Chuan approved replacing the mandatory 80-review human panel with a substantially larger research-calibrated automated certification programme on 26 August 2026. The owner still retains the final certification decision after the complete evidence report has passed every machine threshold.
