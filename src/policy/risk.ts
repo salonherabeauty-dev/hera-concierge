@@ -4,7 +4,7 @@ import {
   type SupportedClientLocale,
 } from "./locale.js";
 
-export const POLICY_VERSION = "hera-whatsapp-policy-1.2.0";
+export const POLICY_VERSION = "hera-whatsapp-policy-1.3.0";
 
 const RISK_RANK: Record<RiskLevel, number> = {
   green: 0,
@@ -103,7 +103,7 @@ const UNAUTHORISED_ACTION_PATTERNS = [
 ];
 
 export const URGENT_SAFETY_REPLY =
-  "Thank you for telling me. Please stop using the product or pause the service immediately. If you have severe pain, swelling, breathing difficulty, eye exposure or another urgent symptom, seek urgent medical attention now. I have marked this as an urgent Hera concern; when safe, please send the appointment name and date, what was used if known, and clear photos. This is not a medical diagnosis.";
+  "This may be an emergency. Please call Singapore emergency services on 995 now, or have someone take you to the nearest emergency department immediately. Stop using the product and do not wait for the salon to respond before seeking urgent medical help; Hera’s team will follow up separately once you are safe. This is not a medical diagnosis.";
 
 export const SAFE_CONCERN_REPLY =
   "I’m sorry to hear this. I’ve opened a priority service concern so the facts can be reviewed carefully. Please share the appointment name and date, stylist if known, what happened, and clear photos where relevant. I won’t make assumptions or promise a remedy before the details are reviewed, but I’ll keep the case organised here.";
@@ -153,7 +153,7 @@ const LOCALIZED_SAFETY_REPLIES: Record<
   },
   zh: {
     urgent:
-      "谢谢你告诉我。请立即停止使用该产品或暂停服务。如果你出现剧烈疼痛、面部或喉咙肿胀、呼吸困难、化学品入眼或其他紧急症状，请立即寻求紧急医疗救助。我已将此情况标记为 Hera 紧急个案；在确保安全后，请提供预约姓名和日期、已知使用产品及清晰照片。这不是医疗诊断。",
+      "这可能是紧急情况。请立即拨打新加坡紧急服务 995，或请他人立即送你到最近的急诊部门。立即停止使用该产品，在寻求紧急医疗帮助前不要等待沙龙回复；Hera 团队会在你安全后另行跟进。这不是医疗诊断。",
     concern:
       "很抱歉得知这件事。我已将其记录为优先服务个案，以便谨慎核查事实。请提供预约姓名和日期、发型师（如知道）、事情经过，以及相关清晰照片。在资料审核前，我不会作出假设或承诺退款、赔偿或其他处理，但会在这里把个案资料整理清楚。",
     medical:
@@ -171,7 +171,7 @@ const LOCALIZED_SAFETY_REPLIES: Record<
   },
   ms: {
     urgent:
-      "Terima kasih kerana memaklumkan kami. Sila hentikan penggunaan produk atau perkhidmatan itu serta-merta. Jika anda mengalami sakit teruk, bengkak muka atau tekak, kesukaran bernafas, bahan kimia terkena mata atau gejala kecemasan lain, dapatkan rawatan perubatan kecemasan sekarang. Saya telah menandakan perkara ini sebagai kes Hera yang mendesak; apabila selamat, sila kongsi nama dan tarikh janji temu, produk yang digunakan jika diketahui, dan gambar yang jelas. Ini bukan diagnosis perubatan.",
+      "Ini mungkin kecemasan. Sila hubungi perkhidmatan kecemasan Singapura di 995 sekarang, atau minta seseorang membawa anda ke jabatan kecemasan terdekat dengan segera. Hentikan penggunaan produk dan jangan tunggu jawapan salon sebelum mendapatkan bantuan perubatan kecemasan; pasukan Hera akan membuat susulan secara berasingan selepas anda selamat. Ini bukan diagnosis perubatan.",
     concern:
       "Saya minta maaf perkara ini berlaku. Saya telah membuka kes perkhidmatan keutamaan supaya fakta dapat disemak dengan teliti. Sila kongsi nama dan tarikh janji temu, stylist jika diketahui, apa yang berlaku, serta gambar yang jelas jika berkaitan. Saya tidak akan membuat andaian atau menjanjikan bayaran balik, pampasan atau penyelesaian sebelum semakan dibuat.",
     medical:
@@ -189,7 +189,7 @@ const LOCALIZED_SAFETY_REPLIES: Record<
   },
   ta: {
     urgent:
-      "எங்களிடம் தெரிவித்ததற்கு நன்றி. அந்தப் பொருளைப் பயன்படுத்துவதை அல்லது சேவையை உடனடியாக நிறுத்துங்கள். கடுமையான வலி, முகம் அல்லது தொண்டை வீக்கம், மூச்சுத் திணறல், கண்ணில் இரசாயனம் பட்டது அல்லது வேறு அவசர அறிகுறிகள் இருந்தால், உடனடியாக அவசர மருத்துவ உதவியை நாடுங்கள். இதை Hera-வின் அவசரக் கவலையாக பதிவு செய்துள்ளேன்; பாதுகாப்பாக இருந்ததும், முன்பதிவு பெயர் மற்றும் தேதி, தெரிந்தால் பயன்படுத்திய பொருள், தெளிவான படங்கள் ஆகியவற்றைப் பகிரவும். இது மருத்துவ நோயறிதல் அல்ல.",
+      "இது அவசரநிலையாக இருக்கலாம். சிங்கப்பூர் அவசர சேவையை 995 என்ற எண்ணில் இப்போது அழைக்கவும், அல்லது யாராவது உங்களை உடனடியாக அருகிலுள்ள அவசர சிகிச்சைப் பிரிவுக்கு அழைத்துச் செல்லட்டும். அந்தப் பொருளைப் பயன்படுத்துவதை உடனடியாக நிறுத்துங்கள்; அவசர மருத்துவ உதவியை நாடுவதற்கு முன் சலூனின் பதிலுக்காக காத்திருக்க வேண்டாம். நீங்கள் பாதுகாப்பாக ஆன பின் Hera குழு தனியாகத் தொடர்புகொள்ளும். இது மருத்துவ நோயறிதல் அல்ல.",
     concern:
       "இது நடந்ததற்கு வருந்துகிறேன். உண்மைகளை கவனமாக மதிப்பாய்வு செய்ய முன்னுரிமை சேவை வழக்கைத் திறந்துள்ளேன். முன்பதிவு பெயர் மற்றும் தேதி, தெரிந்தால் stylist, என்ன நடந்தது, தொடர்புடைய தெளிவான படங்கள் ஆகியவற்றைப் பகிரவும். மதிப்பாய்வுக்கு முன் நான் ஊகிக்கவோ பணத்தைத் திருப்பித் தருவதாகவோ இழப்பீடு அல்லது தீர்வை உறுதியளிக்கவோ மாட்டேன்.",
     medical:

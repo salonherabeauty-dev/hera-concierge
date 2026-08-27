@@ -64,6 +64,10 @@ test("a corrected final reply is re-verified before becoming delivery eligible",
   assert.match(worker, /draftReply: finalReply/);
   assert.match(
     worker,
+    /deterministic\.risk === "black"[\s\S]{0,100}urgentSafetyReplyFor\(interpreted\.text\)/,
+  );
+  assert.match(
+    worker,
     /const deliveryEligible = finalQuality\.passed && finalVerification\.approved/,
   );
 });

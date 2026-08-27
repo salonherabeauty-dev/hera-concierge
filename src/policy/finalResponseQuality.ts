@@ -10,7 +10,7 @@ import {
 } from "./locale.js";
 
 export const FINAL_RESPONSE_QUALITY_POLICY_VERSION =
-  "hera-final-response-quality-1.1.0";
+  "hera-final-response-quality-1.2.0";
 
 export interface FinalResponseQualityAssessment {
   passed: boolean;
@@ -103,6 +103,27 @@ const URGENT_SAFETY: Record<SupportedClientLocale, RegExp> = {
   ta: /அவசர மருத்துவ உதவி|உடனடி மருத்துவ உதவி|அவசர சேவை|995|பயன்பாட்டை நிறுத்த|சேவையை நிறுத்த|மூச்சுத் திணறல்|கடுமையான வீக்கம்|கண்ணில் பட்ட/u,
 };
 
+const EMERGENCY_NUMBER: Record<SupportedClientLocale, RegExp> = {
+  en: /\b995\b/,
+  zh: /995/u,
+  ms: /\b995\b/,
+  ta: /995/u,
+};
+
+const DO_NOT_WAIT_FOR_SALON: Record<SupportedClientLocale, RegExp> = {
+  en: /\b(?:do not|don['’]?t)\s+wait\b.{0,100}\b(?:salon|Hera|team|response|reply|follow[ -]?up)\b/i,
+  zh: /不要等待(?:沙龙|Hera|团队)?(?:回复|回应|答复|跟进)/u,
+  ms: /\bjangan tunggu\b.{0,80}\b(?:salon|Hera|pasukan|jawapan|balasan|respons|susulan)\b/i,
+  ta: /காத்திருக்க வேண்டாம்/u,
+};
+
+const STOP_PRODUCT_OR_SERVICE: Record<SupportedClientLocale, RegExp> = {
+  en: /\bstop (?:using )?(?:the )?product\b|\bpause (?:the )?service\b/i,
+  zh: /停止使用(?:该|此)?产品|暂停服务/u,
+  ms: /\bhentikan penggunaan produk\b|\bhentikan perkhidmatan\b/i,
+  ta: /பொருளைப் பயன்படுத்துவதை.{0,20}நிறுத்த|சேவையை.{0,20}நிறுத்த/u,
+};
+
 const AUTHORITY_REQUIRED_INTENTS = new Set<AgentDecision["intent"]>([
   "complaint",
   "refund_compensation",
@@ -116,6 +137,16 @@ function matches(
   value: string,
 ): boolean {
   return patterns[locale].test(value);
+}
+
+function preservesEmergencyContainment(
+  locale: SupportedClientLocale,
+  reply: string,
+): boolean {
+  return matches(URGENT_SAFETY, locale, reply) &&
+    matches(EMERGENCY_NUMBER, locale, reply) &&
+    matches(DO_NOT_WAIT_FOR_SALON, locale, reply) &&
+    matches(STOP_PRODUCT_OR_SERVICE, locale, reply);
 }
 
 function normalized(value: string): string {
@@ -262,8 +293,19 @@ export function assessFinalResponseQuality(input: {
   }
 
   if (type === "medical_safety") {
-    if (isEmergency && !matches(URGENT_SAFETY, locale, reply)) {
-      issues.push("The emergency reply does not preserve urgent safety guidance.");
+    if (isEmergency) {
+      if (!matches(URGENT_SAFETY, locale, reply)) {
+        issues.push("The emergency reply does not preserve urgent safety guidance.");
+      }
+      if (!matches(EMERGENCY_NUMBER, locale, reply)) {
+        issues.push("The emergency reply does not give Singapore emergency number 995.");
+      }
+      if (!matches(DO_NOT_WAIT_FOR_SALON, locale, reply)) {
+        issues.push("The emergency reply does not tell the client not to wait for the salon.");
+      }
+      if (!matches(STOP_PRODUCT_OR_SERVICE, locale, reply)) {
+        issues.push("The emergency reply does not tell the client to stop the product or service.");
+      }
     }
     if (MEDICAL_CLAIM.test(reply)) {
       issues.push("The safety reply makes a diagnosis or medical-safety claim.");
@@ -299,11 +341,13 @@ export function assessFinalResponseQuality(input: {
       : true;
   const ownership = input.handoff.createTask
     ? type === "medical_safety" && isEmergency
-      ? matches(URGENT_SAFETY, locale, reply)
+      ? preservesEmergencyContainment(locale, reply)
       : matches(OWNERSHIP, locale, reply)
     : true;
   const nextStep = input.handoff.createTask
-    ? matches(NEXT_STEP, locale, reply)
+    ? type === "medical_safety" && isEmergency
+      ? preservesEmergencyContainment(locale, reply)
+      : matches(NEXT_STEP, locale, reply)
     : true;
   const conciseTone =
     !EMOJI.test(reply) &&

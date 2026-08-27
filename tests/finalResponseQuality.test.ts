@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assessFinalResponseQuality } from "../src/policy/finalResponseQuality.js";
+import { URGENT_SAFETY_REPLY } from "../src/policy/risk.js";
 import type { HumanHandoffAssessment } from "../src/policy/handoff.js";
 import type { AgentDecision, PolicyAssessment } from "../src/types.js";
 
@@ -297,7 +298,7 @@ test("supports a reviewed Chinese complaint acknowledgement", () => {
 test("permits an explicit non-diagnosis disclaimer in an emergency reply", () => {
   const result = assessFinalResponseQuality({
     clientMessage: "I cannot breathe and my face is swelling.",
-    reply: "Thank you for telling me. Please stop using the product immediately. If you have breathing difficulty or severe swelling, seek urgent medical attention now. Hera’s technical lead will review the salon concern when it is safe to do so. This is not a medical diagnosis.",
+    reply: URGENT_SAFETY_REPLY,
     decision: decision({ intent: "medical_safety", risk: "black" }),
     policy: policy({ risk: "black", requiresIncident: true }),
     handoff: handoff({
@@ -310,4 +311,37 @@ test("permits an explicit non-diagnosis disclaimer in an emergency reply", () =>
     risk: "black",
   });
   assert.equal(result.passed, true);
+});
+
+test("emergency containment requires 995 and an explicit instruction not to wait", () => {
+  const emergencyDecision = decision({ intent: "medical_safety", risk: "black" });
+  const emergencyPolicy = policy({ risk: "black", requiresIncident: true });
+  const emergencyHandoff = handoff({
+    createTask: true,
+    taskType: "medical_safety",
+    scope: "emergency",
+    priority: "emergency",
+    assignedRole: "technical_lead",
+  });
+  const without995 = assessFinalResponseQuality({
+    clientMessage: "I cannot breathe and my face is swelling.",
+    reply: "Please stop using the product and seek urgent medical help now. Do not wait for the salon to respond.",
+    decision: emergencyDecision,
+    policy: emergencyPolicy,
+    handoff: emergencyHandoff,
+    risk: "black",
+  });
+  assert.equal(without995.passed, false);
+  assert.ok(without995.issues.some((issue) => /995/.test(issue)));
+
+  const withoutDoNotWait = assessFinalResponseQuality({
+    clientMessage: "I cannot breathe and my face is swelling.",
+    reply: "Please call Singapore emergency services on 995 now and stop using the product. Hera’s team will follow up.",
+    decision: emergencyDecision,
+    policy: emergencyPolicy,
+    handoff: emergencyHandoff,
+    risk: "black",
+  });
+  assert.equal(withoutDoNotWait.passed, false);
+  assert.ok(withoutDoNotWait.issues.some((issue) => /not to wait/i.test(issue)));
 });

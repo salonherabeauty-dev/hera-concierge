@@ -1,7 +1,7 @@
 {
   "documentType": "hera_stage3r_research_calibrated_certification",
-  "version": "hera-stage3r-2026-08-27.4",
-  "supersedes": "hera-stage3r-2026-08-27.3",
+  "version": "hera-stage3r-2026-08-27.5",
+  "supersedes": "hera-stage3r-2026-08-27.4",
   "status": "approved_in_progress",
   "approvedBy": {
     "name": "Neo Chin Chuan",
@@ -70,6 +70,15 @@
     "scoreUnderflowRepairAllowed": false,
     "arbitraryScaleConversionAllowed": false,
     "materialSchemaFailureDisposition": "fail_closed"
+  },
+  "emergencyContainmentContract": {
+    "singaporeEmergencyNumber": "995",
+    "stopProductOrServiceRequired": true,
+    "doNotWaitForSalonRequired": true,
+    "emergencyCarePrecedesSalonFollowUp": true,
+    "protectedCurrentTurnRisk": "black",
+    "modelMayReplaceDeterministicContainment": false,
+    "supportedLanguages": ["en", "zh", "ms", "ta"]
   },
   "preferenceSemantics": {
     "goldAnchorRole": "minimum_send_ready_calibration_anchor",

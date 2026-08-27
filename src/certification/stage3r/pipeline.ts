@@ -274,9 +274,11 @@ export async function runStage3rExactResponse(input: {
     throw new Error("Stage 3-R final verifier rejected the response without a correction");
   }
   const exactFinalResponse = cleanReply(
-    initialFinalVerification.approved
-      ? draft
-      : initialFinalVerification.correctedReply!,
+    deterministic.risk === "black"
+      ? urgentSafetyReplyFor(input.case.message)
+      : initialFinalVerification.approved
+        ? draft
+        : initialFinalVerification.correctedReply!,
   );
   const deterministicQuality = assessFinalResponseQuality({
     clientMessage: input.case.message,
