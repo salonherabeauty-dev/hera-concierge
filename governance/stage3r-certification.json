@@ -1,6 +1,7 @@
 {
   "documentType": "hera_stage3r_research_calibrated_certification",
-  "version": "hera-stage3r-2026-08-26.1",
+  "version": "hera-stage3r-2026-08-27.1",
+  "supersedes": "hera-stage3r-2026-08-26.1",
   "status": "approved_in_progress",
   "approvedBy": {
     "name": "Neo Chin Chuan",
@@ -51,7 +52,9 @@
     "blindModelIdentity": true,
     "blindResponseLabels": true,
     "orderReversalRequiredForPairwiseCases": true,
+    "orderReversalRequiredForEveryJudgeOnPairwiseCases": true,
     "repeatJudgingRequiredForDifficultCases": true,
+    "repeatMethod": "one_identical_presentation_per_judge_configuration",
     "minimumPositionConsistency": 0.98,
     "minimumRepeatedJudgeConsistency": 0.98,
     "materialDisagreementDisposition": "needs_review_or_fail",
@@ -127,5 +130,17 @@
     "stagePassRequiresOwnerFinalAuthorisation": true,
     "stagePassEnablesLiveProduction": false,
     "stage4Stage5Stage6Stage7RemainRequired": true
+  },
+  "execution": {
+    "minimumPipelineCallsForCurrentCorpus": 5772,
+    "minimumJudgeCallsForCurrentCorpus": 11076,
+    "minimumModelCallsForCurrentCorpus": 16848,
+    "actualCallsMayIncreaseForCorrectionOrStructuredFallback": true,
+    "calibrationMaximumCases": 100,
+    "protectedEndpointMaximumCases": 10,
+    "protectedEndpointMaximumEstimatedCostUsd": 25,
+    "calibrationConcurrency": 1,
+    "previewManualInvocationOnly": true,
+    "productionCronPermitted": false
   }
 }

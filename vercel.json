@@ -51,6 +51,10 @@
     "api/internal/drain.ts": {
       "maxDuration": 300
     },
+    "api/stage3r/worker.ts": {
+      "maxDuration": "max",
+      "includeFiles": "{evals/*.json,governance/stage3r-*.json}"
+    },
     "api/command-centre/**/*.ts": {
       "maxDuration": 30
     }

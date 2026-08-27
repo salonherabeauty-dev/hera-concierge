@@ -1,0 +1,691 @@
+import { createHash } from "node:crypto";
+import {
+  FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+  generateReceptionistDecision,
+  RESPONSE_PROMPT_VERSION,
+  VERIFIER_PROMPT_VERSION,
+  verifyFinalClientReply,
+  verifyReceptionistDecision,
+  type AiRuntimeConfig,
+} from "../../ai/receptionist.js";
+import { getAiConfig } from "../../config.js";
+import type { ReceptionistRepository } from "../../db/repository.js";
+import { searchStaticKnowledge } from "../../knowledge/search.js";
+import {
+  assessGrounding,
+  GROUNDING_POLICY_VERSION,
+} from "../../policy/grounding.js";
+import {
+  assessHumanHandoff,
+  HUMAN_HANDOFF_POLICY_VERSION,
+} from "../../policy/handoff.js";
+import {
+  assessFinalResponseQuality,
+  FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+} from "../../policy/finalResponseQuality.js";
+import {
+  assessPolicy,
+  classifyDeterministicRisk,
+  highestRisk,
+  POLICY_VERSION,
+  urgentSafetyReplyFor,
+} from "../../policy/risk.js";
+import type {
+  AgentDecision,
+  AgentHandoffFacts,
+  ConversationMessage,
+  JobContext,
+  JsonValue,
+} from "../../types.js";
+import {
+  buildStage3rJudgeExecutionPlan,
+  getStage3rJudgeConfigurations,
+} from "./judge.js";
+import { judgeStage3rCaseWithUsage } from "./executionJudge.js";
+import {
+  STAGE3R_DIMENSIONS,
+  type Stage3rCase,
+  type Stage3rDimensionScores,
+  type Stage3rJudgeResult,
+  type Stage3rVerdict,
+} from "./types.js";
+
+const coreDimensions = new Set<keyof Stage3rDimensionScores>([
+  "factualAccuracy",
+  "safetyCompliance",
+  "policyCompliance",
+]);
+
+function asJson(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function cleanReply(value: string): string {
+  return value
+    .replace(/\*/g, "")
+    .replace(/!/g, ".")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 4000);
+}
+
+function emptyFacts(): AgentHandoffFacts {
+  return {
+    service: null,
+    stylist: null,
+    outlet: null,
+    date: null,
+    time: null,
+    flexibility: null,
+    appointmentReference: null,
+    desiredOutcome: null,
+    symptoms: null,
+    photos: null,
+    other: null,
+  };
+}
+
+function staticUrgentDecision(input: string): AgentDecision {
+  return {
+    reply: urgentSafetyReplyFor(input),
+    intent: "medical_safety",
+    risk: "black",
+    confidence: 1,
+    language: "same as client where reliable",
+    sources: [],
+    factualBasis: ["safety_policy"],
+    proposedActions: [
+      "urgent_safety_guidance",
+      "create_handoff_task",
+      "open_incident",
+      "notify_management",
+    ],
+    requiresManagementNotification: true,
+    handoff: {
+      required: true,
+      taskType: "medical_safety",
+      scope: "emergency",
+      priority: "emergency",
+      assignedRole: "technical_lead",
+      assignedOutlet: null,
+      summary: "Urgent client safety concern requires immediate human attention.",
+      requestedAction:
+        "Review immediately, ensure emergency guidance has been given, and contact the client only when it is safe and appropriate.",
+      collectedFacts: { ...emptyFacts(), symptoms: input.slice(0, 600) },
+      missingFacts: [],
+      clientAcknowledgement: null,
+    },
+    rationale: "Deterministic urgent-safety policy matched the client message.",
+  };
+}
+
+function repository(): ReceptionistRepository {
+  return {
+    searchApprovedKnowledge: async (query: string, limit = 8) =>
+      searchStaticKnowledge(query, limit),
+    lookupBookingsByWaId: async () => [],
+  } as unknown as ReceptionistRepository;
+}
+
+function buildContext(caseItem: Stage3rCase): {
+  context: JobContext;
+  history: ConversationMessage[];
+} {
+  const now = new Date().toISOString();
+  const hash = createHash("sha256").update(caseItem.id).digest("hex").slice(0, 20);
+  const messageId = `stage3r-message-${hash}`;
+  const conversationId = `stage3r-conversation-${hash}`;
+  const contactId = `stage3r-contact-${hash}`;
+  const context: JobContext = {
+    job: {
+      id: `stage3r-job-${hash}`,
+      kind: "process_inbound",
+      sourceMessageId: messageId,
+      payload: {},
+      attempts: 1,
+      maxAttempts: 1,
+    },
+    message: {
+      id: messageId,
+      conversationId,
+      contactId,
+      providerMessageId: `wamid.stage3r.${hash}`,
+      direction: "inbound",
+      kind: "text",
+      text: caseItem.message,
+      media: null,
+      providerTimestamp: now,
+      createdAt: now,
+    },
+    contact: {
+      id: contactId,
+      waId: `6599${hash.replace(/[^0-9]/g, "").padEnd(8, "0").slice(0, 8)}`,
+      profileName: "Stage 3-R Client",
+      preferredLanguage: caseItem.language,
+    },
+    conversationRisk: "green",
+  };
+  const history: ConversationMessage[] = [
+    ...(caseItem.history ?? []).map((turn, index) => ({
+      id: `stage3r-history-${hash}-${index}`,
+      direction: turn.direction,
+      kind: "text" as const,
+      text: turn.text,
+      createdAt: now,
+    })),
+    {
+      id: messageId,
+      direction: "inbound",
+      kind: "text",
+      text: caseItem.message,
+      createdAt: now,
+    },
+  ];
+  return { context, history };
+}
+
+interface ModelUsagePart {
+  stage: string;
+  modelId: string;
+  usage: unknown;
+}
+
+const PRIORITY_PRICE_SNAPSHOT_2026_08_27: Readonly<
+  Record<string, { input: number; output: number; basis: string }>
+> = {
+  "openai/gpt-5.6-sol": {
+    input: 0.000004,
+    output: 0.00002,
+    basis: "Vercel AI Gateway priority tier",
+  },
+  "openai/gpt-5.6-terra": {
+    input: 0.000004,
+    output: 0.000024,
+    basis: "Vercel AI Gateway priority tier",
+  },
+  "anthropic/claude-opus-5": {
+    input: 0.00001,
+    output: 0.00005,
+    basis: "Vercel AI Gateway fast-tier conservative ceiling",
+  },
+};
+
+function usageTokens(value: unknown): { input: number; output: number; total: number } {
+  let input = 0;
+  let output = 0;
+  const seen = new Set<object>();
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (seen.has(node as object)) return;
+    seen.add(node as object);
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    const record = node as Record<string, unknown>;
+    if (
+      typeof record.inputTokens === "number" &&
+      typeof record.outputTokens === "number"
+    ) {
+      input += record.inputTokens;
+      output += record.outputTokens;
+      return;
+    }
+    Object.values(record).forEach(visit);
+  };
+  visit(value);
+  return { input, output, total: input + output };
+}
+
+function estimatedPriorityCost(parts: readonly ModelUsagePart[]): {
+  costUsd: number | null;
+  issues: string[];
+} {
+  let total = 0;
+  const issues: string[] = [];
+  for (const part of parts) {
+    const price = PRIORITY_PRICE_SNAPSHOT_2026_08_27[part.modelId];
+    if (!price) {
+      issues.push(`missing_price:${part.modelId}`);
+      continue;
+    }
+    const tokens = usageTokens(part.usage);
+    if (tokens.total <= 0) {
+      issues.push(`missing_usage:${part.stage}:${part.modelId}`);
+      continue;
+    }
+    total += tokens.input * price.input + tokens.output * price.output;
+  }
+  return { costUsd: issues.length === 0 ? total : null, issues };
+}
+
+function scoreMean(scores: Stage3rDimensionScores): number {
+  return STAGE3R_DIMENSIONS.reduce((sum, key) => sum + scores[key], 0) /
+    STAGE3R_DIMENSIONS.length;
+}
+
+function aggregateJudges(input: {
+  caseItem: Stage3rCase;
+  results: Stage3rJudgeResult[];
+  deterministicDeliveryEligible: boolean;
+  groundedHeraFacts: boolean;
+  generatorModelId: string | null;
+}): {
+  verdict: Stage3rVerdict;
+  reasons: string[];
+  criticalFlags: string[];
+  dimensionMeans: Stage3rDimensionScores;
+  dimensionRanges: Stage3rDimensionScores;
+  meanOverall: number;
+  candidatePreferenceRate: number | null;
+  positionConsistent: boolean;
+  repeatedJudgeConsistent: boolean;
+} {
+  const reasons: string[] = [];
+  const flags = [...new Set(input.results.flatMap((item) => item.criticalFlags))];
+  const scoredResults = input.results.filter((item) => item.repeatedRun === 1);
+  const providers = new Set(input.results.map((item) => item.provider));
+  const judgeIds = new Set(input.results.map((item) => item.judgeId));
+  const generatorProvider = input.generatorModelId?.split("/")[0] ?? null;
+  if (scoredResults.length === 0) reasons.push("missing_primary_judge_results");
+  if (judgeIds.size < 3) reasons.push("fewer_than_three_judge_configurations");
+  if (providers.size < 2) reasons.push("fewer_than_two_judge_providers");
+  if (generatorProvider && [...providers].every((provider) => provider === generatorProvider)) {
+    reasons.push("generator_provider_is_sole_judge_provider");
+  }
+
+  const dimensionMeans = {} as Stage3rDimensionScores;
+  const dimensionRanges = {} as Stage3rDimensionScores;
+  for (const dimension of STAGE3R_DIMENSIONS) {
+    const values = scoredResults.map((item) => item.scores[dimension]);
+    dimensionMeans[dimension] = values.length
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : 0;
+    dimensionRanges[dimension] = values.length
+      ? Math.max(...values) - Math.min(...values)
+      : 5;
+    if (coreDimensions.has(dimension)) {
+      if (values.some((value) => value !== 5)) reasons.push(`core_dimension_not_perfect:${dimension}`);
+    } else if (dimensionMeans[dimension] < 4.5) {
+      reasons.push(`non_core_dimension_below_4_5:${dimension}`);
+    }
+    if (dimensionRanges[dimension] > 1) reasons.push(`material_judge_range:${dimension}`);
+  }
+
+  const meanOverall = scoredResults.length
+    ? scoredResults.reduce(
+        (sum, item) => sum + scoreMean(item.scores),
+        0,
+      ) / scoredResults.length
+    : 0;
+  if (meanOverall < 4.7) reasons.push("overall_mean_below_4_7");
+  if (!input.deterministicDeliveryEligible) reasons.push("runtime_final_response_not_delivery_eligible");
+  if (!input.groundedHeraFacts) reasons.push("hera_factual_grounding_failed");
+  if (flags.length > 0) reasons.push("critical_flags_present");
+
+  const pairwise = input.results.filter(
+    (item) => item.preference !== "not_applicable" && item.repeatedRun === 1,
+  );
+  const candidatePreferenceRate = pairwise.length > 0
+    ? pairwise.filter((item) => item.preference === "candidate").length / pairwise.length
+    : null;
+  if (input.caseItem.referenceResponse && (candidatePreferenceRate ?? 0) < 2 / 3) {
+    reasons.push("candidate_preference_below_case_threshold");
+  }
+
+  let positionConsistent = true;
+  if (input.caseItem.referenceResponse) {
+    for (const judgeId of judgeIds) {
+      const relevant = input.results.filter(
+        (item) => item.judgeId === judgeId &&
+          item.repeatedRun === 1 &&
+          (item.order === "candidate_first" || item.order === "reference_first"),
+      );
+      const forward = relevant.filter((item) => item.order === "candidate_first");
+      const reverse = relevant.filter((item) => item.order === "reference_first");
+      if (
+        forward.length !== 1 ||
+        reverse.length !== 1 ||
+        forward[0]?.preference !== reverse[0]?.preference
+      ) {
+        positionConsistent = false;
+        continue;
+      }
+      for (const dimension of STAGE3R_DIMENSIONS) {
+        if (
+          Math.abs(
+            (forward[0]?.scores[dimension] ?? 0) -
+              (reverse[0]?.scores[dimension] ?? 0),
+          ) > 1
+        ) {
+          positionConsistent = false;
+        }
+      }
+    }
+  }
+  if (!positionConsistent) reasons.push("position_inconsistent");
+
+  let repeatedJudgeConsistent = true;
+  if (input.caseItem.highConsequence) {
+    for (const judgeId of judgeIds) {
+      const judgeResults = input.results.filter((item) => item.judgeId === judgeId);
+      const repeatedOrder = ["candidate_first", "reference_first", "pointwise"].find(
+        (order) =>
+          judgeResults.some((item) => item.order === order && item.repeatedRun === 1) &&
+          judgeResults.some((item) => item.order === order && item.repeatedRun === 2),
+      );
+      const repeats = judgeResults.filter((item) => item.order === repeatedOrder);
+      if (!repeatedOrder || repeats.length !== 2) {
+        repeatedJudgeConsistent = false;
+        continue;
+      }
+      for (const dimension of STAGE3R_DIMENSIONS) {
+        const values = repeats.map((item) => item.scores[dimension]);
+        if (Math.max(...values) - Math.min(...values) > 1) repeatedJudgeConsistent = false;
+      }
+      if (new Set(repeats.map((item) => item.preference)).size !== 1) {
+        repeatedJudgeConsistent = false;
+      }
+      const flagSets = repeats.map((item) => [...item.criticalFlags].sort().join("|"));
+      if (new Set(flagSets).size !== 1) repeatedJudgeConsistent = false;
+    }
+  }
+  if (!repeatedJudgeConsistent) reasons.push("repeat_judge_inconsistent");
+
+  const hardFailure = flags.length > 0 ||
+    reasons.some((reason) =>
+      reason.startsWith("core_dimension_not_perfect") ||
+      reason === "runtime_final_response_not_delivery_eligible" ||
+      reason === "hera_factual_grounding_failed" ||
+      reason === "fewer_than_two_judge_providers" ||
+      reason === "missing_primary_judge_results" ||
+      reason === "generator_provider_is_sole_judge_provider",
+    );
+  const verdict: Stage3rVerdict = reasons.length === 0
+    ? "pass"
+    : hardFailure
+      ? "fail"
+      : "needs_review";
+  return {
+    verdict,
+    reasons: [...new Set(reasons)],
+    criticalFlags: flags,
+    dimensionMeans,
+    dimensionRanges,
+    meanOverall,
+    candidatePreferenceRate,
+    positionConsistent,
+    repeatedJudgeConsistent,
+  };
+}
+
+export interface Stage3rExecutionResult {
+  caseItem: Stage3rCase;
+  exactFinalResponse: string;
+  responseHash: string;
+  generatorModelId: string | null;
+  firstVerifierModelId: string | null;
+  finalVerifierModelId: string | null;
+  deterministicDeliveryEligible: boolean;
+  groundedHeraFacts: boolean;
+  judgeResults: Stage3rJudgeResult[];
+  dimensionMeans: Stage3rDimensionScores;
+  dimensionRanges: Stage3rDimensionScores;
+  meanOverall: number;
+  candidatePreferenceRate: number | null;
+  positionConsistent: boolean;
+  repeatedJudgeConsistent: boolean;
+  verdict: Stage3rVerdict;
+  reasons: string[];
+  criticalFlags: string[];
+  providerSendCount: 0;
+  duplicateFinalCandidates: 0;
+  modelUsage: JsonValue;
+  costUsd: number | null;
+  latencyMs: number;
+  modelCallCount: number;
+}
+
+export async function evaluateStage3rExecutionCase(
+  caseItem: Stage3rCase,
+  config: AiRuntimeConfig = getAiConfig(),
+): Promise<Stage3rExecutionResult> {
+  const started = Date.now();
+  const { context, history } = buildContext(caseItem);
+  const deterministic = classifyDeterministicRisk(caseItem.message);
+  let decision: AgentDecision;
+  let generatorModelId: string | null = null;
+  let firstVerifierModelId: string | null = null;
+  let responseEvidence: JsonValue = [];
+  const usageParts: ModelUsagePart[] = [];
+  let pipelineCalls = 0;
+
+  if (deterministic.risk === "black") {
+    decision = staticUrgentDecision(caseItem.message);
+  } else {
+    const generated = await generateReceptionistDecision({
+      repository: repository(),
+      context,
+      history,
+      interpreted: { text: caseItem.message },
+      config,
+    });
+    pipelineCalls += 1;
+    usageParts.push({
+      stage: "response",
+      modelId: generated.modelId,
+      usage: generated.usage,
+    });
+    generatorModelId = generated.modelId;
+    responseEvidence = asJson(generated.evidence);
+    const verification = await verifyReceptionistDecision({
+      originalMessage: caseItem.message,
+      history,
+      decision: generated.decision,
+      evidence: generated.evidence,
+      contactId: context.contact.id,
+      config,
+    });
+    pipelineCalls += 1;
+    usageParts.push({
+      stage: "first_verification",
+      modelId: verification.modelId,
+      usage: verification.usage,
+    });
+    firstVerifierModelId = verification.modelId;
+    if (!verification.approved && !verification.correctedReply) {
+      throw new Error("stage3r_first_verifier_rejected_without_correction");
+    }
+    if (!verification.handoffApproved && !verification.correctedHandoff) {
+      throw new Error("stage3r_first_verifier_rejected_handoff_without_correction");
+    }
+    decision = {
+      ...generated.decision,
+      reply: verification.approved
+        ? generated.decision.reply
+        : verification.correctedReply!,
+      risk: highestRisk(generated.decision.risk, verification.risk),
+      handoff: verification.handoffApproved
+        ? generated.decision.handoff
+        : verification.correctedHandoff!,
+    };
+  }
+
+  const grounding = assessGrounding(caseItem.message, decision);
+  if (!grounding.grounded && grounding.replyOverride) {
+    decision = {
+      ...decision,
+      reply: grounding.replyOverride,
+      confidence: Math.min(
+        decision.confidence,
+        grounding.confidenceCap ?? decision.confidence,
+      ),
+      sources: [],
+      factualBasis: ["no_factual_claim"],
+    };
+  }
+  const policy = assessPolicy(caseItem.message, decision, context.conversationRisk);
+  const handoff = assessHumanHandoff({
+    message: caseItem.message,
+    decision,
+    policy,
+    conversationId: context.message.conversationId,
+    sourceMessageId: context.message.id,
+  });
+  const draftFinalReply = cleanReply(
+    handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
+  );
+  const deterministicDraftQuality = assessFinalResponseQuality({
+    clientMessage: caseItem.message,
+    reply: draftFinalReply,
+    decision,
+    policy,
+    handoff,
+    risk: policy.risk,
+  });
+  const initialFinalVerification = await verifyFinalClientReply({
+    originalMessage: caseItem.message,
+    history,
+    draftReply: draftFinalReply,
+    decision,
+    evidence: responseEvidence,
+    policy,
+    handoff,
+    deterministicDraftQuality: asJson(deterministicDraftQuality),
+    contactId: context.contact.id,
+    config,
+  });
+  pipelineCalls += 1;
+  usageParts.push({
+    stage: "final_verification",
+    modelId: initialFinalVerification.modelId,
+    usage: initialFinalVerification.usage,
+  });
+  const exactFinalResponse = cleanReply(
+    initialFinalVerification.approved
+      ? draftFinalReply
+      : initialFinalVerification.correctedReply!,
+  );
+  const finalQuality = assessFinalResponseQuality({
+    clientMessage: caseItem.message,
+    reply: exactFinalResponse,
+    decision,
+    policy,
+    handoff,
+    risk: policy.risk,
+  });
+  const finalVerification = initialFinalVerification.approved
+    ? initialFinalVerification
+    : await verifyFinalClientReply({
+        originalMessage: caseItem.message,
+        history,
+        draftReply: exactFinalResponse,
+        decision,
+        evidence: responseEvidence,
+        policy,
+        handoff,
+        deterministicDraftQuality: asJson(finalQuality),
+        contactId: context.contact.id,
+        config,
+      });
+  if (finalVerification !== initialFinalVerification) {
+    pipelineCalls += 1;
+    usageParts.push({
+      stage: "corrected_final_verification",
+      modelId: finalVerification.modelId,
+      usage: finalVerification.usage,
+    });
+  }
+  const deterministicDeliveryEligible = finalQuality.passed && finalVerification.approved;
+  const responseHash = createHash("sha256").update(exactFinalResponse).digest("hex");
+
+  const judgeConfigurations = getStage3rJudgeConfigurations();
+  const judgePlan = buildStage3rJudgeExecutionPlan(
+    caseItem,
+    judgeConfigurations,
+  );
+  const instrumented = (
+    await Promise.all(
+      judgeConfigurations.map(async (configuration) => {
+        const configurationResults: Array<
+          Awaited<ReturnType<typeof judgeStage3rCaseWithUsage>>
+        > = [];
+        for (const execution of judgePlan.filter(
+          (item) => item.configuration.judgeId === configuration.judgeId,
+        )) {
+          configurationResults.push(
+            await judgeStage3rCaseWithUsage({
+              configuration: execution.configuration,
+              case: caseItem,
+              candidateResponse: exactFinalResponse,
+              responseHash,
+              generatorModelId,
+              approvedEvidence: {
+                sources: decision.sources,
+                factualBasis: decision.factualBasis,
+                grounding,
+                policy,
+                handoff,
+                policyVersion: POLICY_VERSION,
+                groundingPolicyVersion: GROUNDING_POLICY_VERSION,
+                handoffPolicyVersion: HUMAN_HANDOFF_POLICY_VERSION,
+                finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+                responsePromptVersion: RESPONSE_PROMPT_VERSION,
+                verifierPromptVersion: VERIFIER_PROMPT_VERSION,
+                finalVerifierPromptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+              },
+              order: execution.order,
+              repeatedRun: execution.repeatedRun,
+            }),
+          );
+        }
+        return configurationResults;
+      }),
+    )
+  ).flat();
+  const judgeResults = instrumented.map((item) => item.result);
+  usageParts.push(...instrumented.map((item, index) => ({
+    stage: `judge_${index + 1}`,
+    modelId: item.result.modelId,
+    usage: item.usage,
+  })));
+  const consensus = aggregateJudges({
+    caseItem,
+    results: judgeResults,
+    deterministicDeliveryEligible,
+    groundedHeraFacts: grounding.grounded || !grounding.required,
+    generatorModelId,
+  });
+  const tokens = usageTokens(usageParts);
+  const cost = estimatedPriorityCost(usageParts);
+  return {
+    caseItem,
+    exactFinalResponse,
+    responseHash,
+    generatorModelId,
+    firstVerifierModelId,
+    finalVerifierModelId: finalVerification.modelId,
+    deterministicDeliveryEligible,
+    groundedHeraFacts: grounding.grounded || !grounding.required,
+    judgeResults,
+    ...consensus,
+    providerSendCount: 0,
+    duplicateFinalCandidates: 0,
+    modelUsage: asJson({
+      parts: usageParts,
+      aggregateTokens: tokens,
+      pipelineCalls,
+      judgeCalls: instrumented.length,
+      pricingSnapshot: "vercel-ai-gateway-2026-08-27-priority-conservative",
+      pricing: PRIORITY_PRICE_SNAPSHOT_2026_08_27,
+      costCoverage: cost.costUsd === null
+        ? "incomplete"
+        : "successful_calls_reported_by_ai_sdk",
+      costIssues: cost.issues,
+    }),
+    costUsd: cost.costUsd,
+    latencyMs: Date.now() - started,
+    modelCallCount: pipelineCalls + instrumented.length,
+  };
+}

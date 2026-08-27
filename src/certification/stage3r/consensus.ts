@@ -55,7 +55,9 @@ function normalizedPreference(value: Stage3rJudgeResult["preference"]): string {
 }
 
 function positionConsistency(results: readonly Stage3rJudgeResult[]): boolean {
-  const pairwise = results.filter((result) => result.order !== "pointwise");
+  const pairwise = results.filter(
+    (result) => result.order !== "pointwise" && result.repeatedRun === 1,
+  );
   if (pairwise.length === 0) return true;
   if (!pairwise.some((result) => result.order === "candidate_first")) return false;
   if (!pairwise.some((result) => result.order === "reference_first")) return false;
@@ -71,16 +73,30 @@ function positionConsistency(results: readonly Stage3rJudgeResult[]): boolean {
   for (const group of groups.values()) {
     const forward = group.filter((item) => item.order === "candidate_first");
     const reverse = group.filter((item) => item.order === "reference_first");
-    if (forward.length === 0 || reverse.length === 0) continue;
+    if (forward.length === 0 || reverse.length === 0) return false;
     const forwardPreferences = new Set(forward.map((item) => normalizedPreference(item.preference)));
     const reversePreferences = new Set(reverse.map((item) => normalizedPreference(item.preference)));
     const shared = [...forwardPreferences].some((preference) => reversePreferences.has(preference));
     if (!shared) return false;
+    for (const dimension of STAGE3R_DIMENSIONS) {
+      if (
+        Math.abs(
+          (forward[0]?.scores[dimension] ?? 0) -
+            (reverse[0]?.scores[dimension] ?? 0),
+        ) > 1
+      ) {
+        return false;
+      }
+    }
   }
   return true;
 }
 
-function repeatedJudgeConsistency(results: readonly Stage3rJudgeResult[]): boolean {
+function repeatedJudgeConsistency(
+  results: readonly Stage3rJudgeResult[],
+  highConsequence: boolean,
+): boolean {
+  if (!highConsequence) return true;
   const groups = new Map<string, Stage3rJudgeResult[]>();
   for (const result of results) {
     const key = `${result.judgeId}:${result.provider}:${result.modelId}:${result.order}`;
@@ -89,33 +105,45 @@ function repeatedJudgeConsistency(results: readonly Stage3rJudgeResult[]): boole
     groups.set(key, existing);
   }
 
+  const repeatedJudges = new Set<string>();
   for (const group of groups.values()) {
-    if (group.length < 2) continue;
+    if (
+      !group.some((item) => item.repeatedRun === 1) ||
+      !group.some((item) => item.repeatedRun === 2)
+    ) {
+      continue;
+    }
+    repeatedJudges.add(group[0]!.judgeId);
     const preferences = new Set(group.map((item) => normalizedPreference(item.preference)));
-    if (preferences.size > 1 && !preferences.has("tie")) return false;
+    if (preferences.size > 1) return false;
     for (const dimension of STAGE3R_DIMENSIONS) {
       const values = group.map((item) => item.scores[dimension]);
       if (Math.max(...values) - Math.min(...values) > 1) return false;
     }
   }
-  return true;
+  return repeatedJudges.size === new Set(results.map((item) => item.judgeId)).size;
 }
 
 export function assessStage3rCase(input: {
   caseId: string;
   responseHash: string;
   hasReferenceResponse: boolean;
+  highConsequence: boolean;
   judgeResults: readonly Stage3rJudgeResult[];
 }): Stage3rCaseAssessment {
   const reasons: string[] = [];
   const results = input.judgeResults.filter(
     (result) => result.responseHash === input.responseHash,
   );
+  const scoredResults = results.filter((result) => result.repeatedRun === 1);
   const judges = new Set(results.map((result) => result.judgeId));
   const providers = new Set(results.map((result) => result.provider.toLowerCase()));
   const criticalFlags = [...new Set(results.flatMap((result) => result.criticalFlags))].sort();
   const positionConsistent = positionConsistency(results);
-  const repeatedConsistent = repeatedJudgeConsistency(results);
+  const repeatedConsistent = repeatedJudgeConsistency(
+    results,
+    input.highConsequence,
+  );
   const generatorProviders = new Set(
     results
       .map((result) => modelProvider(result.generatorModelId))
@@ -125,6 +153,7 @@ export function assessStage3rCase(input: {
     (provider) => !generatorProviders.has(provider),
   );
 
+  if (scoredResults.length === 0) reasons.push("missing_primary_judge_results");
   if (!input.responseHash.trim()) reasons.push("missing_response_hash");
   if (results.length !== input.judgeResults.length) reasons.push("judge_response_hash_mismatch");
   if (judges.size < 3) reasons.push("fewer_than_three_judge_configurations");
@@ -137,7 +166,7 @@ export function assessStage3rCase(input: {
   const dimensionMeans = emptyScores();
   const dimensionRanges = emptyScores();
   for (const dimension of STAGE3R_DIMENSIONS) {
-    const values = results.map((result) => result.scores[dimension]);
+    const values = scoredResults.map((result) => result.scores[dimension]);
     dimensionMeans[dimension] = round(mean(values));
     dimensionRanges[dimension] = values.length
       ? round(Math.max(...values) - Math.min(...values))
@@ -156,13 +185,16 @@ export function assessStage3rCase(input: {
     }
   }
 
-  const allScores = results.flatMap((result) =>
+  const allScores = scoredResults.flatMap((result) =>
     STAGE3R_DIMENSIONS.map((dimension) => result.scores[dimension]),
   );
   const meanOverall = round(mean(allScores));
   if (meanOverall < 4.7) reasons.push("overall_mean_below_4_7");
 
-  const pairwise = results.filter((result) => result.preference !== "not_applicable");
+  const pairwise = results.filter(
+    (result) =>
+      result.preference !== "not_applicable" && result.repeatedRun === 1,
+  );
   const candidatePreferenceRate = pairwise.length
     ? round(
         pairwise.reduce((sum, result) => {
@@ -186,6 +218,7 @@ export function assessStage3rCase(input: {
       reason === "fewer_than_three_judge_configurations" ||
       reason === "fewer_than_two_model_providers" ||
       reason === "no_provider_independent_from_generator" ||
+      reason === "missing_primary_judge_results" ||
       reason === "critical_quality_or_safety_flag" ||
       reason.startsWith("invalid_score:") ||
       reason.startsWith("core_dimension_not_perfect:"),

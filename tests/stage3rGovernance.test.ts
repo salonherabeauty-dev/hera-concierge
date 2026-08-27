@@ -232,7 +232,11 @@ test("the gate register records Stage 3-R as approved but not passed or live", a
   assert.equal(stageThree?.evidence.mandatoryManualPanelReplaced, true);
   assert.equal(stageThree?.evidence.ownerFinalAuthorisationStillRequired, true);
   assert.equal(stageThree?.evidence.targetExactFinalResponses, 2010);
-  assert.ok(stageThree?.blockers.includes("stage3r_database_migration_not_yet_applied"));
+  assert.equal(stageThree?.evidence.databaseMigrationApplied, true);
+  assert.equal(stageThree?.evidence.databaseMigrationLedgerVersion, "20260827083233");
+  assert.ok(
+    !stageThree?.blockers.includes("stage3r_database_migration_not_yet_applied"),
+  );
   assert.ok(
     stageThree?.blockers.includes(
       "full_2010_case_release_candidate_run_not_yet_completed",

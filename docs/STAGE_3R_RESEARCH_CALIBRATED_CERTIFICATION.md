@@ -4,6 +4,11 @@
 
 **Owner-approved and in progress. Not yet passed. Not approved for live Production.**
 
+Execution-integrity version `hera-stage3r-2026-08-27.1` supersedes the original
+`2026-08-26.1` harness by enforcing order reversal within every judge configuration,
+separating repeat evidence from scored means, and replacing the nonfunctional Preview
+cron design with protected manual execution. Final owner authorisation remains required.
+
 Neo Chin Chuan approved replacing the mandatory 80-review human panel with a substantially larger research-calibrated automated certification programme on 26 August 2026. The owner still retains the final certification decision after the complete evidence report has passed every machine threshold.
 
 Stage 3-R does not enable WhatsApp provider sending, Timely writes, refunds, vouchers, compensation, privacy completion, medical diagnosis or any other external authority. Stage 2 remains the governing factual and action boundary.
@@ -98,8 +103,8 @@ Minimum controls:
 - at least one judge provider independent from the generator provider;
 - hidden response-model identity;
 - blinded response labels;
-- candidate/reference order reversal for gold cases;
-- repeated judging for high-consequence cases;
+- candidate/reference order reversal by every judge configuration for gold cases;
+- one repeated identical presentation per judge for high-consequence cases;
 - material disagreement becomes `needs_review` or `fail`;
 - no critical failure can be averaged away.
 
@@ -160,6 +165,27 @@ STAGE3R_DRY_RUN=true npm run certify:stage3r
 ```
 
 A bounded engineering batch defaults to 20 cases and refuses more than 100 paid cases unless the explicit full-run confirmation is present.
+
+The current 2,010-case corpus requires at least **16,848 model calls** under the
+corrected per-configuration order-reversal plan: 5,772 pipeline calls and 11,076
+judge calls. Corrected-response re-verification and structured-output fallback can
+increase the actual count, so cost and elapsed time must be measured with a bounded
+calibration before the full run is authorised.
+
+The resumable Preview worker is manually invoked, accepts only `POST`, requires a
+separate `STAGE3R_EXECUTION_TOKEN`, and refuses non-Preview, non-authoritative-branch,
+live-confirmation or non-shadow execution. The database contract refuses calibration
+sets above 100 cases; the protected configuration endpoint is narrower at 10 cases
+and US$25. Calibration forces concurrency to one, records all available model usage
+and stops claiming work when its conservative estimated-cost ceiling is reached or
+cost instrumentation is incomplete. It is deliberately not a Vercel Cron job,
+because Vercel Cron executes only on Production deployments.
+
+The worker ceiling is an execution guard, not a representation of the final Vercel
+invoice: a case already in flight can finish above the remaining estimate, and a
+provider attempt that fails before the AI SDK returns usage may not be attributable
+to the case record. Calibration therefore also requires the project-level prepaid
+balance or spend control to remain bounded with automatic reload disabled.
 
 The complete 2,010-case run requires:
 
