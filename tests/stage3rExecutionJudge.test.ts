@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { parseStage3rJudgeOutputText } from "../src/certification/stage3r/executionJudge.js";
+import {
+  parseStage3rJudgeOutputCause,
+  parseStage3rJudgeOutputText,
+  parseStage3rJudgeOutputValue,
+  stage3rJudgeOutputDiagnostic,
+} from "../src/certification/stage3r/judgeOutput.js";
 
 const evaluatorUrl = new URL(
   "../src/certification/stage3r/executionEvaluator.ts",
@@ -44,6 +49,37 @@ test("judge output repair accepts only schema-valid bounded JSON", () => {
   assert.equal(parseStage3rJudgeOutputText("not json"), null);
 });
 
+test("judge recovery handles only semantics-preserving Anthropic label casing", () => {
+  assert.deepEqual(
+    parseStage3rJudgeOutputValue({
+      ...validJudgeOutput,
+      preferredLabel: "a",
+      summary: "This unused legacy field is ignored.",
+    }),
+    validJudgeOutput,
+  );
+  assert.deepEqual(
+    parseStage3rJudgeOutputCause({
+      value: { ...validJudgeOutput, preferredLabel: "TIE" },
+    }),
+    { ...validJudgeOutput, preferredLabel: "tie" },
+  );
+  assert.equal(
+    parseStage3rJudgeOutputValue({
+      ...validJudgeOutput,
+      preferredLabel: "candidate",
+    }),
+    null,
+  );
+  assert.match(
+    stage3rJudgeOutputDiagnostic({
+      text: JSON.stringify({ scores: {} }),
+      cause: null,
+    }),
+    /scores\./,
+  );
+});
+
 test("invalid judge structure becomes cost-accounted fail-closed evidence", async () => {
   const [judge, evaluator] = await Promise.all([
     readFile(judgeUrl, "utf8"),
@@ -52,6 +88,7 @@ test("invalid judge structure becomes cost-accounted fail-closed evidence", asyn
 
   assert.match(judge, /NoObjectGeneratedError\.isInstance/);
   assert.match(judge, /error\.usage/);
+  assert.match(judge, /parseStage3rJudgeOutputCause/);
   assert.match(judge, /judge_structured_output_invalid/);
   assert.match(judge, /structuredOutputValid:\s*false/);
   assert.match(evaluator, /if \(!judged\.structuredOutputValid\) break/);

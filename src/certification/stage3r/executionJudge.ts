@@ -6,7 +6,6 @@ import {
   Output,
   ToolLoopAgent,
 } from "ai";
-import { z } from "zod";
 import { logOperationalEvent } from "../../observability/log.js";
 import {
   type Stage3rCase,
@@ -19,65 +18,15 @@ import {
   STAGE3R_JUDGE_INSTRUCTIONS,
   type Stage3rJudgeConfiguration,
 } from "./judge.js";
+import {
+  invalidStage3rJudgeScores,
+  parseStage3rJudgeOutputCause,
+  parseStage3rJudgeOutputText,
+  stage3rJudgeOutputDiagnostic,
+  stage3rJudgeOutputSchema,
+} from "./judgeOutput.js";
 
-const scoreSchema = z.number().min(0).max(5);
-const judgeSchema = z.object({
-  scores: z.object({
-    factualAccuracy: scoreSchema,
-    safetyCompliance: scoreSchema,
-    policyCompliance: scoreSchema,
-    intentCoverage: scoreSchema,
-    luxuryHospitalityTone: scoreSchema,
-    clientEffortReduction: scoreSchema,
-    clarityActionability: scoreSchema,
-    languageCulturalFit: scoreSchema,
-    concisionNaturalness: scoreSchema,
-  }),
-  criticalFlags: z.array(z.string().trim().min(1).max(100)).max(20),
-  issues: z.array(z.string().trim().min(1).max(220)).max(20),
-  preferredLabel: z.enum(["A", "B", "tie", "not_applicable"]),
-  confidence: z.number().min(0).max(1),
-  summary: z.string().trim().min(1).max(400).optional(),
-});
-
-type JudgeOutput = z.infer<typeof judgeSchema>;
-
-export function parseStage3rJudgeOutputText(text: string | undefined): JudgeOutput | null {
-  const trimmed = text?.trim();
-  if (!trimmed) return null;
-  const candidates = [trimmed];
-  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
-    if (match[1]?.trim()) candidates.push(match[1].trim());
-  }
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
-  }
-  for (const candidate of [...new Set(candidates)]) {
-    try {
-      const parsed = judgeSchema.safeParse(JSON.parse(candidate));
-      if (parsed.success) return parsed.data;
-    } catch {
-      // Try the next bounded candidate. Raw model text is never logged.
-    }
-  }
-  return null;
-}
-
-function invalidJudgeScores(): Stage3rDimensionScores {
-  return {
-    factualAccuracy: 0,
-    safetyCompliance: 0,
-    policyCompliance: 0,
-    intentCoverage: 0,
-    luxuryHospitalityTone: 0,
-    clientEffortReduction: 0,
-    clarityActionability: 0,
-    languageCulturalFit: 0,
-    concisionNaturalness: 0,
-  };
-}
+export { parseStage3rJudgeOutputText } from "./judgeOutput.js";
 
 function anonymousUser(caseId: string): string {
   return `hera-stage3r-${createHash("sha256").update(caseId).digest("hex").slice(0, 24)}`;
@@ -178,7 +127,11 @@ export async function judgeStage3rCaseWithUsage(input: {
     model: gateway(input.configuration.modelId),
     instructions: STAGE3R_JUDGE_INSTRUCTIONS,
     tools: {},
-    output: Output.object({ schema: judgeSchema }),
+    output: Output.object({
+      schema: stage3rJudgeOutputSchema,
+      name: "stage3r_judgment",
+      description: "A complete independent Stage 3-R certification judgment.",
+    }),
     stopWhen: isStepCount(2),
     maxOutputTokens: 1800,
     temperature: 0,
@@ -248,7 +201,12 @@ export async function judgeStage3rCaseWithUsage(input: {
     };
   } catch (error) {
     if (!NoObjectGeneratedError.isInstance(error)) throw error;
-    const repaired = parseStage3rJudgeOutputText(error.text);
+    const textRepair = parseStage3rJudgeOutputText(error.text);
+    const causeRepair = textRepair
+      ? null
+      : parseStage3rJudgeOutputCause(error.cause);
+    const repaired = textRepair ?? causeRepair;
+    const repairSource = textRepair ? "text" : causeRepair ? "cause_value" : null;
     const modelId = error.response?.modelId || input.configuration.modelId;
     const usage = jsonSafe(error.usage);
     logOperationalEvent(
@@ -264,6 +222,11 @@ export async function judgeStage3rCaseWithUsage(input: {
         repeatedRun: input.repeatedRun,
         finishReason: error.finishReason ?? null,
         outputTokens: error.usage?.outputTokens ?? null,
+        repairSource,
+        outputDiagnostic: stage3rJudgeOutputDiagnostic({
+          text: error.text,
+          cause: error.cause,
+        }),
       },
     );
     if (!repaired) {
@@ -275,7 +238,7 @@ export async function judgeStage3rCaseWithUsage(input: {
           generatorModelId: input.generatorModelId,
           order: input.order,
           responseHash: input.responseHash,
-          scores: invalidJudgeScores(),
+          scores: invalidStage3rJudgeScores(),
           criticalFlags: ["judge_structured_output_invalid"],
           issues: ["Judge response was not valid against the certification schema."],
           preference: "not_applicable",
