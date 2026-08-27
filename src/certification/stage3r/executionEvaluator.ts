@@ -214,6 +214,11 @@ const PRIORITY_PRICE_SNAPSHOT_2026_08_27: Readonly<
     output: 0.00005,
     basis: "Vercel AI Gateway fast-tier conservative ceiling",
   },
+  "anthropic/claude-sonnet-5": {
+    input: 0.000003,
+    output: 0.000015,
+    basis: "Vercel AI Gateway maximum listed provider rate on 2026-08-27",
+  },
 };
 
 function usageTokens(value: unknown): { input: number; output: number; total: number } {

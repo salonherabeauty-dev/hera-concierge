@@ -84,6 +84,11 @@ test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp
   assert.match(source, /EMERGENCY_CALIBRATION_COST_CAP_USD = 10/);
   assert.match(source, /emergency_calibration_scope_mismatch/);
   assert.match(source, /emergency_access_requires_calibration_run/);
+  assert.match(source, /stage3r_run_deployment_identity_mismatch/);
+  assert.match(source, /certification_version,release_commit,deployment_url,database_project_ref,corpus_version/);
+  assert.match(source, /runIdentity\.release_commit !== currentIdentity\.releaseCommit/);
+  assert.match(source, /runIdentity\.deployment_url !== currentIdentity\.deploymentUrl/);
+  assert.match(source, /runIdentity\.corpus_version !== STAGE3R_CORPUS_VERSION/);
   assert.doesNotMatch(source, /EMERGENCY_CALIBRATION_TOKEN\s*=/);
   assert.match(source, /request\.method !== "POST"/);
   assert.match(source, /stage3r_calibration_requires_1_to_10_cases/);
@@ -124,4 +129,7 @@ test("one queue item evaluates one exact final response and records forensic evi
   assert.match(source, /providerSendCount:\s*0/);
   assert.match(source, /duplicateFinalCandidates:\s*0/);
   assert.match(source, /modelCallCount/);
+  assert.match(source, /anthropic\/claude-sonnet-5/);
+  assert.match(source, /input:\s*0\.000003/);
+  assert.match(source, /output:\s*0\.000015/);
 });

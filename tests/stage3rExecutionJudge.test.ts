@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  mapStage3rJudgeOutput,
   parseStage3rJudgeOutputCause,
   parseStage3rJudgeOutputText,
   parseStage3rJudgeOutputValue,
   stage3rJudgeOutputDiagnostic,
+  type Stage3rJudgeOutput,
 } from "../src/certification/stage3r/judgeOutput.js";
 
 const evaluatorUrl = new URL(
@@ -17,20 +19,27 @@ const judgeUrl = new URL(
   import.meta.url,
 );
 
-const validJudgeOutput = {
-  scores: {
-    factualAccuracy: 5,
-    safetyCompliance: 5,
-    policyCompliance: 5,
-    intentCoverage: 5,
-    luxuryHospitalityTone: 5,
-    clientEffortReduction: 5,
-    clarityActionability: 5,
-    languageCulturalFit: 5,
-    concisionNaturalness: 5,
-  },
+const validScores = {
+  factualAccuracy: 5,
+  safetyCompliance: 5,
+  policyCompliance: 5,
+  intentCoverage: 5,
+  luxuryHospitalityTone: 5,
+  clientEffortReduction: 5,
+  clarityActionability: 5,
+  languageCulturalFit: 5,
+  concisionNaturalness: 5,
+};
+
+const validReview = {
+  scores: validScores,
   criticalFlags: [],
   issues: [],
+};
+
+const validJudgeOutput: Stage3rJudgeOutput = {
+  responseA: validReview,
+  responseB: validReview,
   preferredLabel: "A",
   confidence: 0.95,
 };
@@ -53,13 +62,16 @@ test("judge output accepts bounded detailed issue evidence", () => {
   const detailedIssue = "Detailed independent finding. ".repeat(40).trim();
   const parsed = parseStage3rJudgeOutputValue({
     ...validJudgeOutput,
-    issues: [detailedIssue],
+    responseA: { ...validReview, issues: [detailedIssue] },
   });
-  assert.deepEqual(parsed, { ...validJudgeOutput, issues: [detailedIssue] });
+  assert.deepEqual(parsed, {
+    ...validJudgeOutput,
+    responseA: { ...validReview, issues: [detailedIssue] },
+  });
   assert.equal(
     parseStage3rJudgeOutputValue({
       ...validJudgeOutput,
-      issues: ["x".repeat(4001)],
+      responseA: { ...validReview, issues: ["x".repeat(4001)] },
     }),
     null,
   );
@@ -68,31 +80,46 @@ test("judge output accepts bounded detailed issue evidence", () => {
 test("judge output conservatively caps only a one-point score overflow", () => {
   const overflow = {
     ...validJudgeOutput,
-    scores: { ...validJudgeOutput.scores, concisionNaturalness: 6 },
+    responseA: {
+      ...validReview,
+      scores: { ...validScores, concisionNaturalness: 6 },
+    },
   };
   assert.deepEqual(parseStage3rJudgeOutputCause({ value: overflow }), {
     ...overflow,
-    scores: { ...overflow.scores, concisionNaturalness: 5 },
-    issues: ["schema_repair:concisionNaturalness:6:capped_to_5"],
+    responseA: {
+      ...overflow.responseA,
+      scores: { ...validScores, concisionNaturalness: 5 },
+      issues: ["schema_repair:concisionNaturalness:6:capped_to_5"],
+    },
   });
   assert.equal(
     parseStage3rJudgeOutputValue({
       ...validJudgeOutput,
-      scores: { ...validJudgeOutput.scores, concisionNaturalness: 6.01 },
+      responseA: {
+        ...validReview,
+        scores: { ...validScores, concisionNaturalness: 6.01 },
+      },
     }),
     null,
   );
   assert.equal(
     parseStage3rJudgeOutputValue({
       ...validJudgeOutput,
-      scores: { ...validJudgeOutput.scores, concisionNaturalness: -0.01 },
+      responseA: {
+        ...validReview,
+        scores: { ...validScores, concisionNaturalness: -0.01 },
+      },
     }),
     null,
   );
   assert.equal(
     parseStage3rJudgeOutputValue({
       ...validJudgeOutput,
-      scores: { ...validJudgeOutput.scores, concisionNaturalness: "6" },
+      responseA: {
+        ...validReview,
+        scores: { ...validScores, concisionNaturalness: "6" },
+      },
     }),
     null,
   );
@@ -122,10 +149,74 @@ test("judge recovery handles only semantics-preserving Anthropic label casing", 
   );
   assert.match(
     stage3rJudgeOutputDiagnostic({
-      text: JSON.stringify({ scores: {} }),
+      text: JSON.stringify({ responseA: { scores: {} } }),
       cause: null,
     }),
-    /scores\./,
+    /responseA\.scores\./,
+  );
+});
+
+test("blind reviews map only the displayed candidate after judgment", () => {
+  const weakerReview = {
+    ...validReview,
+    scores: { ...validScores, policyCompliance: 4 },
+    issues: ["Missing one mandated policy element."],
+  };
+  const output = {
+    ...validJudgeOutput,
+    responseA: validReview,
+    responseB: weakerReview,
+    preferredLabel: "A" as const,
+  };
+
+  const candidateFirst = mapStage3rJudgeOutput({
+    output,
+    order: "candidate_first",
+    hasReference: true,
+  });
+  assert.equal(candidateFirst?.candidateReview.scores.policyCompliance, 5);
+  assert.equal(candidateFirst?.comparison.materialPreferredLabel, "A");
+
+  const referenceFirst = mapStage3rJudgeOutput({
+    output,
+    order: "reference_first",
+    hasReference: true,
+  });
+  assert.equal(referenceFirst?.candidateReview.scores.policyCompliance, 4);
+  assert.equal(referenceFirst?.comparison.materialPreferredLabel, "A");
+});
+
+test("two send-ready blind reviews become a material tie while raw preference remains", () => {
+  const mapped = mapStage3rJudgeOutput({
+    output: { ...validJudgeOutput, preferredLabel: "B" },
+    order: "candidate_first",
+    hasReference: true,
+  });
+  assert.equal(mapped?.comparison.rawPreferredLabel, "B");
+  assert.equal(mapped?.comparison.materialPreferredLabel, "tie");
+  assert.equal(mapped?.comparison.materialPreferenceBasis, "both_send_ready");
+});
+
+test("pointwise output requires a null second review and no pairwise preference", () => {
+  assert.ok(
+    mapStage3rJudgeOutput({
+      output: {
+        responseA: validReview,
+        responseB: null,
+        preferredLabel: "not_applicable",
+        confidence: 0.95,
+      },
+      order: "pointwise",
+      hasReference: false,
+    }),
+  );
+  assert.equal(
+    mapStage3rJudgeOutput({
+      output: validJudgeOutput,
+      order: "pointwise",
+      hasReference: false,
+    }),
+    null,
   );
 });
 

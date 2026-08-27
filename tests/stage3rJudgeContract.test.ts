@@ -25,16 +25,30 @@ const judgeUrl = new URL(
 );
 
 test("the Stage 3-R judge reviews exact final client text and resists model and position bias", () => {
-  assert.equal(STAGE3R_JUDGE_PROMPT_VERSION, "hera-stage3r-judge-2026-08-26.1");
+  assert.equal(STAGE3R_JUDGE_PROMPT_VERSION, "hera-stage3r-judge-2026-08-27.2");
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /exact final client-facing response/i);
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /placed first/i);
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /your own writing style/i);
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /reference response is a calibration anchor/i);
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /critical failure cannot be averaged/i);
+  assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /independently score Response A/i);
+  assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /Never lower one response's scores/i);
+  assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /preferredLabel tie when both responses are equally send-ready/i);
   assert.deepEqual(stage3rJudgeScoreFields(), STAGE3R_DIMENSIONS);
 });
 
 test("judge configuration requires three configurations and at least two providers", () => {
+  const defaults = getStage3rJudgeConfigurations({});
+  assert.deepEqual(
+    defaults.map((item) => item.modelId),
+    [
+      "anthropic/claude-opus-5",
+      "openai/gpt-5.6-terra",
+      "anthropic/claude-sonnet-5",
+    ],
+  );
+  assert.equal(new Set(defaults.map((item) => item.modelId)).size, 3);
+
   const configurations = getStage3rJudgeConfigurations({
     HERA_STAGE3R_JUDGE_MODELS:
       "anthropic/claude-opus-5,openai/gpt-5.6-terra,anthropic/claude-opus-5",
@@ -104,10 +118,11 @@ test("blind labels and model identity withholding are part of the executable jud
 
   assert.match(source, /responseA/);
   assert.match(source, /responseB/);
-  assert.match(source, /blindOrder/);
-  assert.match(source, /supportedBlindOrders:\s*STAGE3R_BLIND_ORDERS/);
+  assert.doesNotMatch(source, /blindOrder:\s*input\.order/);
+  assert.match(source, /blindLabelsOnly:\s*true/);
   assert.match(source, /responseModelIdentityWithheld:\s*true/);
   assert.match(source, /referenceIsNotAutomaticallyCorrect:\s*true/);
+  assert.match(source, /mapStage3rJudgeOutput/);
   assert.match(source, /candidate_first/);
   assert.match(source, /reference_first/);
 });

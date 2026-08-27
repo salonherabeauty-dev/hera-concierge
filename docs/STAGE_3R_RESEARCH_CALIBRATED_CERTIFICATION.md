@@ -4,16 +4,18 @@
 
 **Owner-approved and in progress. Not yet passed. Not approved for live Production.**
 
-Execution-integrity version `hera-stage3r-2026-08-27.5` supersedes
-`hera-stage3r-2026-08-27.4`. It retains all multi-provider, order-reversal,
-repeat-evidence, non-inferiority and bounded-output controls. Calibration exposed a
-substantive black-risk containment defect: a final verifier could replace deterministic
-emergency wording and omit Singapore emergency number 995 or the instruction not to
-wait for the salon. Current-turn black-risk replies are now deterministic in English,
-Chinese, Malay and Tamil; they require 995, immediate cessation of the product or
-service, and emergency care before salon follow-up. Model corrections cannot replace
-this containment, and the final quality gate independently enforces every element.
-Final owner authorisation remains required.
+Execution-integrity version `hera-stage3r-2026-08-27.6` supersedes
+`hera-stage3r-2026-08-27.5`. It retains the deterministic black-risk containment added
+in version `.5` and repairs a calibration-evaluator ambiguity exposed by live evidence.
+Each blinded response is now scored independently under its displayed label; only after
+the judgment returns is the correct review mapped to the candidate. A defect in a gold
+reference therefore cannot reduce the candidate score. Both blind-label reviews, the
+raw pairwise preference and the governed material preference are preserved. When both
+responses independently meet the send-ready contract, their material outcome is a tie
+even if a judge expresses a purely stylistic raw preference. The emergency gold anchor
+is aligned with the current deterministic non-diagnosis wording, and a run may no longer
+continue on a deployment, commit, corpus or certification version different from the
+identity recorded when it was created. Final owner authorisation remains required.
 
 Neo Chin Chuan approved replacing the mandatory 80-review human panel with a substantially larger research-calibrated automated certification programme on 26 August 2026. The owner still retains the final certification decision after the complete evidence report has passed every machine threshold.
 
@@ -106,9 +108,11 @@ Minimum controls:
 
 - three distinct judge configurations;
 - at least two providers;
+- three default judge models (Claude Opus 5, GPT-5.6 Terra and Claude Sonnet 5);
 - at least one judge provider independent from the generator provider;
 - hidden response-model identity;
 - blinded response labels;
+- independent scoring of Response A and Response B before candidate mapping;
 - candidate/reference order reversal by every judge configuration for gold cases;
 - one repeated identical presentation per judge for high-consequence cases;
 - material disagreement becomes `needs_review` or `fail`;
@@ -136,6 +140,13 @@ tie-to-decisive transition after order reversal is retained in the raw judge evi
 but is not a material reversal; candidate-to-reference is material and cannot pass.
 Score movement above one point, missing reversal evidence, critical flags, grounding
 failure and all core-dimension failures remain fail-closed.
+
+For every pairwise call, `responseA` and `responseB` contain separate scores, flags and
+issues. The runtime stores both reviews and the raw label preference, then maps only the
+candidate review into case-level score aggregation. If both reviews independently meet
+all send-ready thresholds, the governed material preference is `tie`; the raw preference
+remains available for strict bias analysis and cannot silently replace the material
+non-inferiority result.
 
 ## Fail-closed run thresholds
 
