@@ -7,6 +7,10 @@ const migrationUrl = new URL(
   "../supabase/migrations/20260826000001_add_stage3r_execution_orchestration.sql",
   import.meta.url,
 );
+const claimRepairUrl = new URL(
+  "../supabase/migrations/20260827000001_fix_stage3r_claim_case_ambiguity.sql",
+  import.meta.url,
+);
 const workerUrl = new URL("../api/stage3r/worker.ts", import.meta.url);
 const evaluatorUrl = new URL(
   "../src/certification/stage3r/executionEvaluator.ts",
@@ -30,6 +34,23 @@ test("PostgreSQL accepts the Stage 3-R resumable execution migration", async () 
   assert.match(sql, /immutable execution evidence/i);
   assert.match(sql, /create or replace function public\.ai_stage3r_start_calibration/i);
   assert.match(sql, /paidCallsStarted', false/i);
+});
+
+test("the Stage 3-R claim repair qualifies output-column name collisions", async () => {
+  const [baseSql, repairSql] = await Promise.all([
+    readFile(migrationUrl, "utf8"),
+    readFile(claimRepairUrl, "utf8"),
+  ]);
+
+  assert.doesNotThrow(() => parse(repairSql));
+  for (const sql of [baseSql, repairSql]) {
+    assert.match(sql, /update public\.ai_stage3r_case_queue as stale/i);
+    assert.match(sql, /stale\.attempts >= stale\.max_attempts/i);
+    assert.match(sql, /stale\.locked_at < now\(\)/i);
+    assert.doesNotMatch(sql, /case when attempts >= max_attempts/i);
+  }
+  assert.match(repairSql, /revoke all on function public\.ai_stage3r_claim_case/i);
+  assert.match(repairSql, /grant execute[\s\S]*to service_role/i);
 });
 
 test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp", async () => {
