@@ -5,7 +5,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { buildStage3rCorpus } from "../../src/certification/stage3r/corpus.js";
 import { evaluateStage3rExecutionCase } from "../../src/certification/stage3r/executionEvaluator.js";
 import { getStage3rJudgeConfigurations } from "../../src/certification/stage3r/judge.js";
-import { getAiConfig, getDatabaseConfig, getOperationsConfig } from "../../src/config.js";
+import { getAiConfig, getDatabaseConfig } from "../../src/config.js";
 import {
   logOperationalEvent,
   safeErrorFields,
@@ -172,8 +172,8 @@ function requirePreviewSafety(): void {
   if (!allowedBranches.has(process.env.VERCEL_GIT_COMMIT_REF ?? "")) {
     throw new Error("stage3r_worker_requires_authoritative_staging_branch");
   }
-  const operations = getOperationsConfig();
-  if (operations.sendMode !== "shadow") {
+  const sendMode = process.env.WHATSAPP_SEND_MODE?.trim() || "shadow";
+  if (sendMode !== "shadow") {
     throw new Error("stage3r_worker_requires_shadow_mode");
   }
   if (process.env.WHATSAPP_LIVE_CONFIRMATION === "ENABLE_HERA_WHATSAPP_LIVE") {
