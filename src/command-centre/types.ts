@@ -194,7 +194,7 @@ export interface ConversationDetail {
 
 export interface CommandCentreDashboard {
   generatedAt: string;
-  mode: "shadow" | "live";
+  mode: "shadow" | "pilot" | "live";
   readiness: "healthy" | "attention" | "critical";
   counts: {
     needsAction: number;

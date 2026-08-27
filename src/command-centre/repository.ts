@@ -559,7 +559,7 @@ export class SupabaseCommandCentreRepository {
     return { conversation, messages, tasks, notes, incidents, candidates, decisions, jobs };
   }
 
-  async dashboard(mode: "shadow" | "live"): Promise<CommandCentreDashboard> {
+  async dashboard(mode: "shadow" | "pilot" | "live"): Promise<CommandCentreDashboard> {
     const [tasks, conversations, jobsActive, jobsDead, outboxActive, outboxDead, providerSends, incidents, qualityResult, auditResult] =
       await Promise.all([
         this.listTasks({ status: "open", limit: 100 }),

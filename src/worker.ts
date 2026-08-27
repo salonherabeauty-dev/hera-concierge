@@ -15,6 +15,7 @@ import {
   getMetaConfig,
   getOperationsConfig,
   getWhatsAppProviderConfig,
+  type WhatsAppSendMode,
 } from "./config.js";
 import {
   SupabaseReceptionistRepository,
@@ -72,7 +73,7 @@ interface WorkerRuntime {
   repository: ReceptionistRepository;
   whatsapp: WhatsAppTransport;
   ai: AiRuntimeConfig;
-  sendMode: "shadow" | "live";
+  sendMode: WhatsAppSendMode;
   managementWaId: string | null;
   authorizeOutbound?: (
     outboxId: string,
@@ -747,7 +748,7 @@ async function queueDeadLetterFallback(
 export async function drainOutbox(input: {
   repository: ReceptionistRepository;
   whatsapp?: WhatsAppTransport;
-  sendMode: "shadow" | "live";
+  sendMode: WhatsAppSendMode;
   workerId: string;
   limit?: number;
   authorizeOutbound?: (
@@ -771,6 +772,23 @@ export async function drainOutbox(input: {
     if (input.sendMode === "shadow" || item.authorization !== "auto") {
       await input.repository.markOutboxShadowed(item.id);
       outboxShadowed += 1;
+      continue;
+    }
+
+    if (input.sendMode === "pilot" && !input.authorizeOutbound) {
+      const error = new Error(
+        "Internal pilot mode requires the durable database authorization guard",
+      );
+      error.name = "InternalPilotGuardMissingError";
+      await input.repository.retryOutbox(item, error, false);
+      outboxDead += 1;
+      logOperationalEvent("error", "internal_pilot_guard_missing", {
+        outboxId: item.id,
+        targetType: item.targetType,
+        attempt: item.attempts,
+        retryable: false,
+        disposition: "dead",
+      });
       continue;
     }
 
@@ -851,12 +869,13 @@ export async function drainOutbox(input: {
     }
 
     try {
-      if (!input.whatsapp) throw new Error("Live mode requires a WhatsApp transport");
+      if (!input.whatsapp) throw new Error("Active send mode requires a WhatsApp transport");
       const result = await input.whatsapp.sendText(item.toWaId, item.body);
       await input.repository.markOutboxSent(item.id, result.providerMessageId);
       outboxSent += 1;
     } catch (error) {
-      const retryable = isRetryableWhatsAppError(error);
+      const retryable =
+        input.sendMode === "pilot" ? false : isRetryableWhatsAppError(error);
       const status = await input.repository.retryOutbox(item, error, retryable);
       if (status === "retry") outboxRetried += 1;
       else outboxDead += 1;
@@ -1000,8 +1019,17 @@ export function createProductionRuntime(
       apiKey: d360.apiKey,
       baseUrl: d360.baseUrl,
     });
-    authorizeOutbound = (outboxId) => coexistence.authorizeOutbound(outboxId);
+    authorizeOutbound = operations.internalPilot
+      ? (outboxId) =>
+          coexistence.authorizeInternalPilot(
+            outboxId,
+            operations.internalPilot!,
+          )
+      : (outboxId) => coexistence.authorizeOutbound(outboxId);
   } else {
+    if (operations.sendMode === "pilot") {
+      throw new Error("Internal pilot mode requires the 360dialog provider");
+    }
     const meta = getMetaConfig(env);
     whatsapp = new MetaWhatsAppClient({
       graphApiVersion: meta.graphApiVersion,

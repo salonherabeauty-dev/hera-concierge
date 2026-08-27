@@ -165,7 +165,11 @@ function requirePreviewSafety(): void {
   if (process.env.VERCEL_ENV !== "preview") {
     throw new Error("stage3r_worker_requires_preview");
   }
-  if (process.env.VERCEL_GIT_COMMIT_REF !== "feat/hera-ai-receptionist-foundation") {
+  const allowedBranches = new Set([
+    "feat/hera-ai-receptionist-foundation",
+    "pilot/urgent-green-lane",
+  ]);
+  if (!allowedBranches.has(process.env.VERCEL_GIT_COMMIT_REF ?? "")) {
     throw new Error("stage3r_worker_requires_authoritative_staging_branch");
   }
   const operations = getOperationsConfig();
