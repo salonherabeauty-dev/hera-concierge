@@ -22,6 +22,8 @@ import {
   drainReceptionistForJobs,
 } from "../../src/worker.js";
 
+const WEBHOOK_BACKLOG_RECOVERY_SLOTS = 2;
+
 function firstQuery(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -127,7 +129,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
   // Preview validation; ingestion remains idempotent, while the worker can
   // recover work that was deferred by a transient provider failure.
   if (wakeableJobIds.length > 0) {
-    const drainLimit = Math.min(Math.max(wakeableJobIds.length, 1), 8);
+    const drainLimit = Math.min(
+      Math.max(wakeableJobIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
+      8,
+    );
     waitUntil(
       Promise.resolve()
         .then(() =>

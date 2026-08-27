@@ -40,6 +40,10 @@ export const VERIFIER_PROMPT_VERSION = "hera-receptionist-verifier-1.6.1";
 export const FINAL_RESPONSE_VERIFIER_PROMPT_VERSION =
   "hera-final-response-verifier-1.1.0";
 
+const MAX_STRUCTURED_MODEL_ATTEMPTS = 3;
+const RESPONSE_MAX_OUTPUT_TOKENS = 3_600;
+const VERIFIER_MAX_OUTPUT_TOKENS = 3_000;
+
 export interface AiRuntimeConfig {
   primaryModel: string;
   fallbackModels: string[];
@@ -270,6 +274,69 @@ function jsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
+interface StructuredGenerationResult {
+  readonly output: unknown;
+  readonly finishReason: unknown;
+  readonly usage: {
+    outputTokens?: unknown;
+    outputTokenDetails?: {
+      reasoningTokens?: unknown;
+      textTokens?: unknown;
+    };
+  };
+}
+
+type StructuredGenerationError = Error & {
+  finishReason?: unknown;
+  usage?: StructuredGenerationResult["usage"];
+  generationFinishReason?: unknown;
+  generationOutputTokens?: unknown;
+  generationReasoningTokens?: unknown;
+  generationTextTokens?: unknown;
+};
+
+function forceStructuredOutput(result: StructuredGenerationResult): void {
+  try {
+    void result.output;
+  } catch (error) {
+    if (error instanceof Error) {
+      const diagnostic = error as StructuredGenerationError;
+      diagnostic.generationFinishReason = result.finishReason;
+      diagnostic.generationOutputTokens = result.usage.outputTokens;
+      diagnostic.generationReasoningTokens =
+        result.usage.outputTokenDetails?.reasoningTokens;
+      diagnostic.generationTextTokens = result.usage.outputTokenDetails?.textTokens;
+    }
+    throw error;
+  }
+}
+
+function structuredGenerationSafeFields(
+  error: unknown,
+): Record<string, string | number | boolean | null> {
+  const diagnostic =
+    error instanceof Error ? (error as StructuredGenerationError) : null;
+  const usage = diagnostic?.usage;
+  const finishReason =
+    diagnostic?.generationFinishReason ?? diagnostic?.finishReason;
+  const outputTokens =
+    diagnostic?.generationOutputTokens ?? usage?.outputTokens;
+  const reasoningTokens =
+    diagnostic?.generationReasoningTokens ??
+    usage?.outputTokenDetails?.reasoningTokens;
+  const textTokens =
+    diagnostic?.generationTextTokens ?? usage?.outputTokenDetails?.textTokens;
+  return {
+    generationFinishReason:
+      typeof finishReason === "string" ? finishReason.slice(0, 40) : null,
+    generationOutputTokens:
+      typeof outputTokens === "number" ? outputTokens : null,
+    generationReasoningTokens:
+      typeof reasoningTokens === "number" ? reasoningTokens : null,
+    generationTextTokens: typeof textTokens === "number" ? textTokens : null,
+  };
+}
+
 function retryableStructuredGenerationError(error: unknown): boolean {
   const name = error instanceof Error ? error.name : "";
   const message = error instanceof Error ? error.message : String(error);
@@ -279,7 +346,10 @@ function retryableStructuredGenerationError(error: unknown): boolean {
 }
 
 function distinctModels(models: string[]): string[] {
-  return [...new Set(models.map((model) => model.trim()).filter(Boolean))].slice(0, 2);
+  return [...new Set(models.map((model) => model.trim()).filter(Boolean))].slice(
+    0,
+    MAX_STRUCTURED_MODEL_ATTEMPTS,
+  );
 }
 
 async function generateWithStructuredFallback<T>(input: {
@@ -305,7 +375,10 @@ async function generateWithStructuredFallback<T>(input: {
         stage: input.stage,
         attemptedModel: modelId,
         fallbackModel: nextModel,
+        modelAttempt: index + 1,
+        modelAttemptLimit: models.length,
         retrying: canRetry,
+        ...structuredGenerationSafeFields(error),
         ...safeErrorFields(error),
       });
       if (!canRetry) throw error;
@@ -332,32 +405,18 @@ function historyMessages(
     return prior;
   }
 
-  if (interpreted.attachment.type === "image") {
-    prior.push({
-      role: "user",
-      content: [
-        { type: "text", text: interpreted.text.slice(0, 12_000) },
-        {
-          type: "image",
-          image: interpreted.attachment.data,
-          mediaType: interpreted.attachment.mediaType,
-        },
-      ],
-    });
-  } else {
-    prior.push({
-      role: "user",
-      content: [
-        { type: "text", text: interpreted.text.slice(0, 12_000) },
-        {
-          type: "file",
-          data: interpreted.attachment.data,
-          mediaType: interpreted.attachment.mediaType,
-          filename: interpreted.attachment.filename,
-        },
-      ],
-    });
-  }
+  prior.push({
+    role: "user",
+    content: [
+      { type: "text", text: interpreted.text.slice(0, 12_000) },
+      {
+        type: "file",
+        data: interpreted.attachment.data,
+        mediaType: interpreted.attachment.mediaType,
+        filename: interpreted.attachment.filename,
+      },
+    ],
+  });
   return prior;
 }
 
@@ -471,9 +530,9 @@ export async function generateReceptionistDecision(input: {
         },
         output: Output.object({ schema: agentDecisionSchema }),
         stopWhen: isStepCount(6),
-        maxOutputTokens: 1800,
+        maxOutputTokens: RESPONSE_MAX_OUTPUT_TOKENS,
         temperature: 0.1,
-        reasoning: "high",
+        reasoning: "medium",
         providerOptions: {
           gateway: {
             ...(remainingModels.length ? { models: remainingModels } : {}),
@@ -492,7 +551,7 @@ export async function generateReceptionistDecision(input: {
         ),
         timeout: 75_000,
       });
-      void generated.output;
+      forceStructuredOutput(generated);
       return generated;
     },
   });
@@ -536,9 +595,9 @@ export async function verifyReceptionistDecision(input: {
         tools: {},
         output: Output.object({ schema: verificationSchema }),
         stopWhen: isStepCount(2),
-        maxOutputTokens: 1200,
+        maxOutputTokens: VERIFIER_MAX_OUTPUT_TOKENS,
         temperature: 0,
-        reasoning: "high",
+        reasoning: "low",
         providerOptions: {
           gateway: {
             ...(remainingModels.length ? { models: remainingModels } : {}),
@@ -562,7 +621,7 @@ export async function verifyReceptionistDecision(input: {
         }),
         timeout: 50_000,
       });
-      void generated.output;
+      forceStructuredOutput(generated);
       return generated;
     },
   });
@@ -602,9 +661,9 @@ export async function verifyFinalClientReply(input: {
         tools: {},
         output: Output.object({ schema: finalResponseVerificationSchema }),
         stopWhen: isStepCount(2),
-        maxOutputTokens: 1400,
+        maxOutputTokens: VERIFIER_MAX_OUTPUT_TOKENS,
         temperature: 0,
-        reasoning: "high",
+        reasoning: "low",
         providerOptions: {
           gateway: {
             ...(remainingModels.length ? { models: remainingModels } : {}),
@@ -632,7 +691,7 @@ export async function verifyFinalClientReply(input: {
         }),
         timeout: 50_000,
       });
-      void generated.output;
+      forceStructuredOutput(generated);
       return generated;
     },
   });
