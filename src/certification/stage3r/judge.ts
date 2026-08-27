@@ -19,6 +19,12 @@ export interface Stage3rJudgeConfiguration {
   emphasis: "hospitality" | "authority" | "forensic_pairwise";
 }
 
+export interface Stage3rJudgeExecution {
+  configuration: Stage3rJudgeConfiguration;
+  order: Stage3rOrder;
+  repeatedRun: number;
+}
+
 export const STAGE3R_BLIND_ORDERS = [
   "candidate_first",
   "reference_first",
@@ -93,6 +99,41 @@ export function getStage3rJudgeConfigurations(
     throw new Error("Stage 3-R requires judges from at least two model providers");
   }
   return configurations;
+}
+
+/**
+ * Build the minimum defensible judge plan for one certification case.
+ *
+ * Gold cases are shown in both orders to every judge configuration. High-
+ * consequence cases repeat one identical presentation per judge so repeat
+ * consistency is measurable without overweighting both positions.
+ */
+export function buildStage3rJudgeExecutionPlan(
+  caseItem: Pick<Stage3rCase, "referenceResponse" | "highConsequence">,
+  configurations: readonly Stage3rJudgeConfiguration[],
+): Stage3rJudgeExecution[] {
+  const executions: Stage3rJudgeExecution[] = [];
+  for (const configuration of configurations) {
+    if (caseItem.referenceResponse) {
+      executions.push(
+        { configuration, order: "candidate_first" as const, repeatedRun: 1 },
+        { configuration, order: "reference_first" as const, repeatedRun: 1 },
+      );
+      if (caseItem.highConsequence) {
+        executions.push({
+          configuration,
+          order: "candidate_first",
+          repeatedRun: 2,
+        });
+      }
+    } else {
+      executions.push({ configuration, order: "pointwise", repeatedRun: 1 });
+      if (caseItem.highConsequence) {
+        executions.push({ configuration, order: "pointwise", repeatedRun: 2 });
+      }
+    }
+  }
+  return executions;
 }
 
 function anonymousCaseUser(caseId: string): string {

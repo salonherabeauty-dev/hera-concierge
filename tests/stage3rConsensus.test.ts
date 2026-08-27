@@ -5,6 +5,10 @@ import {
   assessStage3rRun,
 } from "../src/certification/stage3r/consensus.js";
 import {
+  buildStage3rJudgeExecutionPlan,
+  getStage3rJudgeConfigurations,
+} from "../src/certification/stage3r/judge.js";
+import {
   STAGE3R_DIMENSIONS,
   type Stage3rCase,
   type Stage3rCaseAssessment,
@@ -38,39 +42,41 @@ function judge(input: Partial<Stage3rJudgeResult> = {}): Stage3rJudgeResult {
   };
 }
 
-function perfectJudgeResults(hash = "a".repeat(64)): Stage3rJudgeResult[] {
-  return [
-    judge({
-      judgeId: "judge-hospitality",
-      provider: "anthropic",
-      modelId: "anthropic/claude-opus-5",
-      order: "candidate_first",
-      responseHash: hash,
-    }),
-    judge({
-      judgeId: "judge-authority",
-      provider: "openai",
-      modelId: "openai/gpt-5.6-terra",
-      order: "reference_first",
-      responseHash: hash,
-    }),
-    judge({
-      judgeId: "judge-forensic",
-      provider: "anthropic",
-      modelId: "anthropic/claude-opus-5",
-      order: "pointwise",
-      preference: "not_applicable",
-      responseHash: hash,
-    }),
-  ];
+function perfectJudgeResults(
+  hash = "a".repeat(64),
+  highConsequence = false,
+): Stage3rJudgeResult[] {
+  const configurations = [
+    ["judge-hospitality", "anthropic", "anthropic/claude-opus-5"],
+    ["judge-authority", "openai", "openai/gpt-5.6-terra"],
+    ["judge-forensic", "anthropic", "anthropic/claude-opus-5"],
+  ] as const;
+  return configurations.flatMap(([judgeId, provider, modelId]) => [
+    judge({ judgeId, provider, modelId, order: "candidate_first", responseHash: hash }),
+    judge({ judgeId, provider, modelId, order: "reference_first", responseHash: hash }),
+    ...(highConsequence
+      ? [judge({
+          judgeId,
+          provider,
+          modelId,
+          order: "candidate_first",
+          repeatedRun: 2,
+          responseHash: hash,
+        })]
+      : []),
+  ]);
 }
 
-function perfectAssessment(caseId: string): Stage3rCaseAssessment {
+function perfectAssessment(
+  caseId: string,
+  highConsequence = false,
+): Stage3rCaseAssessment {
   return assessStage3rCase({
     caseId,
     responseHash: "a".repeat(64),
     hasReferenceResponse: true,
-    judgeResults: perfectJudgeResults(),
+    highConsequence,
+    judgeResults: perfectJudgeResults("a".repeat(64), highConsequence),
   });
 }
 
@@ -101,11 +107,56 @@ function caseItem(input: {
   };
 }
 
+test("the judge plan proves per-configuration order reversal and bounded repeats", () => {
+  const configurations = getStage3rJudgeConfigurations();
+  const normalGold = buildStage3rJudgeExecutionPlan(
+    { referenceResponse: "gold", highConsequence: false },
+    configurations,
+  );
+  const highGold = buildStage3rJudgeExecutionPlan(
+    { referenceResponse: "gold", highConsequence: true },
+    configurations,
+  );
+  const normalPointwise = buildStage3rJudgeExecutionPlan(
+    { referenceResponse: null, highConsequence: false },
+    configurations,
+  );
+  const highPointwise = buildStage3rJudgeExecutionPlan(
+    { referenceResponse: null, highConsequence: true },
+    configurations,
+  );
+
+  assert.equal(normalGold.length, 6);
+  assert.equal(highGold.length, 9);
+  assert.equal(normalPointwise.length, 3);
+  assert.equal(highPointwise.length, 6);
+  for (const configuration of configurations) {
+    const firstRuns = normalGold.filter(
+      (item) =>
+        item.configuration.judgeId === configuration.judgeId &&
+        item.repeatedRun === 1,
+    );
+    assert.deepEqual(
+      firstRuns.map((item) => item.order).sort(),
+      ["candidate_first", "reference_first"],
+    );
+    assert.equal(
+      highGold.filter(
+        (item) =>
+          item.configuration.judgeId === configuration.judgeId &&
+          item.repeatedRun === 2,
+      ).length,
+      1,
+    );
+  }
+});
+
 test("a perfect multi-provider and blind-order judge ensemble passes", () => {
   const assessment = assessStage3rCase({
     caseId: "gold-case",
     responseHash: "a".repeat(64),
     hasReferenceResponse: true,
+    highConsequence: false,
     judgeResults: perfectJudgeResults(),
   });
 
@@ -131,6 +182,7 @@ test("one provider or a generator-only judge panel fails closed", () => {
     caseId: "self-judged",
     responseHash: "a".repeat(64),
     hasReferenceResponse: true,
+    highConsequence: false,
     judgeResults: results,
   });
 
@@ -152,6 +204,7 @@ test("critical flags and imperfect factual safety or policy scores cannot be ave
     caseId: "critical-failure",
     responseHash: "a".repeat(64),
     hasReferenceResponse: true,
+    highConsequence: false,
     judgeResults: imperfect,
   });
 
@@ -183,14 +236,16 @@ test("position reversal and repeat instability become needs-review or failure ev
     caseId: "unstable",
     responseHash: "a".repeat(64),
     hasReferenceResponse: true,
+    highConsequence: true,
     judgeResults: results,
   });
 
   assert.notEqual(assessment.verdict, "pass");
   assert.equal(assessment.repeatedJudgeConsistent, false);
   assert.ok(assessment.reasons.includes("repeated_judge_inconsistency"));
+  assert.equal(assessment.dimensionMeans.luxuryHospitalityTone, 5);
   assert.ok(
-    assessment.reasons.some((reason) =>
+    !assessment.reasons.some((reason) =>
       reason.startsWith("material_judge_disagreement:luxuryHospitalityTone"),
     ),
   );
@@ -226,7 +281,7 @@ function perfectRunObservations(): Stage3rRunObservation[] {
       });
       observations.push({
         case: item,
-        assessment: perfectAssessment(id),
+        assessment: perfectAssessment(id, item.highConsequence),
         groundedHeraFacts: true,
         providerSendCount: 0,
         duplicateFinalCandidates: 0,

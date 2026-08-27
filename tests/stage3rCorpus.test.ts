@@ -5,6 +5,10 @@ import {
   buildStage3rCorpus,
   stage3rCorpusQuotas,
 } from "../src/certification/stage3r/corpus.js";
+import {
+  buildStage3rJudgeExecutionPlan,
+  getStage3rJudgeConfigurations,
+} from "../src/certification/stage3r/judge.js";
 import type {
   Stage3rCaseType,
   Stage3rGoldCase,
@@ -50,6 +54,24 @@ test("the Stage 3-R corpus deterministically contains 2,010 exact-response cases
   assert.equal(new Set(cases.map((item) => item.id)).size, cases.length);
   assert.equal(new Set(cases.map((item) => item.family)).size, 40);
   assert.ok(cases.every((item) => item.message.trim().length > 0));
+});
+
+test("the corrected corpus execution plan has exactly 16,848 minimum model calls", async () => {
+  const cases = await corpus();
+  const configurations = getStage3rJudgeConfigurations();
+  const pipelineCalls = cases.reduce(
+    (sum, item) => sum + (item.minimumRisk === "black" ? 1 : 3),
+    0,
+  );
+  const judgeCalls = cases.reduce(
+    (sum, item) =>
+      sum + buildStage3rJudgeExecutionPlan(item, configurations).length,
+    0,
+  );
+
+  assert.equal(pipelineCalls, 5772);
+  assert.equal(judgeCalls, 11076);
+  assert.equal(pipelineCalls + judgeCalls, 16848);
 });
 
 test("the Stage 3-R corpus meets every approved case-class quota", async () => {

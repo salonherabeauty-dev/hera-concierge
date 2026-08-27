@@ -2,7 +2,11 @@ import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { getAiConfig } from "../../config.js";
 import { buildStage3rCorpus } from "./corpus.js";
 import { assessStage3rCase, assessStage3rRun } from "./consensus.js";
-import { getStage3rJudgeConfigurations, judgeStage3rCase } from "./judge.js";
+import {
+  buildStage3rJudgeExecutionPlan,
+  getStage3rJudgeConfigurations,
+  judgeStage3rCase,
+} from "./judge.js";
 import { runStage3rExactResponse } from "./pipeline.js";
 import type {
   Stage3rCaseAssessment,
@@ -49,6 +53,7 @@ if (fullRun && (startIndex !== 0 || requestedLimit < corpus.length)) {
 }
 const selected = corpus.slice(startIndex, startIndex + requestedLimit);
 if (selected.length === 0) throw new Error("Stage 3-R selected no cases");
+const judgeConfigurations = getStage3rJudgeConfigurations();
 
 const outputPath = process.env.STAGE3R_OUTPUT_PATH?.trim() || null;
 if (outputPath) await writeFile(outputPath, "", "utf8");
@@ -70,7 +75,10 @@ await emit({
     ? 0
     : selected.reduce((sum, item) => {
         const pipelineCalls = item.minimumRisk === "black" ? 1 : 3;
-        const judgeCalls = item.highConsequence ? 6 : 3;
+        const judgeCalls = buildStage3rJudgeExecutionPlan(
+          item,
+          judgeConfigurations,
+        ).length;
         return sum + pipelineCalls + judgeCalls;
       }, 0),
   whatsappProviderSendAvailable: false,
@@ -102,7 +110,6 @@ if (dryRun) {
 }
 
 const ai = getAiConfig();
-const judgeConfigurations = getStage3rJudgeConfigurations();
 const observations: Stage3rRunObservation[] = [];
 
 for (const [offset, item] of selected.entries()) {
@@ -132,44 +139,38 @@ for (const [offset, item] of selected.entries()) {
     providerSendCount = response.providerSendCount;
     duplicateFinalCandidates = response.duplicateFinalCandidates;
 
-    const repeatCount = item.highConsequence ? 2 : 1;
-    for (const [judgeIndex, configuration] of judgeConfigurations.entries()) {
-      const order = item.referenceResponse
-        ? judgeIndex === 0
-          ? "candidate_first"
-          : judgeIndex === 1
-            ? "reference_first"
-            : "pointwise"
-        : "pointwise";
-      for (let repeatedRun = 1; repeatedRun <= repeatCount; repeatedRun += 1) {
-        judgeResults.push(
-          await judgeStage3rCase({
-            configuration,
-            case: item,
-            candidateResponse: response.exactFinalResponse,
-            responseHash: response.responseHash,
-            generatorModelId: response.responseModelId,
-            approvedEvidence: {
-              responseEvidence: response.responseEvidence,
-              grounding: response.grounding,
-              decision: response.decision,
-              policy: response.policy,
-              handoff: response.handoff,
-              deterministicQuality: response.deterministicQuality,
-              finalVerificationApproved: response.finalVerificationApproved,
-              finalVerifierIssues: response.finalVerifierIssues,
-              deliveryEligible: response.deliveryEligible,
-            },
-            order,
-            repeatedRun,
-          }),
-        );
-      }
+    for (const execution of buildStage3rJudgeExecutionPlan(
+      item,
+      judgeConfigurations,
+    )) {
+      judgeResults.push(
+        await judgeStage3rCase({
+          configuration: execution.configuration,
+          case: item,
+          candidateResponse: response.exactFinalResponse,
+          responseHash: response.responseHash,
+          generatorModelId: response.responseModelId,
+          approvedEvidence: {
+            responseEvidence: response.responseEvidence,
+            grounding: response.grounding,
+            decision: response.decision,
+            policy: response.policy,
+            handoff: response.handoff,
+            deterministicQuality: response.deterministicQuality,
+            finalVerificationApproved: response.finalVerificationApproved,
+            finalVerifierIssues: response.finalVerifierIssues,
+            deliveryEligible: response.deliveryEligible,
+          },
+          order: execution.order,
+          repeatedRun: execution.repeatedRun,
+        }),
+      );
     }
     assessment = assessStage3rCase({
       caseId: item.id,
       responseHash: response.responseHash,
       hasReferenceResponse: Boolean(item.referenceResponse),
+      highConsequence: item.highConsequence,
       judgeResults,
     });
     if (!deliveryEligible) {
@@ -189,6 +190,7 @@ for (const [offset, item] of selected.entries()) {
       caseId: item.id,
       responseHash,
       hasReferenceResponse: Boolean(item.referenceResponse),
+      highConsequence: item.highConsequence,
       judgeResults,
     });
     assessment = {
