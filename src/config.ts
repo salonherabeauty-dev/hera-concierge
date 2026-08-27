@@ -129,17 +129,106 @@ export function getAiConfig(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
+export const WHATSAPP_SEND_MODES = ["shadow", "pilot", "live"] as const;
+export type WhatsAppSendMode = (typeof WHATSAPP_SEND_MODES)[number];
+
 const operationsSchema = z.object({
-  WHATSAPP_SEND_MODE: z.enum(["shadow", "live"]).default("shadow"),
+  WHATSAPP_SEND_MODE: z.enum(WHATSAPP_SEND_MODES).default("shadow"),
   WHATSAPP_LIVE_CONFIRMATION: z.string().trim().optional(),
+  WHATSAPP_PILOT_CONFIRMATION: z.string().trim().optional(),
+  HERA_INTERNAL_PILOT_ALLOWLIST: z.string().trim().optional(),
+  HERA_INTERNAL_PILOT_MAX_SEND_ATTEMPTS: z.string().trim().optional(),
   HERA_MANAGEMENT_WHATSAPP_ID: z.string().trim().optional(),
+  VERCEL_ENV: z.string().trim().optional(),
+  VERCEL_GIT_COMMIT_REF: z.string().trim().optional(),
   CRON_SECRET: nonEmpty.min(24),
 });
 
 export const WHATSAPP_LIVE_CONFIRMATION_VALUE = "ENABLE_HERA_WHATSAPP_LIVE";
+export const WHATSAPP_PILOT_CONFIRMATION_VALUE =
+  "ENABLE_HERA_INTERNAL_PILOT";
+export const HERA_INTERNAL_PILOT_BRANCH =
+  "feat/hera-ai-receptionist-foundation";
+export const HERA_INTERNAL_PILOT_ID = "urgent-green-lane-2026-08-27";
+export const HERA_INTERNAL_PILOT_MAX_ALLOWED_SEND_ATTEMPTS = 10;
+
+function parseInternalPilotAllowlist(value: string | undefined): string[] {
+  const waIds = (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (
+    waIds.length < 1 ||
+    waIds.length > 5 ||
+    waIds.some((waId) => !/^[1-9][0-9]{7,14}$/.test(waId)) ||
+    new Set(waIds).size !== waIds.length
+  ) {
+    throw new Error(
+      "Invalid operations configuration: HERA_INTERNAL_PILOT_ALLOWLIST",
+    );
+  }
+  return waIds;
+}
 
 export function getOperationsConfig(env: NodeJS.ProcessEnv = process.env) {
   const value = parse(operationsSchema, env, "operations");
+
+  if (value.WHATSAPP_SEND_MODE === "pilot") {
+    if (
+      value.WHATSAPP_PILOT_CONFIRMATION !==
+      WHATSAPP_PILOT_CONFIRMATION_VALUE
+    ) {
+      throw new Error(
+        "Invalid operations configuration: WHATSAPP_PILOT_CONFIRMATION",
+      );
+    }
+    if (value.WHATSAPP_LIVE_CONFIRMATION) {
+      throw new Error(
+        "Invalid operations configuration: WHATSAPP_LIVE_CONFIRMATION",
+      );
+    }
+    if (value.VERCEL_ENV !== "preview") {
+      throw new Error("Invalid operations configuration: VERCEL_ENV");
+    }
+    if (value.VERCEL_GIT_COMMIT_REF !== HERA_INTERNAL_PILOT_BRANCH) {
+      throw new Error(
+        "Invalid operations configuration: VERCEL_GIT_COMMIT_REF",
+      );
+    }
+
+    const allowlistedWaIds = parseInternalPilotAllowlist(
+      value.HERA_INTERNAL_PILOT_ALLOWLIST,
+    );
+    const maxRaw = value.HERA_INTERNAL_PILOT_MAX_SEND_ATTEMPTS ?? "";
+    if (!/^[1-9][0-9]*$/.test(maxRaw)) {
+      throw new Error(
+        "Invalid operations configuration: HERA_INTERNAL_PILOT_MAX_SEND_ATTEMPTS",
+      );
+    }
+    const maxSendAttempts = Number(maxRaw);
+    if (
+      !Number.isSafeInteger(maxSendAttempts) ||
+      maxSendAttempts < 1 ||
+      maxSendAttempts > HERA_INTERNAL_PILOT_MAX_ALLOWED_SEND_ATTEMPTS
+    ) {
+      throw new Error(
+        "Invalid operations configuration: HERA_INTERNAL_PILOT_MAX_SEND_ATTEMPTS",
+      );
+    }
+
+    return {
+      sendMode: value.WHATSAPP_SEND_MODE,
+      managementWaId: value.HERA_MANAGEMENT_WHATSAPP_ID || null,
+      cronSecret: value.CRON_SECRET,
+      internalPilot: {
+        pilotId: HERA_INTERNAL_PILOT_ID,
+        allowlistedWaIds,
+        maxSendAttempts,
+      },
+    };
+  }
+
   const releaseMode = assessReleaseMode(
     value.WHATSAPP_SEND_MODE,
     value.WHATSAPP_LIVE_CONFIRMATION,
@@ -161,6 +250,7 @@ export function getOperationsConfig(env: NodeJS.ProcessEnv = process.env) {
     sendMode: value.WHATSAPP_SEND_MODE,
     managementWaId: value.HERA_MANAGEMENT_WHATSAPP_ID || null,
     cronSecret: value.CRON_SECRET,
+    internalPilot: null,
   };
 }
 

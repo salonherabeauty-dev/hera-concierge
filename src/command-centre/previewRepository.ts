@@ -66,7 +66,7 @@ export interface CommandCentreReadRepository {
     limit?: number;
   }): Promise<ConversationSummary[]>;
   getConversation(conversationId: string): Promise<ConversationDetail>;
-  dashboard(mode: "shadow" | "live"): Promise<CommandCentreDashboard>;
+  dashboard(mode: "shadow" | "pilot" | "live"): Promise<CommandCentreDashboard>;
 }
 
 /**
@@ -325,7 +325,7 @@ export class PreviewCommandCentreRepository implements CommandCentreReadReposito
     };
   }
 
-  async dashboard(mode: "shadow" | "live"): Promise<CommandCentreDashboard> {
+  async dashboard(mode: "shadow" | "pilot" | "live"): Promise<CommandCentreDashboard> {
     const [conversations, jobsActive, jobsDead, outboxActive, outboxDead, providerSends, incidents, qualityResult, auditResult] =
       await Promise.all([
         this.listConversations({ limit: 60 }),

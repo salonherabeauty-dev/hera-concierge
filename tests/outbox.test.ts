@@ -232,3 +232,69 @@ test("reaction and system events are recorded without creating chatty replies", 
   assert.equal(isReplyWorthyMessage("text"), true);
   assert.equal(isReplyWorthyMessage("image"), true);
 });
+
+test("internal pilot fails closed without its durable database guard", async () => {
+  const { repository, state } = fakeRepository([item()]);
+  let sends = 0;
+  const transport = {
+    sendText: async () => {
+      sends += 1;
+      return { providerMessageId: "must-not-send" };
+    },
+  } as unknown as WhatsAppTransport;
+
+  const result = await drainOutbox({
+    repository,
+    whatsapp: transport,
+    sendMode: "pilot",
+    workerId: "test-worker",
+  });
+
+  assert.equal(sends, 0);
+  assert.deepEqual(state.retried, [{ id: "outbox-1", retryable: false }]);
+  assert.equal(result.outboxDead, 1);
+});
+
+test("internal pilot sends only after its database guard authorizes the item", async () => {
+  const { repository, state } = fakeRepository([item()]);
+  let sends = 0;
+  const transport = {
+    sendText: async () => {
+      sends += 1;
+      return { providerMessageId: "pilot-provider-message" };
+    },
+  } as unknown as WhatsAppTransport;
+
+  const result = await drainOutbox({
+    repository,
+    whatsapp: transport,
+    sendMode: "pilot",
+    workerId: "test-worker",
+    authorizeOutbound: async () => "authorized",
+  });
+
+  assert.equal(sends, 1);
+  assert.deepEqual(state.sent, ["outbox-1"]);
+  assert.equal(result.outboxSent, 1);
+});
+
+test("internal pilot never retries a provider request", async () => {
+  const { repository, state } = fakeRepository([item()]);
+  const transport = {
+    sendText: async () => {
+      throw new WhatsAppApiError("360dialog is temporarily unavailable", 503);
+    },
+  } as unknown as WhatsAppTransport;
+
+  const result = await drainOutbox({
+    repository,
+    whatsapp: transport,
+    sendMode: "pilot",
+    workerId: "test-worker",
+    authorizeOutbound: async () => "authorized",
+  });
+
+  assert.deepEqual(state.retried, [{ id: "outbox-1", retryable: false }]);
+  assert.equal(result.outboxRetried, 0);
+  assert.equal(result.outboxDead, 1);
+});

@@ -86,4 +86,30 @@ export class D360CoexistenceStore {
     }
     throw new Error("authorize WhatsApp outbox send: invalid disposition");
   }
+
+  async authorizeInternalPilot(
+    outboxId: string,
+    pilot: {
+      pilotId: string;
+      allowlistedWaIds: readonly string[];
+      maxSendAttempts: number;
+    },
+  ): Promise<OutboundAuthorizationDisposition> {
+    const { data, error } = await this.database.rpc(
+      "ai_authorize_internal_pilot_outbox_send",
+      {
+        p_outbox_id: outboxId,
+        p_pilot_id: pilot.pilotId,
+        p_allowlisted_wa_ids: pilot.allowlistedWaIds,
+        p_max_send_attempts: pilot.maxSendAttempts,
+      },
+    );
+    if (error) {
+      throw new Error(`authorize internal pilot send: ${error.message}`);
+    }
+    if (data === "authorized" || data === "shadowed" || data === "dead") {
+      return data;
+    }
+    throw new Error("authorize internal pilot send: invalid disposition");
+  }
 }

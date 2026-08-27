@@ -5,7 +5,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { buildStage3rCorpus } from "../../src/certification/stage3r/corpus.js";
 import { evaluateStage3rExecutionCase } from "../../src/certification/stage3r/executionEvaluator.js";
 import { getStage3rJudgeConfigurations } from "../../src/certification/stage3r/judge.js";
-import { getAiConfig, getDatabaseConfig, getOperationsConfig } from "../../src/config.js";
+import { getAiConfig, getDatabaseConfig } from "../../src/config.js";
 import {
   logOperationalEvent,
   safeErrorFields,
@@ -20,7 +20,7 @@ import {
 } from "../../src/certification/stage3r/types.js";
 
 const EMERGENCY_CALIBRATION_TOKEN_SHA256 =
-  "4af2d531de84e188c9d5db9aeb42522f88065a14f87ed172c46aba1cb5b11911";
+  "7bebdcdced1d4ffeb6b2719a802f71c306a585a312bf058c683acf61dd534c08";
 const EMERGENCY_CALIBRATION_EXPIRES_AT_MS = Date.parse(
   "2026-08-28T13:00:00Z",
 );
@@ -165,11 +165,15 @@ function requirePreviewSafety(): void {
   if (process.env.VERCEL_ENV !== "preview") {
     throw new Error("stage3r_worker_requires_preview");
   }
-  if (process.env.VERCEL_GIT_COMMIT_REF !== "feat/hera-ai-receptionist-foundation") {
+  const allowedBranches = new Set([
+    "feat/hera-ai-receptionist-foundation",
+    "pilot/urgent-green-lane",
+  ]);
+  if (!allowedBranches.has(process.env.VERCEL_GIT_COMMIT_REF ?? "")) {
     throw new Error("stage3r_worker_requires_authoritative_staging_branch");
   }
-  const operations = getOperationsConfig();
-  if (operations.sendMode !== "shadow") {
+  const sendMode = process.env.WHATSAPP_SEND_MODE?.trim() || "shadow";
+  if (sendMode !== "shadow") {
     throw new Error("stage3r_worker_requires_shadow_mode");
   }
   if (process.env.WHATSAPP_LIVE_CONFIRMATION === "ENABLE_HERA_WHATSAPP_LIVE") {
@@ -208,19 +212,25 @@ export default async function handler(
     return;
   }
 
+  let requestStage = "authorization_complete";
   try {
+    requestStage = "preview_safety";
     requirePreviewSafety();
+    requestStage = "request_parse";
     const body = request.body && typeof request.body === "object"
       ? request.body as Record<string, unknown>
       : {};
     const action = typeof body.action === "string" ? body.action.trim() : "step";
+    requestStage = "database_config";
     const database = getDatabaseConfig();
+    requestStage = "database_client";
     const supabase = createClient(database.url, database.serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { "X-Client-Info": "hera-stage3r-worker" } },
     });
 
     if (action === "configure_calibration") {
+      requestStage = "calibration_scope_validation";
       const caseIndices = calibrationIndices(body.caseIndices);
       const maxEstimatedCostUsd = calibrationCostCap(
         body.maxEstimatedCostUsd,
@@ -235,11 +245,13 @@ export default async function handler(
         });
         return;
       }
+      requestStage = "deployment_identity";
       const { releaseCommit, deploymentUrl } = immutableDeploymentIdentity();
       const databaseProjectRef = new URL(database.url).hostname.split(".")[0] ?? "";
       if (!/^[a-z0-9]{10,40}$/.test(databaseProjectRef)) {
         throw new Error("stage3r_database_project_identity_missing");
       }
+      requestStage = "certification_metadata";
       const [metadata, ai] = await Promise.all([
         loadCertificationMetadata(),
         Promise.resolve(getAiConfig()),
@@ -251,6 +263,7 @@ export default async function handler(
         releaseCommit.slice(0, 12),
         Date.now().toString(36),
       ].join("-");
+      requestStage = "start_calibration";
       const { data: started, error: startError } = await supabase.rpc(
         "ai_stage3r_start_calibration",
         {
@@ -504,10 +517,11 @@ export default async function handler(
     const errorCode = safeCode(error);
     logOperationalEvent("error", "stage3r_worker_request_failed", {
       errorCode,
+      requestStage,
       ...safeErrorFields(error),
     });
     response.status(
       errorCode === "stage3r_dependency_fetch_failed" ? 503 : 500,
-    ).json({ ok: false, error: errorCode });
+    ).json({ ok: false, error: errorCode, stage: requestStage });
   }
 }
