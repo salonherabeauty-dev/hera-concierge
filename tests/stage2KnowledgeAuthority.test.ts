@@ -10,6 +10,7 @@ import {
 import {
   isBlockedLegacyKnowledge,
   knowledgeAuthorityRank,
+  OWNER_SERVICE_PRICE_EXPERTISE_VERSION,
   orderKnowledgeByAuthority,
 } from "../src/governance/knowledgeAuthority.js";
 import { searchStaticKnowledge } from "../src/knowledge/search.js";
@@ -187,6 +188,11 @@ test("runtime contracts cover the machine catalogue and produce an explicit prom
 test("knowledge ordering gives the approved constitution precedence and blocks legacy conflict text", () => {
   const legacy = result("hera-approved-v4", "Service concerns should be raised within 7 working days.", 1000);
   const website = result("website-2026-08-25", "Website information", 900);
+  const ownerMaster = result(
+    OWNER_SERVICE_PRICE_EXPERTISE_VERSION,
+    "Owner-approved exact service, price and expertise master.",
+    1,
+  );
   const operator = result("hera-operator-policy-v3", "Approved operator policy", 1);
   const constitution = result(
     "hera-service-constitution-2026-08-25.1",
@@ -196,12 +202,21 @@ test("knowledge ordering gives the approved constitution precedence and blocks l
 
   assert.equal(isBlockedLegacyKnowledge(legacy), true);
   assert.ok(knowledgeAuthorityRank(constitution) > knowledgeAuthorityRank(operator));
-  assert.ok(knowledgeAuthorityRank(operator) > knowledgeAuthorityRank(website));
+  assert.ok(knowledgeAuthorityRank(operator) > knowledgeAuthorityRank(ownerMaster));
+  assert.ok(knowledgeAuthorityRank(ownerMaster) > knowledgeAuthorityRank(website));
   assert.deepEqual(
-    orderKnowledgeByAuthority([legacy, website, operator, constitution], 5).map(
+    orderKnowledgeByAuthority(
+      [legacy, website, ownerMaster, operator, constitution],
+      5,
+    ).map(
       (item) => item.version,
     ),
-    ["hera-service-constitution-2026-08-25.1", "hera-operator-policy-v3", "website-2026-08-25"],
+    [
+      "hera-service-constitution-2026-08-25.1",
+      "hera-operator-policy-v3",
+      OWNER_SERVICE_PRICE_EXPERTISE_VERSION,
+      "website-2026-08-25",
+    ],
   );
 });
 
