@@ -177,6 +177,21 @@ function requirePreviewSafety(): void {
   }
 }
 
+function immutableDeploymentIdentity(): {
+  releaseCommit: string;
+  deploymentUrl: string;
+} {
+  const releaseCommit = process.env.VERCEL_GIT_COMMIT_SHA?.trim() ?? "";
+  const deploymentHost = process.env.VERCEL_URL?.trim() ?? "";
+  if (
+    !/^[0-9a-f]{40}$/i.test(releaseCommit) ||
+    !/^[a-z0-9.-]+\.vercel\.app$/i.test(deploymentHost)
+  ) {
+    throw new Error("stage3r_immutable_deployment_identity_missing");
+  }
+  return { releaseCommit, deploymentUrl: `https://${deploymentHost}` };
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -220,15 +235,8 @@ export default async function handler(
         });
         return;
       }
-      const releaseCommit = process.env.VERCEL_GIT_COMMIT_SHA?.trim() ?? "";
-      const deploymentHost = process.env.VERCEL_URL?.trim() ?? "";
+      const { releaseCommit, deploymentUrl } = immutableDeploymentIdentity();
       const databaseProjectRef = new URL(database.url).hostname.split(".")[0] ?? "";
-      if (
-        !/^[0-9a-f]{40}$/i.test(releaseCommit) ||
-        !/^[a-z0-9.-]+\.vercel\.app$/i.test(deploymentHost)
-      ) {
-        throw new Error("stage3r_immutable_deployment_identity_missing");
-      }
       if (!/^[a-z0-9]{10,40}$/.test(databaseProjectRef)) {
         throw new Error("stage3r_database_project_identity_missing");
       }
@@ -248,7 +256,7 @@ export default async function handler(
         {
           p_certification_version: calibrationVersion,
           p_release_commit: releaseCommit,
-          p_deployment_url: `https://${deploymentHost}`,
+          p_deployment_url: deploymentUrl,
           p_database_project_ref: databaseProjectRef,
           p_research_source_version: metadata.researchVersion,
           p_corpus_version: STAGE3R_CORPUS_VERSION,
@@ -345,6 +353,31 @@ export default async function handler(
         runId,
       });
       return;
+    }
+
+    const currentIdentity = immutableDeploymentIdentity();
+    const currentDatabaseProjectRef = new URL(database.url).hostname.split(".")[0] ?? "";
+    const { data: runIdentity, error: runIdentityError } = await supabase
+      .from("ai_stage3r_runs")
+      .select(
+        "certification_version,release_commit,deployment_url,database_project_ref,corpus_version",
+      )
+      .eq("id", runId)
+      .maybeSingle();
+    if (runIdentityError) throw runIdentityError;
+    const certificationVersion = runIdentity?.certification_version ?? "";
+    const certificationMatches =
+      certificationVersion === STAGE3R_CERTIFICATION_VERSION ||
+      certificationVersion.startsWith(`${STAGE3R_CERTIFICATION_VERSION}-calibration-`);
+    if (
+      !runIdentity ||
+      !certificationMatches ||
+      runIdentity.release_commit !== currentIdentity.releaseCommit ||
+      runIdentity.deployment_url !== currentIdentity.deploymentUrl ||
+      runIdentity.database_project_ref !== currentDatabaseProjectRef ||
+      runIdentity.corpus_version !== STAGE3R_CORPUS_VERSION
+    ) {
+      throw new Error("stage3r_run_deployment_identity_mismatch");
     }
     if (beforeClaim?.costCapReached) {
       response.status(200).json({

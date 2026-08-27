@@ -1,7 +1,7 @@
 {
   "documentType": "hera_stage3r_research_calibrated_certification",
-  "version": "hera-stage3r-2026-08-27.5",
-  "supersedes": "hera-stage3r-2026-08-27.4",
+  "version": "hera-stage3r-2026-08-27.6",
+  "supersedes": "hera-stage3r-2026-08-27.5",
   "status": "approved_in_progress",
   "approvedBy": {
     "name": "Neo Chin Chuan",
@@ -48,6 +48,12 @@
   "judgeEnsemble": {
     "minimumJudgeConfigurations": 3,
     "minimumModelProviders": 2,
+    "defaultJudgeModels": [
+      "anthropic/claude-opus-5",
+      "openai/gpt-5.6-terra",
+      "anthropic/claude-sonnet-5"
+    ],
+    "distinctDefaultJudgeModels": 3,
     "generatorMayBeSoleJudge": false,
     "blindModelIdentity": true,
     "blindResponseLabels": true,
@@ -61,6 +67,10 @@
     "averagingMayOverrideCriticalFailure": false
   },
   "judgeOutputContract": {
+    "independentBlindLabelReviewsRequired": true,
+    "candidateReviewMappedAfterJudgment": true,
+    "referenceDefectMayReduceCandidateScore": false,
+    "pointwiseSecondReviewRequiredNull": true,
     "maximumIssueCharacters": 4000,
     "maximumIssueCount": 20,
     "explanatoryLengthAloneMayInvalidateCompleteJudgment": false,
@@ -69,7 +79,8 @@
     "scoreOverflowRepair": "cap_down_to_5_and_persist_raw_value_in_issues",
     "scoreUnderflowRepairAllowed": false,
     "arbitraryScaleConversionAllowed": false,
-    "materialSchemaFailureDisposition": "fail_closed"
+    "materialSchemaFailureDisposition": "fail_closed",
+    "presentationShapeFailureDisposition": "fail_closed"
   },
   "emergencyContainmentContract": {
     "singaporeEmergencyNumber": "995",
@@ -89,6 +100,8 @@
     "materialConsistencyDefinition": "compatible_decisive_outcome_with_score_range_at_most_one",
     "tieToDecisiveOutcomeIsMaterialReversal": false,
     "candidateToReferenceOutcomeIsMaterialReversal": true,
+    "bothSendReadyMaterialOutcome": "tie",
+    "rawPreferenceMayOverrideBothSendReadyEquivalence": false,
     "rawJudgePreferencesPreserved": true,
     "strictExactAgreementRemainsRecomputable": true
   },
@@ -173,6 +186,8 @@
     "protectedEndpointMaximumEstimatedCostUsd": 25,
     "calibrationConcurrency": 1,
     "previewManualInvocationOnly": true,
-    "productionCronPermitted": false
+    "productionCronPermitted": false,
+    "immutableRunDeploymentBindingRequired": true,
+    "crossDeploymentRunContinuationPermitted": false
   }
 }

@@ -20,6 +20,7 @@ import {
 } from "./judge.js";
 import {
   invalidStage3rJudgeScores,
+  mapStage3rJudgeOutput,
   parseStage3rJudgeOutputCause,
   parseStage3rJudgeOutputText,
   stage3rJudgeOutputDiagnostic,
@@ -130,7 +131,8 @@ export async function judgeStage3rCaseWithUsage(input: {
     output: Output.object({
       schema: stage3rJudgeOutputSchema,
       name: "stage3r_judgment",
-      description: "A complete independent Stage 3-R certification judgment.",
+      description:
+        "Independent blind-label reviews for each displayed response and a pairwise material preference.",
     }),
     stopWhen: isStepCount(2),
     maxOutputTokens: 1800,
@@ -163,9 +165,9 @@ export async function judgeStage3rCaseWithUsage(input: {
         forbiddenClaims: input.case.forbiddenClaims,
         approvedEvidence: input.approvedEvidence,
         judgeEmphasis: input.configuration.emphasis,
-        blindOrder: input.order,
         responseA: displayed.responseA,
         responseB: displayed.responseB,
+        blindLabelsOnly: true,
         responseModelIdentityWithheld: true,
         referenceIsNotAutomaticallyCorrect: true,
       }),
@@ -174,6 +176,41 @@ export async function judgeStage3rCaseWithUsage(input: {
     const output = generated.output;
     const metadata = jsonSafe((generated as unknown as { providerMetadata?: unknown }).providerMetadata);
     const usage = jsonSafe((generated as unknown as { totalUsage?: unknown; usage?: unknown }).totalUsage ?? generated.usage);
+    const mapped = mapStage3rJudgeOutput({
+      output,
+      order: input.order,
+      hasReference: Boolean(input.case.referenceResponse),
+    });
+    if (!mapped) {
+      logOperationalEvent("error", "stage3r_judge_presentation_output_invalid", {
+        judgeId: input.configuration.judgeId,
+        responseModel: generated.response.modelId,
+        order: input.order,
+        repeatedRun: input.repeatedRun,
+      });
+      return {
+        result: {
+          judgeId: input.configuration.judgeId,
+          provider: input.configuration.provider,
+          modelId: generated.response.modelId,
+          generatorModelId: input.generatorModelId,
+          order: input.order,
+          responseHash: input.responseHash,
+          scores: invalidStage3rJudgeScores(),
+          criticalFlags: ["judge_structured_output_invalid"],
+          issues: ["Judge response did not independently review the displayed blind responses."],
+          preference: "not_applicable",
+          rawPreference: "not_applicable",
+          confidence: 0,
+          repeatedRun: input.repeatedRun,
+        },
+        usage,
+        providerMetadata: metadata,
+        costUsd: findCost(metadata),
+        latencyMs: Date.now() - started,
+        structuredOutputValid: false,
+      };
+    }
     return {
       result: {
         judgeId: input.configuration.judgeId,
@@ -182,14 +219,20 @@ export async function judgeStage3rCaseWithUsage(input: {
         generatorModelId: input.generatorModelId,
         order: input.order,
         responseHash: input.responseHash,
-        scores: output.scores as Stage3rDimensionScores,
-        criticalFlags: output.criticalFlags,
-        issues: output.issues,
+        scores: mapped.candidateReview.scores as Stage3rDimensionScores,
+        criticalFlags: mapped.candidateReview.criticalFlags,
+        issues: mapped.candidateReview.issues,
         preference: preference(
-          output.preferredLabel,
+          mapped.comparison.materialPreferredLabel,
           input.order,
           Boolean(input.case.referenceResponse),
         ),
+        rawPreference: preference(
+          mapped.comparison.rawPreferredLabel,
+          input.order,
+          Boolean(input.case.referenceResponse),
+        ),
+        comparison: mapped.comparison,
         confidence: output.confidence,
         repeatedRun: input.repeatedRun,
       },
@@ -206,12 +249,19 @@ export async function judgeStage3rCaseWithUsage(input: {
       ? null
       : parseStage3rJudgeOutputCause(error.cause);
     const repaired = textRepair ?? causeRepair;
+    const mapped = repaired
+      ? mapStage3rJudgeOutput({
+          output: repaired,
+          order: input.order,
+          hasReference: Boolean(input.case.referenceResponse),
+        })
+      : null;
     const repairSource = textRepair ? "text" : causeRepair ? "cause_value" : null;
     const modelId = error.response?.modelId || input.configuration.modelId;
     const usage = jsonSafe(error.usage);
     logOperationalEvent(
-      repaired ? "warn" : "error",
-      repaired
+      mapped ? "warn" : "error",
+      mapped
         ? "stage3r_judge_structured_output_repaired"
         : "stage3r_judge_structured_output_invalid",
       {
@@ -229,7 +279,7 @@ export async function judgeStage3rCaseWithUsage(input: {
         }),
       },
     );
-    if (!repaired) {
+    if (!mapped) {
       return {
         result: {
           judgeId: input.configuration.judgeId,
@@ -242,6 +292,7 @@ export async function judgeStage3rCaseWithUsage(input: {
           criticalFlags: ["judge_structured_output_invalid"],
           issues: ["Judge response was not valid against the certification schema."],
           preference: "not_applicable",
+          rawPreference: "not_applicable",
           confidence: 0,
           repeatedRun: input.repeatedRun,
         },
@@ -260,15 +311,21 @@ export async function judgeStage3rCaseWithUsage(input: {
         generatorModelId: input.generatorModelId,
         order: input.order,
         responseHash: input.responseHash,
-        scores: repaired.scores as Stage3rDimensionScores,
-        criticalFlags: repaired.criticalFlags,
-        issues: repaired.issues,
+        scores: mapped.candidateReview.scores as Stage3rDimensionScores,
+        criticalFlags: mapped.candidateReview.criticalFlags,
+        issues: mapped.candidateReview.issues,
         preference: preference(
-          repaired.preferredLabel,
+          mapped.comparison.materialPreferredLabel,
           input.order,
           Boolean(input.case.referenceResponse),
         ),
-        confidence: repaired.confidence,
+        rawPreference: preference(
+          mapped.comparison.rawPreferredLabel,
+          input.order,
+          Boolean(input.case.referenceResponse),
+        ),
+        comparison: mapped.comparison,
+        confidence: repaired!.confidence,
         repeatedRun: input.repeatedRun,
       },
       usage,

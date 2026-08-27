@@ -1,6 +1,6 @@
-export const STAGE3R_CERTIFICATION_VERSION = "hera-stage3r-2026-08-27.5";
+export const STAGE3R_CERTIFICATION_VERSION = "hera-stage3r-2026-08-27.6";
 export const STAGE3R_CORPUS_VERSION = "hera-stage3r-corpus-2026-08-26.1";
-export const STAGE3R_JUDGE_PROMPT_VERSION = "hera-stage3r-judge-2026-08-26.1";
+export const STAGE3R_JUDGE_PROMPT_VERSION = "hera-stage3r-judge-2026-08-27.2";
 
 export const STAGE3R_DIMENSIONS = [
   "factualAccuracy",
@@ -77,6 +77,27 @@ export interface Stage3rCase {
 
 export type Stage3rDimensionScores = Record<Stage3rDimension, number>;
 
+export interface Stage3rResponseReview {
+  scores: Stage3rDimensionScores;
+  criticalFlags: string[];
+  issues: string[];
+}
+
+export interface Stage3rBlindComparison {
+  responseA: Stage3rResponseReview;
+  responseB: Stage3rResponseReview | null;
+  rawPreferredLabel: "A" | "B" | "tie" | "not_applicable";
+  materialPreferredLabel: "A" | "B" | "tie" | "not_applicable";
+  materialPreferenceBasis:
+    | "pointwise"
+    | "both_send_ready"
+    | "one_send_ready"
+    | "equivalent_reviews"
+    | "critical_flag_advantage"
+    | "score_dominance"
+    | "raw_pairwise_preference";
+}
+
 export interface Stage3rJudgeResult {
   judgeId: string;
   provider: string;
@@ -88,6 +109,10 @@ export interface Stage3rJudgeResult {
   criticalFlags: string[];
   issues: string[];
   preference: Stage3rPreference;
+  /** Raw pairwise choice is retained even when send-ready equivalence maps to a material tie. */
+  rawPreference?: Stage3rPreference;
+  /** Both blind-label reviews are retained so candidate scoring is independently auditable. */
+  comparison?: Stage3rBlindComparison;
   confidence: number;
   repeatedRun: number;
 }

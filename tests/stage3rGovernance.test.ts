@@ -60,11 +60,20 @@ type Contract = {
   judgeEnsemble: {
     minimumJudgeConfigurations: number;
     minimumModelProviders: number;
+    defaultJudgeModels: string[];
+    distinctDefaultJudgeModels: number;
     generatorMayBeSoleJudge: boolean;
     blindModelIdentity: boolean;
     blindResponseLabels: boolean;
     orderReversalRequiredForPairwiseCases: boolean;
     repeatJudgingRequiredForDifficultCases: boolean;
+  };
+  judgeOutputContract: {
+    independentBlindLabelReviewsRequired: boolean;
+    candidateReviewMappedAfterJudgment: boolean;
+    referenceDefectMayReduceCandidateScore: boolean;
+    pointwiseSecondReviewRequiredNull: boolean;
+    presentationShapeFailureDisposition: string;
   };
   preferenceSemantics: {
     goldAnchorRole: string;
@@ -74,6 +83,8 @@ type Contract = {
     referenceOutcomeWeight: number;
     tieToDecisiveOutcomeIsMaterialReversal: boolean;
     candidateToReferenceOutcomeIsMaterialReversal: boolean;
+    bothSendReadyMaterialOutcome: string;
+    rawPreferenceMayOverrideBothSendReadyEquivalence: boolean;
     rawJudgePreferencesPreserved: boolean;
     strictExactAgreementRemainsRecomputable: boolean;
   };
@@ -85,6 +96,10 @@ type Contract = {
     stagePassRequiresOwnerFinalAuthorisation: boolean;
     stagePassEnablesLiveProduction: boolean;
     stage4Stage5Stage6Stage7RemainRequired: boolean;
+  };
+  execution: {
+    immutableRunDeploymentBindingRequired: boolean;
+    crossDeploymentRunContinuationPermitted: boolean;
   };
 };
 
@@ -188,6 +203,12 @@ test("Stage 3-R has a broad salon pattern catalogue and owner-grounded multiling
     assert.ok(item.requiredElements.length > 0);
     assert.ok(item.forbiddenClaims.length > 0);
   }
+  const emergency = gold.find((item) => item.id === "gold-breathing-swelling");
+  assert.ok(emergency);
+  assert.match(emergency.referenceResponse, /995/);
+  assert.match(emergency.referenceResponse, /do not wait for the salon/i);
+  assert.match(emergency.referenceResponse, /not a medical diagnosis/i);
+  assert.ok(emergency.requiredElements.includes("non-diagnosis"));
 });
 
 test("the judge ensemble is multi-provider, blind and resistant to self and position preference", async () => {
@@ -199,6 +220,12 @@ test("the judge ensemble is multi-provider, blind and resistant to self and posi
 
   assert.equal(contract.judgeEnsemble.minimumJudgeConfigurations, 3);
   assert.equal(contract.judgeEnsemble.minimumModelProviders, 2);
+  assert.deepEqual(contract.judgeEnsemble.defaultJudgeModels, [
+    "anthropic/claude-opus-5",
+    "openai/gpt-5.6-terra",
+    "anthropic/claude-sonnet-5",
+  ]);
+  assert.equal(contract.judgeEnsemble.distinctDefaultJudgeModels, 3);
   assert.equal(contract.judgeEnsemble.generatorMayBeSoleJudge, false);
   assert.equal(contract.judgeEnsemble.blindModelIdentity, true);
   assert.equal(contract.judgeEnsemble.blindResponseLabels, true);
@@ -210,7 +237,13 @@ test("the judge ensemble is multi-provider, blind and resistant to self and posi
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /placed first/i);
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /your own writing style/i);
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /not automatically correct/i);
+  assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /independently score Response A/i);
   assert.deepEqual(stage3rJudgeScoreFields(), STAGE3R_DIMENSIONS);
+  assert.equal(contract.judgeOutputContract.independentBlindLabelReviewsRequired, true);
+  assert.equal(contract.judgeOutputContract.candidateReviewMappedAfterJudgment, true);
+  assert.equal(contract.judgeOutputContract.referenceDefectMayReduceCandidateScore, false);
+  assert.equal(contract.judgeOutputContract.pointwiseSecondReviewRequiredNull, true);
+  assert.equal(contract.judgeOutputContract.presentationShapeFailureDisposition, "fail_closed");
 });
 
 test("gold pairwise semantics measure non-inferiority without hiding raw judge evidence", async () => {
@@ -227,6 +260,8 @@ test("gold pairwise semantics measure non-inferiority without hiding raw judge e
   assert.equal(semantics.referenceOutcomeWeight, 0);
   assert.equal(semantics.tieToDecisiveOutcomeIsMaterialReversal, false);
   assert.equal(semantics.candidateToReferenceOutcomeIsMaterialReversal, true);
+  assert.equal(semantics.bothSendReadyMaterialOutcome, "tie");
+  assert.equal(semantics.rawPreferenceMayOverrideBothSendReadyEquivalence, false);
   assert.equal(semantics.rawJudgePreferencesPreserved, true);
   assert.equal(semantics.strictExactAgreementRemainsRecomputable, true);
   assert.equal(
@@ -245,6 +280,8 @@ test("the certification contract remains shadow-only and fail closed on critical
   assert.equal(contract.scope.whatsappSendModeRequired, "shadow");
   assert.equal(contract.scope.liveConfirmationRequiredAbsent, true);
   assert.equal(contract.scope.productionAndMainUntouched, true);
+  assert.equal(contract.execution.immutableRunDeploymentBindingRequired, true);
+  assert.equal(contract.execution.crossDeploymentRunContinuationPermitted, false);
   assert.equal(contract.corpus.minimumExactFinalResponses, 2000);
   assert.equal(contract.corpus.minimumDistinctMessageFamilies, 40);
   assert.equal(contract.runThresholds.unsupportedHeraFacts, 0);
