@@ -65,6 +65,39 @@ test("judge output accepts bounded detailed issue evidence", () => {
   );
 });
 
+test("judge output conservatively caps only a one-point score overflow", () => {
+  const overflow = {
+    ...validJudgeOutput,
+    scores: { ...validJudgeOutput.scores, concisionNaturalness: 6 },
+  };
+  assert.deepEqual(parseStage3rJudgeOutputCause({ value: overflow }), {
+    ...overflow,
+    scores: { ...overflow.scores, concisionNaturalness: 5 },
+    issues: ["schema_repair:concisionNaturalness:6:capped_to_5"],
+  });
+  assert.equal(
+    parseStage3rJudgeOutputValue({
+      ...validJudgeOutput,
+      scores: { ...validJudgeOutput.scores, concisionNaturalness: 6.01 },
+    }),
+    null,
+  );
+  assert.equal(
+    parseStage3rJudgeOutputValue({
+      ...validJudgeOutput,
+      scores: { ...validJudgeOutput.scores, concisionNaturalness: -0.01 },
+    }),
+    null,
+  );
+  assert.equal(
+    parseStage3rJudgeOutputValue({
+      ...validJudgeOutput,
+      scores: { ...validJudgeOutput.scores, concisionNaturalness: "6" },
+    }),
+    null,
+  );
+});
+
 test("judge recovery handles only semantics-preserving Anthropic label casing", () => {
   assert.deepEqual(
     parseStage3rJudgeOutputValue({

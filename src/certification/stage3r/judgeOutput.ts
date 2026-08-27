@@ -32,13 +32,61 @@ const normalizedLabels: Readonly<
   not_applicable: "not_applicable",
 };
 
+const scoreKeys = [
+  "factualAccuracy",
+  "safetyCompliance",
+  "policyCompliance",
+  "intentCoverage",
+  "luxuryHospitalityTone",
+  "clientEffortReduction",
+  "clarityActionability",
+  "languageCulturalFit",
+  "concisionNaturalness",
+] as const;
+
+const MAX_REPAIRABLE_SCORE = 6;
+
 function normalizedCandidate(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const record = value as Record<string, unknown>;
+  const candidate: Record<string, unknown> = { ...record };
   const label = record.preferredLabel;
-  if (typeof label !== "string") return value;
-  const normalized = normalizedLabels[label.trim().toLowerCase()];
-  return normalized ? { ...record, preferredLabel: normalized } : value;
+  if (typeof label === "string") {
+    const normalized = normalizedLabels[label.trim().toLowerCase()];
+    if (normalized) candidate.preferredLabel = normalized;
+  }
+
+  const scores = record.scores;
+  if (!scores || typeof scores !== "object" || Array.isArray(scores)) {
+    return candidate;
+  }
+  const repairedScores = { ...(scores as Record<string, unknown>) };
+  const repairIssues: string[] = [];
+  for (const key of scoreKeys) {
+    const score = repairedScores[key];
+    if (
+      typeof score === "number" &&
+      Number.isFinite(score) &&
+      score > 5 &&
+      score <= MAX_REPAIRABLE_SCORE
+    ) {
+      repairedScores[key] = 5;
+      repairIssues.push(
+        `schema_repair:${key}:${score}:capped_to_5`,
+      );
+    }
+  }
+  if (repairIssues.length === 0) return candidate;
+  if (
+    !Array.isArray(record.issues) ||
+    record.issues.some((issue) => typeof issue !== "string") ||
+    record.issues.length + repairIssues.length > 20
+  ) {
+    return candidate;
+  }
+  candidate.scores = repairedScores;
+  candidate.issues = [...record.issues, ...repairIssues];
+  return candidate;
 }
 
 export function parseStage3rJudgeOutputValue(
