@@ -8,6 +8,8 @@ import {
 import { verifyBearerToken } from "../../src/security/bearer.js";
 import { createProductionRuntime, drainReceptionist } from "../../src/worker.js";
 
+const RECOVERY_DRAIN_LIMIT = 3;
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   const correlationId = randomUUID();
   const startedAt = Date.now();
@@ -28,7 +30,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   try {
-    const summary = await drainReceptionist(createProductionRuntime(), 12);
+    const summary = await drainReceptionist(
+      createProductionRuntime(),
+      RECOVERY_DRAIN_LIMIT,
+    );
     logOperationalEvent("info", "recovery_drain_completed", {
       correlationId,
       durationMs: Date.now() - startedAt,

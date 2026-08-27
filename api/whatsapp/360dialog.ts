@@ -23,6 +23,8 @@ import {
   drainReceptionistForJobs,
 } from "../../src/worker.js";
 
+const WEBHOOK_BACKLOG_RECOVERY_SLOTS = 2;
+
 function secureHeaders(response: VercelResponse): void {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("X-Content-Type-Options", "nosniff");
@@ -117,8 +119,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return response.status(400).json({ error: "Invalid JSON" });
   }
 
+  let ingestionStage = "parse_payload";
   try {
     const parsed = parseD360Webhook(payload);
+    ingestionStage = "load_database_config";
     const database = getDatabaseConfig();
     const repository = new SupabaseReceptionistRepository(
       database.url,
@@ -130,6 +134,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     );
 
     let humanEchoesInserted = 0;
+    ingestionStage = "ingest_human_echoes";
     for (const echo of parsed.humanEchoes) {
       const result = await coexistence.ingestHumanEcho(
         echo,
@@ -138,10 +143,12 @@ export default async function handler(request: VercelRequest, response: VercelRe
       if (result.inserted) humanEchoesInserted += 1;
     }
 
+    ingestionStage = "apply_delivery_statuses";
     for (const event of parsed.statuses) await repository.applyStatus(event);
 
     let inboundInserted = 0;
     const wakeableJobIds: string[] = [];
+    ingestionStage = "ingest_inbound_messages";
     for (const message of parsed.inbound) {
       const result = await repository.ingestInbound(message);
       if (result.inserted) inboundInserted += 1;
@@ -149,6 +156,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     }
 
     if (parsed.ignored.history > 0 || parsed.ignored.appStateSync > 0) {
+      ingestionStage = "audit_coexistence_events";
       await repository.audit(
         "d360_coexistence_non_message_event_recorded",
         "webhook",
@@ -160,8 +168,12 @@ export default async function handler(request: VercelRequest, response: VercelRe
       );
     }
 
+    ingestionStage = "schedule_background_drain";
     if (wakeableJobIds.length > 0) {
-      const drainLimit = Math.min(Math.max(wakeableJobIds.length, 1), 8);
+      const drainLimit = Math.min(
+        Math.max(wakeableJobIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
+        8,
+      );
       waitUntil(
         Promise.resolve()
           .then(() =>
@@ -186,6 +198,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       );
     }
 
+    ingestionStage = "complete";
     logOperationalEvent("info", "d360_webhook_ingested", {
       correlationId,
       bodyBytes: rawBody.byteLength,
@@ -213,6 +226,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     logOperationalEvent("error", "d360_webhook_ingestion_failed", {
       correlationId,
       durationMs: Date.now() - startedAt,
+      ingestionStage,
       ...safeErrorFields(error),
     });
     return response.status(500).json({ error: "Webhook ingestion failed" });

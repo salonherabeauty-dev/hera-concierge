@@ -4,6 +4,12 @@
   "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
+  "crons": [
+    {
+      "path": "/api/internal/drain",
+      "schedule": "* * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/command-centre",
@@ -39,6 +45,12 @@
     }
   ],
   "functions": {
+    "api/whatsapp/*.ts": {
+      "maxDuration": 300
+    },
+    "api/internal/drain.ts": {
+      "maxDuration": 300
+    },
     "api/command-centre/**/*.ts": {
       "maxDuration": 30
     }

@@ -6,6 +6,8 @@ const repositoryUrl = new URL("../src/db/repository.ts", import.meta.url);
 const workerUrl = new URL("../src/worker.ts", import.meta.url);
 const d360Url = new URL("../api/whatsapp/360dialog.ts", import.meta.url);
 const metaUrl = new URL("../api/whatsapp/webhook.ts", import.meta.url);
+const drainUrl = new URL("../api/internal/drain.ts", import.meta.url);
+const vercelUrl = new URL("../vercel.json", import.meta.url);
 
 test("the repository atomically claims exact webhook-created jobs without DDL", async () => {
   const source = await readFile(repositoryUrl, "utf8");
@@ -25,7 +27,27 @@ test("both WhatsApp adapters prioritize the jobs they just created", async () =>
     assert.match(source, /const wakeableJobIds: string\[\] = \[\]/);
     assert.match(source, /wakeableJobIds\.push\(result\.jobId\)/);
     assert.match(source, /drainReceptionistForJobs/);
+    assert.match(source, /WEBHOOK_BACKLOG_RECOVERY_SLOTS = 2/);
+    assert.match(
+      source,
+      /wakeableJobIds\.length \+ WEBHOOK_BACKLOG_RECOVERY_SLOTS/,
+    );
   }
+});
+
+test("the protected production recovery drain is scheduled every minute", async () => {
+  const [drainSource, vercelSource] = await Promise.all([
+    readFile(drainUrl, "utf8"),
+    readFile(vercelUrl, "utf8"),
+  ]);
+  const config = JSON.parse(vercelSource) as {
+    crons?: Array<{ path?: string; schedule?: string }>;
+  };
+  assert.deepEqual(config.crons, [
+    { path: "/api/internal/drain", schedule: "* * * * *" },
+  ]);
+  assert.match(drainSource, /verifyBearerToken\(authorization, cronSecret\)/);
+  assert.match(drainSource, /RECOVERY_DRAIN_LIMIT = 3/);
 });
 
 test("the worker processes targeted jobs before unrelated backlog", async () => {
@@ -34,6 +56,17 @@ test("the worker processes targeted jobs before unrelated backlog", async () => 
   assert.match(source, /const targetedJobs = await runtime\.repository\.claimJobsByIds/);
   assert.match(source, /const backlogJobs = remainingCapacity > 0/);
   assert.match(source, /\.\.\.targetedJobs,[\s\S]*\.\.\.backlogJobs\.filter/);
+});
+
+test("360dialog failures identify the safe ingestion stage without payload data", async () => {
+  const source = await readFile(d360Url, "utf8");
+  assert.match(source, /let ingestionStage = "parse_payload"/);
+  assert.match(source, /ingestionStage = "apply_delivery_statuses"/);
+  assert.match(source, /ingestionStage = "ingest_inbound_messages"/);
+  assert.match(
+    source,
+    /d360_webhook_ingestion_failed[\s\S]*ingestionStage[\s\S]*safeErrorFields/,
+  );
 });
 
 test("supersession is rechecked before every irreversible side effect", async () => {
