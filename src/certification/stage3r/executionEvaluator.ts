@@ -614,8 +614,7 @@ export async function evaluateStage3rExecutionCase(
         for (const execution of judgePlan.filter(
           (item) => item.configuration.judgeId === configuration.judgeId,
         )) {
-          configurationResults.push(
-            await judgeStage3rCaseWithUsage({
+          const judged = await judgeStage3rCaseWithUsage({
               configuration: execution.configuration,
               case: caseItem,
               candidateResponse: exactFinalResponse,
@@ -637,8 +636,9 @@ export async function evaluateStage3rExecutionCase(
               },
               order: execution.order,
               repeatedRun: execution.repeatedRun,
-            }),
-          );
+            });
+          configurationResults.push(judged);
+          if (!judged.structuredOutputValid) break;
         }
         return configurationResults;
       }),

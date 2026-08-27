@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { gateway } from "@ai-sdk/gateway";
-import { isStepCount, Output, ToolLoopAgent } from "ai";
+import {
+  isStepCount,
+  NoObjectGeneratedError,
+  Output,
+  ToolLoopAgent,
+} from "ai";
 import { z } from "zod";
+import { logOperationalEvent } from "../../observability/log.js";
 import {
   type Stage3rCase,
   type Stage3rDimensionScores,
@@ -31,8 +37,47 @@ const judgeSchema = z.object({
   issues: z.array(z.string().trim().min(1).max(220)).max(20),
   preferredLabel: z.enum(["A", "B", "tie", "not_applicable"]),
   confidence: z.number().min(0).max(1),
-  summary: z.string().trim().min(1).max(400),
+  summary: z.string().trim().min(1).max(400).optional(),
 });
+
+type JudgeOutput = z.infer<typeof judgeSchema>;
+
+export function parseStage3rJudgeOutputText(text: string | undefined): JudgeOutput | null {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  const candidates = [trimmed];
+  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]?.trim()) candidates.push(match[1].trim());
+  }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const parsed = judgeSchema.safeParse(JSON.parse(candidate));
+      if (parsed.success) return parsed.data;
+    } catch {
+      // Try the next bounded candidate. Raw model text is never logged.
+    }
+  }
+  return null;
+}
+
+function invalidJudgeScores(): Stage3rDimensionScores {
+  return {
+    factualAccuracy: 0,
+    safetyCompliance: 0,
+    policyCompliance: 0,
+    intentCoverage: 0,
+    luxuryHospitalityTone: 0,
+    clientEffortReduction: 0,
+    clarityActionability: 0,
+    languageCulturalFit: 0,
+    concisionNaturalness: 0,
+  };
+}
 
 function anonymousUser(caseId: string): string {
   return `hera-stage3r-${createHash("sha256").update(caseId).digest("hex").slice(0, 24)}`;
@@ -110,6 +155,7 @@ export interface InstrumentedJudgeResult {
   providerMetadata: unknown;
   costUsd: number | null;
   latencyMs: number;
+  structuredOutputValid: boolean;
 }
 
 export async function judgeStage3rCaseWithUsage(input: {
@@ -147,55 +193,126 @@ export async function judgeStage3rCaseWithUsage(input: {
     },
   });
   const started = Date.now();
-  const generated = await agent.generate({
-    prompt: JSON.stringify({
-      caseId: input.case.id,
-      family: input.case.family,
-      caseType: input.case.caseType,
-      language: input.case.language,
-      minimumRisk: input.case.minimumRisk,
-      highConsequence: input.case.highConsequence,
-      multiIntent: input.case.multiIntent,
-      adversarial: input.case.adversarial,
-      clientMessage: input.case.message,
-      conversationHistory: input.case.history,
-      requiredElements: input.case.requiredElements,
-      forbiddenClaims: input.case.forbiddenClaims,
-      approvedEvidence: input.approvedEvidence,
-      judgeEmphasis: input.configuration.emphasis,
-      blindOrder: input.order,
-      responseA: displayed.responseA,
-      responseB: displayed.responseB,
-      responseModelIdentityWithheld: true,
-      referenceIsNotAutomaticallyCorrect: true,
-    }),
-    timeout: 90_000,
-  });
-  const output = generated.output;
-  const metadata = jsonSafe((generated as unknown as { providerMetadata?: unknown }).providerMetadata);
-  const usage = jsonSafe((generated as unknown as { totalUsage?: unknown; usage?: unknown }).totalUsage ?? generated.usage);
-  return {
-    result: {
-      judgeId: input.configuration.judgeId,
-      provider: input.configuration.provider,
-      modelId: generated.response.modelId,
-      generatorModelId: input.generatorModelId,
-      order: input.order,
-      responseHash: input.responseHash,
-      scores: output.scores as Stage3rDimensionScores,
-      criticalFlags: output.criticalFlags,
-      issues: output.issues,
-      preference: preference(
-        output.preferredLabel,
-        input.order,
-        Boolean(input.case.referenceResponse),
-      ),
-      confidence: output.confidence,
-      repeatedRun: input.repeatedRun,
-    },
-    usage,
-    providerMetadata: metadata,
-    costUsd: findCost(metadata),
-    latencyMs: Date.now() - started,
-  };
+  try {
+    const generated = await agent.generate({
+      prompt: JSON.stringify({
+        caseId: input.case.id,
+        family: input.case.family,
+        caseType: input.case.caseType,
+        language: input.case.language,
+        minimumRisk: input.case.minimumRisk,
+        highConsequence: input.case.highConsequence,
+        multiIntent: input.case.multiIntent,
+        adversarial: input.case.adversarial,
+        clientMessage: input.case.message,
+        conversationHistory: input.case.history,
+        requiredElements: input.case.requiredElements,
+        forbiddenClaims: input.case.forbiddenClaims,
+        approvedEvidence: input.approvedEvidence,
+        judgeEmphasis: input.configuration.emphasis,
+        blindOrder: input.order,
+        responseA: displayed.responseA,
+        responseB: displayed.responseB,
+        responseModelIdentityWithheld: true,
+        referenceIsNotAutomaticallyCorrect: true,
+      }),
+      timeout: 90_000,
+    });
+    const output = generated.output;
+    const metadata = jsonSafe((generated as unknown as { providerMetadata?: unknown }).providerMetadata);
+    const usage = jsonSafe((generated as unknown as { totalUsage?: unknown; usage?: unknown }).totalUsage ?? generated.usage);
+    return {
+      result: {
+        judgeId: input.configuration.judgeId,
+        provider: input.configuration.provider,
+        modelId: generated.response.modelId,
+        generatorModelId: input.generatorModelId,
+        order: input.order,
+        responseHash: input.responseHash,
+        scores: output.scores as Stage3rDimensionScores,
+        criticalFlags: output.criticalFlags,
+        issues: output.issues,
+        preference: preference(
+          output.preferredLabel,
+          input.order,
+          Boolean(input.case.referenceResponse),
+        ),
+        confidence: output.confidence,
+        repeatedRun: input.repeatedRun,
+      },
+      usage,
+      providerMetadata: metadata,
+      costUsd: findCost(metadata),
+      latencyMs: Date.now() - started,
+      structuredOutputValid: true,
+    };
+  } catch (error) {
+    if (!NoObjectGeneratedError.isInstance(error)) throw error;
+    const repaired = parseStage3rJudgeOutputText(error.text);
+    const modelId = error.response?.modelId || input.configuration.modelId;
+    const usage = jsonSafe(error.usage);
+    logOperationalEvent(
+      repaired ? "warn" : "error",
+      repaired
+        ? "stage3r_judge_structured_output_repaired"
+        : "stage3r_judge_structured_output_invalid",
+      {
+        judgeId: input.configuration.judgeId,
+        attemptedModel: input.configuration.modelId,
+        responseModel: modelId,
+        order: input.order,
+        repeatedRun: input.repeatedRun,
+        finishReason: error.finishReason ?? null,
+        outputTokens: error.usage?.outputTokens ?? null,
+      },
+    );
+    if (!repaired) {
+      return {
+        result: {
+          judgeId: input.configuration.judgeId,
+          provider: input.configuration.provider,
+          modelId,
+          generatorModelId: input.generatorModelId,
+          order: input.order,
+          responseHash: input.responseHash,
+          scores: invalidJudgeScores(),
+          criticalFlags: ["judge_structured_output_invalid"],
+          issues: ["Judge response was not valid against the certification schema."],
+          preference: "not_applicable",
+          confidence: 0,
+          repeatedRun: input.repeatedRun,
+        },
+        usage,
+        providerMetadata: null,
+        costUsd: null,
+        latencyMs: Date.now() - started,
+        structuredOutputValid: false,
+      };
+    }
+    return {
+      result: {
+        judgeId: input.configuration.judgeId,
+        provider: input.configuration.provider,
+        modelId,
+        generatorModelId: input.generatorModelId,
+        order: input.order,
+        responseHash: input.responseHash,
+        scores: repaired.scores as Stage3rDimensionScores,
+        criticalFlags: repaired.criticalFlags,
+        issues: repaired.issues,
+        preference: preference(
+          repaired.preferredLabel,
+          input.order,
+          Boolean(input.case.referenceResponse),
+        ),
+        confidence: repaired.confidence,
+        repeatedRun: input.repeatedRun,
+      },
+      usage,
+      providerMetadata: null,
+      costUsd: null,
+      latencyMs: Date.now() - started,
+      structuredOutputValid: true,
+    };
+  }
 }
