@@ -101,8 +101,8 @@
       "requiredForLive": true,
       "evidence": {
         "programme": "stage_3r_research_calibrated_automated_certification",
-        "programmeVersion": "hera-stage3r-2026-08-27.1",
-        "programmeSupersedes": "hera-stage3r-2026-08-26.1",
+        "programmeVersion": "hera-stage3r-2026-08-27.2",
+        "programmeSupersedes": "hera-stage3r-2026-08-27.1",
         "ownerApproval": "Neo Chin Chuan, Owner",
         "ownerApprovedAt": "2026-08-26",
         "mandatoryManualPanelReplaced": true,
@@ -115,6 +115,7 @@
         "goldCaseLibrary": "evals/stage3r-gold-cases.json",
         "certificationDocument": "docs/STAGE_3R_RESEARCH_CALIBRATED_CERTIFICATION.md",
         "databaseMigration": "supabase/migrations/20260826000000_add_stage3r_research_certification.sql",
+        "pairwiseSemanticsMigration": "supabase/migrations/20260827000002_define_stage3r_pairwise_semantics.sql",
         "databaseMigrationApplied": true,
         "databaseMigrationLedgerVersion": "20260827083233",
         "databaseMigrationProjectRef": "zjnbheohgwfzkmbnjqjr",
@@ -124,6 +125,8 @@
         "minimumJudgeProviders": 2,
         "generatorMayBeSoleJudge": false,
         "positionReversalRequired": true,
+        "goldPairwiseMetric": "candidate_noninferiority_candidate_or_tie",
+        "positionMetric": "material_outcome_compatibility_with_raw_preferences_preserved",
         "repeatedJudgingForHighConsequence": true,
         "whatsappSendMode": "shadow",
         "productionTouched": false

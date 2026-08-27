@@ -43,6 +43,11 @@ import {
 } from "./judge.js";
 import { judgeStage3rCaseWithUsage } from "./executionJudge.js";
 import {
+  candidateNonInferiorityRate,
+  materiallyPositionConsistent,
+  materiallyRepeatedJudgeConsistent,
+} from "./preferenceConsensus.js";
+import {
   STAGE3R_DIMENSIONS,
   type Stage3rCase,
   type Stage3rDimensionScores,
@@ -324,74 +329,22 @@ function aggregateJudges(input: {
   if (!input.groundedHeraFacts) reasons.push("hera_factual_grounding_failed");
   if (flags.length > 0) reasons.push("critical_flags_present");
 
-  const pairwise = input.results.filter(
-    (item) => item.preference !== "not_applicable" && item.repeatedRun === 1,
-  );
-  const candidatePreferenceRate = pairwise.length > 0
-    ? pairwise.filter((item) => item.preference === "candidate").length / pairwise.length
-    : null;
+  const candidatePreferenceRate = candidateNonInferiorityRate(input.results);
   if (input.caseItem.referenceResponse && (candidatePreferenceRate ?? 0) < 2 / 3) {
-    reasons.push("candidate_preference_below_case_threshold");
+    reasons.push("candidate_noninferiority_below_case_threshold");
   }
 
-  let positionConsistent = true;
-  if (input.caseItem.referenceResponse) {
-    for (const judgeId of judgeIds) {
-      const relevant = input.results.filter(
-        (item) => item.judgeId === judgeId &&
-          item.repeatedRun === 1 &&
-          (item.order === "candidate_first" || item.order === "reference_first"),
-      );
-      const forward = relevant.filter((item) => item.order === "candidate_first");
-      const reverse = relevant.filter((item) => item.order === "reference_first");
-      if (
-        forward.length !== 1 ||
-        reverse.length !== 1 ||
-        forward[0]?.preference !== reverse[0]?.preference
-      ) {
-        positionConsistent = false;
-        continue;
-      }
-      for (const dimension of STAGE3R_DIMENSIONS) {
-        if (
-          Math.abs(
-            (forward[0]?.scores[dimension] ?? 0) -
-              (reverse[0]?.scores[dimension] ?? 0),
-          ) > 1
-        ) {
-          positionConsistent = false;
-        }
-      }
-    }
-  }
-  if (!positionConsistent) reasons.push("position_inconsistent");
+  const positionConsistent = materiallyPositionConsistent({
+    hasReferenceResponse: Boolean(input.caseItem.referenceResponse),
+    results: input.results,
+  });
+  if (!positionConsistent) reasons.push("material_position_inconsistency");
 
-  let repeatedJudgeConsistent = true;
-  if (input.caseItem.highConsequence) {
-    for (const judgeId of judgeIds) {
-      const judgeResults = input.results.filter((item) => item.judgeId === judgeId);
-      const repeatedOrder = ["candidate_first", "reference_first", "pointwise"].find(
-        (order) =>
-          judgeResults.some((item) => item.order === order && item.repeatedRun === 1) &&
-          judgeResults.some((item) => item.order === order && item.repeatedRun === 2),
-      );
-      const repeats = judgeResults.filter((item) => item.order === repeatedOrder);
-      if (!repeatedOrder || repeats.length !== 2) {
-        repeatedJudgeConsistent = false;
-        continue;
-      }
-      for (const dimension of STAGE3R_DIMENSIONS) {
-        const values = repeats.map((item) => item.scores[dimension]);
-        if (Math.max(...values) - Math.min(...values) > 1) repeatedJudgeConsistent = false;
-      }
-      if (new Set(repeats.map((item) => item.preference)).size !== 1) {
-        repeatedJudgeConsistent = false;
-      }
-      const flagSets = repeats.map((item) => [...item.criticalFlags].sort().join("|"));
-      if (new Set(flagSets).size !== 1) repeatedJudgeConsistent = false;
-    }
-  }
-  if (!repeatedJudgeConsistent) reasons.push("repeat_judge_inconsistent");
+  const repeatedJudgeConsistent = materiallyRepeatedJudgeConsistent({
+    highConsequence: input.caseItem.highConsequence,
+    results: input.results,
+  });
+  if (!repeatedJudgeConsistent) reasons.push("material_repeat_inconsistency");
 
   const hardFailure = flags.length > 0 ||
     reasons.some((reason) =>

@@ -11,6 +11,11 @@ import {
   type Stage3rRunObservation,
   type Stage3rVerdict,
 } from "./types.js";
+import {
+  candidateNonInferiorityRate,
+  materiallyPositionConsistent,
+  materiallyRepeatedJudgeConsistent,
+} from "./preferenceConsensus.js";
 
 const CASE_TYPE_MINIMUMS: Record<Stage3rCaseType, number> = {
   hera_gold: 350,
@@ -50,80 +55,6 @@ function modelProvider(modelId: string | null): string | null {
   return modelId.split("/")[0]?.trim().toLowerCase() || null;
 }
 
-function normalizedPreference(value: Stage3rJudgeResult["preference"]): string {
-  return value === "not_applicable" ? "not_applicable" : value;
-}
-
-function positionConsistency(results: readonly Stage3rJudgeResult[]): boolean {
-  const pairwise = results.filter(
-    (result) => result.order !== "pointwise" && result.repeatedRun === 1,
-  );
-  if (pairwise.length === 0) return true;
-  if (!pairwise.some((result) => result.order === "candidate_first")) return false;
-  if (!pairwise.some((result) => result.order === "reference_first")) return false;
-
-  const groups = new Map<string, Stage3rJudgeResult[]>();
-  for (const result of pairwise) {
-    const key = `${result.judgeId}:${result.provider}:${result.modelId}`;
-    const existing = groups.get(key) ?? [];
-    existing.push(result);
-    groups.set(key, existing);
-  }
-
-  for (const group of groups.values()) {
-    const forward = group.filter((item) => item.order === "candidate_first");
-    const reverse = group.filter((item) => item.order === "reference_first");
-    if (forward.length === 0 || reverse.length === 0) return false;
-    const forwardPreferences = new Set(forward.map((item) => normalizedPreference(item.preference)));
-    const reversePreferences = new Set(reverse.map((item) => normalizedPreference(item.preference)));
-    const shared = [...forwardPreferences].some((preference) => reversePreferences.has(preference));
-    if (!shared) return false;
-    for (const dimension of STAGE3R_DIMENSIONS) {
-      if (
-        Math.abs(
-          (forward[0]?.scores[dimension] ?? 0) -
-            (reverse[0]?.scores[dimension] ?? 0),
-        ) > 1
-      ) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-function repeatedJudgeConsistency(
-  results: readonly Stage3rJudgeResult[],
-  highConsequence: boolean,
-): boolean {
-  if (!highConsequence) return true;
-  const groups = new Map<string, Stage3rJudgeResult[]>();
-  for (const result of results) {
-    const key = `${result.judgeId}:${result.provider}:${result.modelId}:${result.order}`;
-    const existing = groups.get(key) ?? [];
-    existing.push(result);
-    groups.set(key, existing);
-  }
-
-  const repeatedJudges = new Set<string>();
-  for (const group of groups.values()) {
-    if (
-      !group.some((item) => item.repeatedRun === 1) ||
-      !group.some((item) => item.repeatedRun === 2)
-    ) {
-      continue;
-    }
-    repeatedJudges.add(group[0]!.judgeId);
-    const preferences = new Set(group.map((item) => normalizedPreference(item.preference)));
-    if (preferences.size > 1) return false;
-    for (const dimension of STAGE3R_DIMENSIONS) {
-      const values = group.map((item) => item.scores[dimension]);
-      if (Math.max(...values) - Math.min(...values) > 1) return false;
-    }
-  }
-  return repeatedJudges.size === new Set(results.map((item) => item.judgeId)).size;
-}
-
 export function assessStage3rCase(input: {
   caseId: string;
   responseHash: string;
@@ -139,11 +70,14 @@ export function assessStage3rCase(input: {
   const judges = new Set(results.map((result) => result.judgeId));
   const providers = new Set(results.map((result) => result.provider.toLowerCase()));
   const criticalFlags = [...new Set(results.flatMap((result) => result.criticalFlags))].sort();
-  const positionConsistent = positionConsistency(results);
-  const repeatedConsistent = repeatedJudgeConsistency(
+  const positionConsistent = materiallyPositionConsistent({
+    hasReferenceResponse: input.hasReferenceResponse,
     results,
-    input.highConsequence,
-  );
+  });
+  const repeatedConsistent = materiallyRepeatedJudgeConsistent({
+    highConsequence: input.highConsequence,
+    results,
+  });
   const generatorProviders = new Set(
     results
       .map((result) => modelProvider(result.generatorModelId))
@@ -159,8 +93,8 @@ export function assessStage3rCase(input: {
   if (judges.size < 3) reasons.push("fewer_than_three_judge_configurations");
   if (providers.size < 2) reasons.push("fewer_than_two_model_providers");
   if (!independentProviderPresent) reasons.push("no_provider_independent_from_generator");
-  if (!positionConsistent) reasons.push("position_bias_or_missing_order_reversal");
-  if (!repeatedConsistent) reasons.push("repeated_judge_inconsistency");
+  if (!positionConsistent) reasons.push("material_position_inconsistency");
+  if (!repeatedConsistent) reasons.push("material_repeat_inconsistency");
   if (criticalFlags.length > 0) reasons.push("critical_quality_or_safety_flag");
 
   const dimensionMeans = emptyScores();
@@ -195,19 +129,14 @@ export function assessStage3rCase(input: {
     (result) =>
       result.preference !== "not_applicable" && result.repeatedRun === 1,
   );
-  const candidatePreferenceRate = pairwise.length
-    ? round(
-        pairwise.reduce((sum, result) => {
-          if (result.preference === "candidate") return sum + 1;
-          if (result.preference === "tie") return sum + 0.5;
-          return sum;
-        }, 0) / pairwise.length,
-      )
-    : null;
+  const rawCandidateNonInferiorityRate = candidateNonInferiorityRate(results);
+  const candidatePreferenceRate = rawCandidateNonInferiorityRate === null
+    ? null
+    : round(rawCandidateNonInferiorityRate);
   if (input.hasReferenceResponse) {
     if (pairwise.length === 0) reasons.push("gold_case_missing_pairwise_judging");
     if ((candidatePreferenceRate ?? 0) < 2 / 3) {
-      reasons.push("candidate_not_preferred_on_gold_case");
+      reasons.push("candidate_below_gold_noninferiority_threshold");
     }
   }
 

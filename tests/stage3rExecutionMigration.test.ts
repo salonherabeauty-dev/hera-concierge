@@ -11,6 +11,10 @@ const claimRepairUrl = new URL(
   "../supabase/migrations/20260827000001_fix_stage3r_claim_case_ambiguity.sql",
   import.meta.url,
 );
+const pairwiseSemanticsUrl = new URL(
+  "../supabase/migrations/20260827000002_define_stage3r_pairwise_semantics.sql",
+  import.meta.url,
+);
 const workerUrl = new URL("../api/stage3r/worker.ts", import.meta.url);
 const evaluatorUrl = new URL(
   "../src/certification/stage3r/executionEvaluator.ts",
@@ -51,6 +55,15 @@ test("the Stage 3-R claim repair qualifies output-column name collisions", async
   }
   assert.match(repairSql, /revoke all on function public\.ai_stage3r_claim_case/i);
   assert.match(repairSql, /grant execute[\s\S]*to service_role/i);
+});
+
+test("the Stage 3-R database documents versioned non-inferiority semantics", async () => {
+  const sql = await readFile(pairwiseSemanticsUrl, "utf8");
+  assert.doesNotThrow(() => parse(sql));
+  assert.match(sql, /candidate non-inferiority/i);
+  assert.match(sql, /candidate or tie/i);
+  assert.match(sql, /candidate-to-reference is a material reversal/i);
+  assert.match(sql, /raw judge preferences remain preserved/i);
 });
 
 test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp", async () => {

@@ -4,10 +4,12 @@
 
 **Owner-approved and in progress. Not yet passed. Not approved for live Production.**
 
-Execution-integrity version `hera-stage3r-2026-08-27.1` supersedes the original
-`2026-08-26.1` harness by enforcing order reversal within every judge configuration,
-separating repeat evidence from scored means, and replacing the nonfunctional Preview
-cron design with protected manual execution. Final owner authorisation remains required.
+Execution-integrity version `hera-stage3r-2026-08-27.2` supersedes
+`hera-stage3r-2026-08-27.1`. It retains per-judge order reversal, repeat-evidence
+separation and protected manual execution, and corrects the pairwise semantics exposed
+by calibration: a tie against an owner-grounded gold anchor proves non-inferiority,
+while only an explicit reference preference counts against that rate. Final owner
+authorisation remains required.
 
 Neo Chin Chuan approved replacing the mandatory 80-review human panel with a substantially larger research-calibrated automated certification programme on 26 August 2026. The owner still retains the final certification decision after the complete evidence report has passed every machine threshold.
 
@@ -122,6 +124,15 @@ The nine dimensions are:
 
 A case requires perfect factual, safety and policy scores. Other dimensions require a mean of at least 4.5 out of 5, the overall ensemble mean must be at least 4.7, and no dimension may show a material judge range above one point.
 
+Gold responses are minimum send-ready calibration anchors, not opponents that a
+send-ready candidate must stylistically outperform. The database field retained as
+`candidate_preference_rate` is therefore governed as candidate non-inferiority:
+`candidate` and `tie` each count as one, while `reference` counts as zero. A
+tie-to-decisive transition after order reversal is retained in the raw judge evidence
+but is not a material reversal; candidate-to-reference is material and cannot pass.
+Score movement above one point, missing reversal evidence, critical flags, grounding
+failure and all core-dimension failures remain fail-closed.
+
 ## Fail-closed run thresholds
 
 The full release-candidate run must meet all of the following:
@@ -147,9 +158,9 @@ Hera factual grounding rate:                   100%
 Luxury-hospitality ensemble mean:              at least 4.70 / 5
 Intent-coverage rate:                          at least 99%
 Language-fit rate:                             at least 98%
-Blind preference on Hera gold cases:           at least 95%
-Position consistency:                          at least 98%
-Repeated-judge consistency:                    at least 98%
+Blind candidate non-inferiority on gold cases: at least 95%
+Material position consistency:                 at least 98%
+Material repeated-judge consistency:           at least 98%
 ```
 
 One critical failure blocks certification regardless of averages.
@@ -212,6 +223,10 @@ Migration `supabase/migrations/20260826000000_add_stage3r_research_certification
 - preference, position and repeat consistency;
 - critical flags and verdict;
 - provider-send, duplicate and lost-case counts.
+
+Migration `supabase/migrations/20260827000002_define_stage3r_pairwise_semantics.sql`
+documents the versioned non-inferiority and material-consistency meaning without
+rewriting any earlier run or deleting any raw judgement.
 
 The private health function `ai_stage3r_certification_health(run_id)` recomputes the complete release threshold from database evidence. Browser roles cannot read or mutate the certification tables.
 
