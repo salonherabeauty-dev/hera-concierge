@@ -1,4 +1,4 @@
-export const STAGE3R_CERTIFICATION_VERSION = "hera-stage3r-2026-08-27.2";
+export const STAGE3R_CERTIFICATION_VERSION = "hera-stage3r-2026-08-27.3";
 export const STAGE3R_CORPUS_VERSION = "hera-stage3r-corpus-2026-08-26.1";
 export const STAGE3R_JUDGE_PROMPT_VERSION = "hera-stage3r-judge-2026-08-26.1";
 

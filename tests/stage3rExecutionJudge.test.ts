@@ -49,6 +49,22 @@ test("judge output repair accepts only schema-valid bounded JSON", () => {
   assert.equal(parseStage3rJudgeOutputText("not json"), null);
 });
 
+test("judge output accepts bounded detailed issue evidence", () => {
+  const detailedIssue = "Detailed independent finding. ".repeat(40).trim();
+  const parsed = parseStage3rJudgeOutputValue({
+    ...validJudgeOutput,
+    issues: [detailedIssue],
+  });
+  assert.deepEqual(parsed, { ...validJudgeOutput, issues: [detailedIssue] });
+  assert.equal(
+    parseStage3rJudgeOutputValue({
+      ...validJudgeOutput,
+      issues: ["x".repeat(4001)],
+    }),
+    null,
+  );
+});
+
 test("judge recovery handles only semantics-preserving Anthropic label casing", () => {
   assert.deepEqual(
     parseStage3rJudgeOutputValue({
