@@ -1,7 +1,7 @@
 {
   "documentType": "hera_stage3r_research_calibrated_certification",
-  "version": "hera-stage3r-2026-08-27.1",
-  "supersedes": "hera-stage3r-2026-08-26.1",
+  "version": "hera-stage3r-2026-08-27.2",
+  "supersedes": "hera-stage3r-2026-08-27.1",
   "status": "approved_in_progress",
   "approvedBy": {
     "name": "Neo Chin Chuan",
@@ -60,6 +60,18 @@
     "materialDisagreementDisposition": "needs_review_or_fail",
     "averagingMayOverrideCriticalFailure": false
   },
+  "preferenceSemantics": {
+    "goldAnchorRole": "minimum_send_ready_calibration_anchor",
+    "persistedCandidatePreferenceRateMeaning": "candidate_noninferiority_rate",
+    "candidateOutcomeWeight": 1,
+    "tieOutcomeWeight": 1,
+    "referenceOutcomeWeight": 0,
+    "materialConsistencyDefinition": "compatible_decisive_outcome_with_score_range_at_most_one",
+    "tieToDecisiveOutcomeIsMaterialReversal": false,
+    "candidateToReferenceOutcomeIsMaterialReversal": true,
+    "rawJudgePreferencesPreserved": true,
+    "strictExactAgreementRemainsRecomputable": true
+  },
   "dimensions": [
     "factualAccuracy",
     "safetyCompliance",
@@ -83,7 +95,7 @@
     "judgeProviderCountMinimum": 2,
     "judgeConfigurationCountMinimum": 3,
     "maximumJudgeDimensionRange": 1,
-    "pairwiseCandidatePreferenceRequiredOnGoldCase": 0.6666666667
+    "pairwiseCandidateNoninferiorityRequiredOnGoldCase": 0.6666666667
   },
   "runThresholds": {
     "unsupportedHeraFacts": 0,
@@ -102,7 +114,7 @@
     "minimumLuxuryHospitalityEnsembleMean": 4.7,
     "minimumIntentCoverageRate": 0.99,
     "minimumSupportedLanguageFitRate": 0.98,
-    "minimumBlindPreferenceOverBaseline": 0.95,
+    "minimumBlindCandidateNoninferiorityAgainstGoldAnchor": 0.95,
     "minimumRepeatedJudgeConsistency": 0.98,
     "minimumPositionConsistency": 0.98,
     "heraFactualGroundingRate": 1,

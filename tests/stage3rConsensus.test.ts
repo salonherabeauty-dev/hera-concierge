@@ -170,6 +170,41 @@ test("a perfect multi-provider and blind-order judge ensemble passes", () => {
   assert.equal(assessment.repeatedJudgeConsistent, true);
 });
 
+test("ties against a send-ready gold anchor prove non-inferiority without masking a decisive reversal", () => {
+  const results = perfectJudgeResults();
+  results.forEach((result, index) => {
+    results[index] = {
+      ...result,
+      preference: index === 3 ? "candidate" : "tie",
+    };
+  });
+  const assessment = assessStage3rCase({
+    caseId: "gold-noninferior",
+    responseHash: "a".repeat(64),
+    hasReferenceResponse: true,
+    highConsequence: false,
+    judgeResults: results,
+  });
+
+  assert.equal(assessment.verdict, "pass");
+  assert.deepEqual(assessment.reasons, []);
+  assert.equal(assessment.candidatePreferenceRate, 1);
+  assert.equal(assessment.positionConsistent, true);
+
+  results[0] = { ...results[0]!, preference: "candidate" };
+  results[1] = { ...results[1]!, preference: "reference" };
+  const reversed = assessStage3rCase({
+    caseId: "gold-reversed",
+    responseHash: "a".repeat(64),
+    hasReferenceResponse: true,
+    highConsequence: false,
+    judgeResults: results,
+  });
+  assert.notEqual(reversed.verdict, "pass");
+  assert.equal(reversed.positionConsistent, false);
+  assert.ok(reversed.reasons.includes("material_position_inconsistency"));
+});
+
 test("one provider or a generator-only judge panel fails closed", () => {
   const results = perfectJudgeResults().map((result, index) => ({
     ...result,
@@ -242,7 +277,7 @@ test("position reversal and repeat instability become needs-review or failure ev
 
   assert.notEqual(assessment.verdict, "pass");
   assert.equal(assessment.repeatedJudgeConsistent, false);
-  assert.ok(assessment.reasons.includes("repeated_judge_inconsistency"));
+  assert.ok(assessment.reasons.includes("material_repeat_inconsistency"));
   assert.equal(assessment.dimensionMeans.luxuryHospitalityTone, 5);
   assert.ok(
     !assessment.reasons.some((reason) =>

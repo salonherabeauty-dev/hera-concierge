@@ -66,6 +66,18 @@ type Contract = {
     orderReversalRequiredForPairwiseCases: boolean;
     repeatJudgingRequiredForDifficultCases: boolean;
   };
+  preferenceSemantics: {
+    goldAnchorRole: string;
+    persistedCandidatePreferenceRateMeaning: string;
+    candidateOutcomeWeight: number;
+    tieOutcomeWeight: number;
+    referenceOutcomeWeight: number;
+    tieToDecisiveOutcomeIsMaterialReversal: boolean;
+    candidateToReferenceOutcomeIsMaterialReversal: boolean;
+    rawJudgePreferencesPreserved: boolean;
+    strictExactAgreementRemainsRecomputable: boolean;
+  };
+  caseThresholds: Record<string, number>;
   dimensions: string[];
   runThresholds: Record<string, number | boolean>;
   releaseDecision: {
@@ -199,6 +211,32 @@ test("the judge ensemble is multi-provider, blind and resistant to self and posi
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /your own writing style/i);
   assert.match(STAGE3R_JUDGE_INSTRUCTIONS, /not automatically correct/i);
   assert.deepEqual(stage3rJudgeScoreFields(), STAGE3R_DIMENSIONS);
+});
+
+test("gold pairwise semantics measure non-inferiority without hiding raw judge evidence", async () => {
+  const contract = await json<Contract>(contractUrl);
+  const semantics = contract.preferenceSemantics;
+
+  assert.equal(semantics.goldAnchorRole, "minimum_send_ready_calibration_anchor");
+  assert.equal(
+    semantics.persistedCandidatePreferenceRateMeaning,
+    "candidate_noninferiority_rate",
+  );
+  assert.equal(semantics.candidateOutcomeWeight, 1);
+  assert.equal(semantics.tieOutcomeWeight, 1);
+  assert.equal(semantics.referenceOutcomeWeight, 0);
+  assert.equal(semantics.tieToDecisiveOutcomeIsMaterialReversal, false);
+  assert.equal(semantics.candidateToReferenceOutcomeIsMaterialReversal, true);
+  assert.equal(semantics.rawJudgePreferencesPreserved, true);
+  assert.equal(semantics.strictExactAgreementRemainsRecomputable, true);
+  assert.equal(
+    contract.caseThresholds.pairwiseCandidateNoninferiorityRequiredOnGoldCase,
+    0.6666666667,
+  );
+  assert.equal(
+    contract.runThresholds.minimumBlindCandidateNoninferiorityAgainstGoldAnchor,
+    0.95,
+  );
 });
 
 test("the certification contract remains shadow-only and fail closed on critical outcomes", async () => {
