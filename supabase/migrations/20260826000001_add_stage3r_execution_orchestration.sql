@@ -235,16 +235,16 @@ begin
 
   perform pg_advisory_xact_lock(hashtext(p_run_id::text));
 
-  update public.ai_stage3r_case_queue
-  set status = case when attempts >= max_attempts then 'dead' else 'retry' end,
-      available_at = case when attempts >= max_attempts then available_at else now() end,
+  update public.ai_stage3r_case_queue as stale
+  set status = case when stale.attempts >= stale.max_attempts then 'dead' else 'retry' end,
+      available_at = case when stale.attempts >= stale.max_attempts then stale.available_at else now() end,
       lock_token = null,
       locked_at = null,
-      last_error_code = coalesce(last_error_code, 'stale_lock_recovered'),
+      last_error_code = coalesce(stale.last_error_code, 'stale_lock_recovered'),
       updated_at = now()
-  where run_id = p_run_id
-    and status = 'processing'
-    and locked_at < now() - make_interval(mins => p_lock_minutes);
+  where stale.run_id = p_run_id
+    and stale.status = 'processing'
+    and stale.locked_at < now() - make_interval(mins => p_lock_minutes);
 
   select max_concurrency, max_estimated_cost_usd
   into v_limit, v_max_estimated_cost
