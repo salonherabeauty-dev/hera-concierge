@@ -43,6 +43,14 @@ test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp
   assert.match(source, /sendMode !== "shadow"/);
   assert.match(source, /WHATSAPP_LIVE_CONFIRMATION/);
   assert.match(source, /STAGE3R_EXECUTION_TOKEN/);
+  assert.match(source, /EMERGENCY_CALIBRATION_TOKEN_SHA256/);
+  assert.match(source, /createHash\("sha256"\)/);
+  assert.match(source, /2026-08-28T13:00:00Z/);
+  assert.match(source, /\[0, 6, 10, 20, 1910\]/);
+  assert.match(source, /EMERGENCY_CALIBRATION_COST_CAP_USD = 10/);
+  assert.match(source, /emergency_calibration_scope_mismatch/);
+  assert.match(source, /emergency_access_requires_calibration_run/);
+  assert.doesNotMatch(source, /EMERGENCY_CALIBRATION_TOKEN\s*=/);
   assert.match(source, /request\.method !== "POST"/);
   assert.match(source, /stage3r_calibration_requires_1_to_10_cases/);
   assert.match(source, /stage3r_calibration_cost_cap_must_be_at_most_25_usd/);
