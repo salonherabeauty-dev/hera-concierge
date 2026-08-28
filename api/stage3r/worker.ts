@@ -21,7 +21,7 @@ import {
 } from "../../src/certification/stage3r/types.js";
 
 const EMERGENCY_CALIBRATION_TOKEN_SHA256 =
-  "e3cbb3339c5675e042a17e120b4de0dec8c12c4ed23c7803feff30371b953309";
+  "e4518871a88424f2f3c6cd2181a426c4ec82b648c1da7590c52ec239a13909b2";
 const EMERGENCY_CALIBRATION_EXPIRES_AT_MS = Date.parse(
   "2026-08-28T13:00:00Z",
 );
