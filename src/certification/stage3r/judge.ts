@@ -3,6 +3,7 @@ import { gateway } from "@ai-sdk/gateway";
 import {
   isStepCount,
   NoObjectGeneratedError,
+  NoOutputGeneratedError,
   Output,
   ToolLoopAgent,
 } from "ai";
@@ -43,6 +44,8 @@ export const STAGE3R_BLIND_ORDERS = [
   "reference_first",
   "pointwise",
 ] as const satisfies readonly Stage3rOrder[];
+
+export const STAGE3R_JUDGE_MAX_OUTPUT_TOKENS = 4_000;
 
 export const STAGE3R_JUDGE_INSTRUCTIONS = [
   `You are an independent Hera Stage 3-R certification judge. Prompt version: ${STAGE3R_JUDGE_PROMPT_VERSION}.`,
@@ -192,7 +195,7 @@ export async function judgeStage3rCase(input: {
         "Independent blind-label reviews for each displayed response and a pairwise material preference.",
     }),
     stopWhen: isStepCount(2),
-    maxOutputTokens: 1800,
+    maxOutputTokens: STAGE3R_JUDGE_MAX_OUTPUT_TOKENS,
     temperature: 0,
     reasoning: "high",
     providerOptions: {
@@ -204,6 +207,8 @@ export async function judgeStage3rCase(input: {
       },
     },
   });
+  let observedModelId = input.configuration.modelId;
+  let observedFinishReason: string | null = null;
   try {
     const generated = await judge.generate({
       prompt: JSON.stringify({
@@ -229,7 +234,33 @@ export async function judgeStage3rCase(input: {
       }),
       timeout: 60_000,
     });
-    void generated.output;
+    observedModelId = generated.response.modelId || input.configuration.modelId;
+    observedFinishReason = generated.finishReason;
+    if (generated.finishReason !== "stop") {
+      logOperationalEvent("error", "stage3r_judge_non_stop_finish_reason", {
+        judgeId: input.configuration.judgeId,
+        attemptedModel: input.configuration.modelId,
+        responseModel: observedModelId,
+        order: input.order,
+        repeatedRun: input.repeatedRun,
+        finishReason: generated.finishReason,
+      });
+      return {
+        judgeId: input.configuration.judgeId,
+        provider: input.configuration.provider,
+        modelId: observedModelId,
+        generatorModelId: input.generatorModelId,
+        order: input.order,
+        responseHash: input.responseHash,
+        scores: invalidStage3rJudgeScores(),
+        criticalFlags: ["judge_structured_output_invalid"],
+        issues: ["Judge response ended before its structured judgment was complete."],
+        preference: "not_applicable",
+        rawPreference: "not_applicable",
+        confidence: 0,
+        repeatedRun: input.repeatedRun,
+      };
+    }
     const result = generated.output;
     const mapped = mapStage3rJudgeOutput({
       output: result,
@@ -284,11 +315,14 @@ export async function judgeStage3rCase(input: {
       repeatedRun: input.repeatedRun,
     };
   } catch (error) {
-    if (!NoObjectGeneratedError.isInstance(error)) throw error;
-    const textRepair = parseStage3rJudgeOutputText(error.text);
+    const objectError = NoObjectGeneratedError.isInstance(error) ? error : null;
+    const outputError = NoOutputGeneratedError.isInstance(error) ? error : null;
+    if (!objectError && !outputError) throw error;
+    const textRepair = parseStage3rJudgeOutputText(objectError?.text);
+    const errorCause = objectError?.cause ?? outputError?.cause;
     const causeRepair = textRepair
       ? null
-      : parseStage3rJudgeOutputCause(error.cause);
+      : parseStage3rJudgeOutputCause(errorCause);
     const repaired = textRepair ?? causeRepair;
     const mapped = repaired
       ? mapStage3rJudgeOutput({
@@ -305,22 +339,22 @@ export async function judgeStage3rCase(input: {
       {
         judgeId: input.configuration.judgeId,
         attemptedModel: input.configuration.modelId,
-        responseModel: error.response?.modelId ?? input.configuration.modelId,
+        responseModel: objectError?.response?.modelId ?? observedModelId,
         order: input.order,
         repeatedRun: input.repeatedRun,
-        finishReason: error.finishReason ?? null,
-        outputTokens: error.usage?.outputTokens ?? null,
+        finishReason: objectError?.finishReason ?? observedFinishReason,
+        outputTokens: objectError?.usage?.outputTokens ?? null,
         repairSource: textRepair ? "text" : causeRepair ? "cause_value" : null,
         outputDiagnostic: stage3rJudgeOutputDiagnostic({
-          text: error.text,
-          cause: error.cause,
+          text: objectError?.text,
+          cause: errorCause,
         }),
       },
     );
     return {
       judgeId: input.configuration.judgeId,
       provider: input.configuration.provider,
-      modelId: error.response?.modelId ?? input.configuration.modelId,
+      modelId: objectError?.response?.modelId ?? observedModelId,
       generatorModelId: input.generatorModelId,
       order: input.order,
       responseHash: input.responseHash,
