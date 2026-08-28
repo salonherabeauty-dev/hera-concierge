@@ -4,7 +4,7 @@ import type {
   GenerationAttemptLedger,
   GenerationAttemptOutcome,
 } from "../../ai/generationAttempts.js";
-import { estimateStage3rAttemptCost } from "./cost.js";
+import { accountStage3rAttempt } from "./cost.js";
 
 interface JsonAttemptResult {
   attemptId?: unknown;
@@ -38,10 +38,11 @@ export function createStage3rAttemptLedger(input: {
     outcome: "completed" | "failed";
     errorCode: string | null;
   }): Promise<GenerationAttemptOutcome> {
-    const estimate = estimateStage3rAttemptCost(
-      inputFinish.modelId,
-      inputFinish.usage,
-    );
+    const accounting = accountStage3rAttempt({
+      modelId: inputFinish.modelId,
+      usage: inputFinish.usage,
+      outcome: inputFinish.outcome,
+    });
     const { data, error } = await input.supabase.rpc(
       "ai_stage3r_finish_model_attempt",
       {
@@ -50,9 +51,9 @@ export function createStage3rAttemptLedger(input: {
         p_lock_token: input.lockToken,
         p_actual_model_id: inputFinish.modelId,
         p_finish_reason: finishReason(inputFinish.finishReason),
-        p_usage: inputFinish.usage ?? null,
-        p_cost_usd: estimate.costUsd,
-        p_pricing_issue: estimate.issue,
+        p_usage: accounting.usageEvidence,
+        p_cost_usd: accounting.costUsd,
+        p_pricing_issue: accounting.issue,
         p_latency_ms: Math.max(0, Math.round(inputFinish.latencyMs)),
         p_outcome: inputFinish.outcome,
         p_error_code: inputFinish.errorCode,

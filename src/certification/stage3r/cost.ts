@@ -4,6 +4,14 @@ interface ModelUsagePart {
   usage: unknown;
 }
 
+export const STAGE3R_FAILED_ATTEMPT_RESERVE_USD = 1;
+
+export interface Stage3rAttemptAccounting {
+  costUsd: number | null;
+  issue: string | null;
+  usageEvidence: unknown;
+}
+
 export const PRIORITY_PRICE_SNAPSHOT_2026_08_27: Readonly<
   Record<string, { input: number; output: number; basis: string }>
 > = {
@@ -78,6 +86,36 @@ export function estimateStage3rAttemptCost(
     // noise cannot make equivalent attempts compare or persist differently.
     costUsd: Number(rawCost.toFixed(12)),
     issue: null,
+  };
+}
+
+export function accountStage3rAttempt(input: {
+  modelId: string;
+  usage: unknown;
+  outcome: "completed" | "failed";
+}): Stage3rAttemptAccounting {
+  const estimate = estimateStage3rAttemptCost(input.modelId, input.usage);
+  const missingUsage = estimate.issue === `missing_usage:${input.modelId}`;
+  if (
+    input.outcome !== "failed" ||
+    estimate.costUsd !== null ||
+    !missingUsage
+  ) {
+    return {
+      ...estimate,
+      usageEvidence: input.usage ?? null,
+    };
+  }
+
+  return {
+    costUsd: STAGE3R_FAILED_ATTEMPT_RESERVE_USD,
+    issue: `failed_attempt_reserve:${input.modelId}`,
+    usageEvidence: {
+      accountingMode: "failed_attempt_reserve",
+      providerUsageAvailable: false,
+      reportedUsage: input.usage ?? null,
+      reserveUsd: STAGE3R_FAILED_ATTEMPT_RESERVE_USD,
+    },
   };
 }
 

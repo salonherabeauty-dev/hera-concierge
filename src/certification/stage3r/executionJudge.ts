@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { gateway } from "@ai-sdk/gateway";
+import { gateway, GatewayResponseError } from "@ai-sdk/gateway";
 import {
   isStepCount,
   NoObjectGeneratedError,
@@ -35,6 +35,8 @@ import {
 } from "./judgeOutput.js";
 
 export { parseStage3rJudgeOutputText } from "./judgeOutput.js";
+
+export const STAGE3R_JUDGE_GATEWAY_RESPONSE_RETRIES = 1;
 
 function anonymousUser(caseId: string): string {
   return `hera-stage3r-${createHash("sha256").update(caseId).digest("hex").slice(0, 24)}`;
@@ -180,30 +182,51 @@ export async function judgeStage3rCaseWithUsage(input: {
   });
   const started = Date.now();
   try {
-    const generated = await agent.generate({
-      prompt: JSON.stringify({
-        caseId: input.case.id,
-        family: input.case.family,
-        caseType: input.case.caseType,
-        language: input.case.language,
-        minimumRisk: input.case.minimumRisk,
-        highConsequence: input.case.highConsequence,
-        multiIntent: input.case.multiIntent,
-        adversarial: input.case.adversarial,
-        clientMessage: input.case.message,
-        conversationHistory: input.case.history,
-        requiredElements: input.case.requiredElements,
-        forbiddenClaims: input.case.forbiddenClaims,
-        approvedEvidence: input.approvedEvidence,
-        judgeEmphasis: input.configuration.emphasis,
-        responseA: displayed.responseA,
-        responseB: displayed.responseB,
-        blindLabelsOnly: true,
-        responseModelIdentityWithheld: true,
-        referenceIsNotAutomaticallyCorrect: true,
-      }),
-      timeout: 90_000,
+    const prompt = JSON.stringify({
+      caseId: input.case.id,
+      family: input.case.family,
+      caseType: input.case.caseType,
+      language: input.case.language,
+      minimumRisk: input.case.minimumRisk,
+      highConsequence: input.case.highConsequence,
+      multiIntent: input.case.multiIntent,
+      adversarial: input.case.adversarial,
+      clientMessage: input.case.message,
+      conversationHistory: input.case.history,
+      requiredElements: input.case.requiredElements,
+      forbiddenClaims: input.case.forbiddenClaims,
+      approvedEvidence: input.approvedEvidence,
+      judgeEmphasis: input.configuration.emphasis,
+      responseA: displayed.responseA,
+      responseB: displayed.responseB,
+      blindLabelsOnly: true,
+      responseModelIdentityWithheld: true,
+      referenceIsNotAutomaticallyCorrect: true,
     });
+    let gatewayRetries = 0;
+    let generated;
+    for (;;) {
+      try {
+        generated = await agent.generate({ prompt, timeout: 90_000 });
+        break;
+      } catch (error) {
+        if (
+          !GatewayResponseError.isInstance(error) ||
+          gatewayRetries >= STAGE3R_JUDGE_GATEWAY_RESPONSE_RETRIES
+        ) {
+          throw error;
+        }
+        await attempts.failOpen(error);
+        gatewayRetries += 1;
+        logOperationalEvent("warn", "stage3r_judge_gateway_response_retry", {
+          judgeId: input.configuration.judgeId,
+          attemptedModel: input.configuration.modelId,
+          order: input.order,
+          repeatedRun: input.repeatedRun,
+          gatewayRetry: gatewayRetries,
+        });
+      }
+    }
     attempts.assertHealthy();
     observedModelId = generated.response.modelId || input.configuration.modelId;
     observedFinishReason = generated.finishReason;

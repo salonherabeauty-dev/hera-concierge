@@ -31,7 +31,7 @@ configureButton.addEventListener("click", async () => {
   try {
     await execute("configure_calibration", {
       caseIndices: [0, 6, 10, 20, 1910],
-      maxEstimatedCostUsd: 3,
+      maxEstimatedCostUsd: 10,
     });
   } catch (error) {
     output.textContent = error instanceof Error ? error.message : "Configuration failed.";

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
+import { GatewayResponseError } from "@ai-sdk/gateway";
 import { NoOutputGeneratedError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type {
@@ -10,7 +11,10 @@ import type {
   GenerationAttemptLedger,
   GenerationAttemptStart,
 } from "../src/ai/generationAttempts.js";
-import { judgeStage3rCaseWithUsage } from "../src/certification/stage3r/executionJudge.js";
+import {
+  judgeStage3rCaseWithUsage,
+  STAGE3R_JUDGE_GATEWAY_RESPONSE_RETRIES,
+} from "../src/certification/stage3r/executionJudge.js";
 import { STAGE3R_JUDGE_MAX_OUTPUT_TOKENS } from "../src/certification/stage3r/judge.js";
 import {
   mapStage3rJudgeOutput,
@@ -361,11 +365,69 @@ test("the exact Chinese complaint length finish fails closed before output acces
     model.doGenerateCalls[0]?.maxOutputTokens,
     STAGE3R_JUDGE_MAX_OUTPUT_TOKENS,
   );
-  assert.equal(STAGE3R_JUDGE_MAX_OUTPUT_TOKENS, 4_000);
+  assert.equal(STAGE3R_JUDGE_MAX_OUTPUT_TOKENS, 8_000);
   assert.equal(ledger.starts.length, 1);
   assert.equal(ledger.completions.length, 1);
   assert.equal(ledger.completions[0]?.finishReason, "length");
   assert.equal(ledger.failures.length, 0);
+});
+
+test("one malformed Gateway response is retried and separately accounted", async () => {
+  let calls = 0;
+  const model = new MockLanguageModelV4({
+    provider: "offline",
+    modelId: forensicConfiguration.modelId,
+    doGenerate: async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw new GatewayResponseError({
+          message: "Offline malformed Gateway response.",
+          statusCode: 502,
+          response: { invalid: true },
+        });
+      }
+      return offlineJudgeResponse({
+        content: [{ type: "text", text: JSON.stringify(validJudgeOutput) }],
+        finishReason: "stop",
+        modelId: forensicConfiguration.modelId,
+      });
+    },
+  });
+  const ledger = new RecordingJudgeLedger();
+
+  const judged = await runOfflineJudge({ model, ledger });
+
+  assert.equal(judged.structuredOutputValid, true);
+  assert.equal(STAGE3R_JUDGE_GATEWAY_RESPONSE_RETRIES, 1);
+  assert.equal(model.doGenerateCalls.length, 2);
+  assert.equal(ledger.starts.length, 2);
+  assert.equal(ledger.failures.length, 1);
+  assert.equal(ledger.failures[0]?.errorCode, "gatewayresponseerror");
+  assert.equal(ledger.completions.length, 1);
+});
+
+test("Gateway response retries remain bounded at one", async () => {
+  const model = new MockLanguageModelV4({
+    provider: "offline",
+    modelId: forensicConfiguration.modelId,
+    doGenerate: async () => {
+      throw new GatewayResponseError({
+        message: "Offline malformed Gateway response.",
+        statusCode: 502,
+        response: { invalid: true },
+      });
+    },
+  });
+  const ledger = new RecordingJudgeLedger();
+
+  await assert.rejects(
+    runOfflineJudge({ model, ledger }),
+    (error: unknown) => GatewayResponseError.isInstance(error),
+  );
+  assert.equal(model.doGenerateCalls.length, 2);
+  assert.equal(ledger.starts.length, 2);
+  assert.equal(ledger.failures.length, 2);
+  assert.equal(ledger.completions.length, 0);
 });
 
 test("NoOutputGeneratedError is converted to cost-accounted fail-closed evidence", async () => {
