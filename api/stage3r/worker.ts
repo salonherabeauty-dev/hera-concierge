@@ -26,7 +26,7 @@ const EMERGENCY_CALIBRATION_EXPIRES_AT_MS = Date.parse(
   "2026-08-28T13:00:00Z",
 );
 const EMERGENCY_CALIBRATION_CASE_INDICES = [0, 6, 10, 20, 1910] as const;
-const EMERGENCY_CALIBRATION_COST_CAP_USD = 3;
+const EMERGENCY_CALIBRATION_COST_CAP_USD = 10;
 
 type ExecutionAccess = "environment" | "emergency_calibration";
 

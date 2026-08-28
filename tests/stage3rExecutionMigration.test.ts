@@ -85,7 +85,7 @@ test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp
   assert.match(source, /createHash\("sha256"\)/);
   assert.match(source, /2026-08-28T13:00:00Z/);
   assert.match(source, /\[0, 6, 10, 20, 1910\]/);
-  assert.match(source, /EMERGENCY_CALIBRATION_COST_CAP_USD = 3/);
+  assert.match(source, /EMERGENCY_CALIBRATION_COST_CAP_USD = 10/);
   assert.match(source, /emergency_calibration_scope_mismatch/);
   assert.match(source, /emergency_access_requires_calibration_run/);
   assert.match(source, /stage3r_run_deployment_identity_mismatch/);

@@ -12,7 +12,7 @@ const pageUrl = new URL(
 );
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("the private operator is fixed to the approved five-case US$3 calibration", async () => {
+test("the private operator is fixed to the approved five-case US$10 calibration", async () => {
   const [operator, page, vercel] = await Promise.all([
     readFile(operatorUrl, "utf8"),
     readFile(pageUrl, "utf8"),
@@ -20,10 +20,11 @@ test("the private operator is fixed to the approved five-case US$3 calibration",
   ]);
 
   assert.match(operator, /caseIndices: \[0, 6, 10, 20, 1910\]/);
-  assert.match(operator, /maxEstimatedCostUsd: 3/);
+  assert.match(operator, /maxEstimatedCostUsd: 10/);
   assert.match(operator, /Authorization: `Bearer \$\{token\}`/);
   assert.doesNotMatch(operator, /EMERGENCY_CALIBRATION_TOKEN/);
   assert.match(page, /type="password"/);
+  assert.match(page, /estimated US\$10 cap/);
   assert.match(page, /No paid call has started/);
   assert.match(vercel, /stage3r-calibration-operator/);
   assert.match(vercel, /noindex, nofollow, noarchive/);

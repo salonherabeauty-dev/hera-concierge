@@ -45,7 +45,7 @@ export const STAGE3R_BLIND_ORDERS = [
   "pointwise",
 ] as const satisfies readonly Stage3rOrder[];
 
-export const STAGE3R_JUDGE_MAX_OUTPUT_TOKENS = 4_000;
+export const STAGE3R_JUDGE_MAX_OUTPUT_TOKENS = 8_000;
 
 export const STAGE3R_JUDGE_INSTRUCTIONS = [
   `You are an independent Hera Stage 3-R certification judge. Prompt version: ${STAGE3R_JUDGE_PROMPT_VERSION}.`,
