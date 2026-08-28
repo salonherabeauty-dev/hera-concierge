@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow,noarchive" />
+    <title>Stage 3-R Calibration Operator</title>
+  </head>
+  <body>
+    <main>
+      <h1>Stage 3-R Calibration Operator</h1>
+      <p>Private staging only. Five cases, concurrency one, estimated US$3 cap.</p>
+      <label>
+        One-time access token
+        <input id="access-token" type="password" autocomplete="off" />
+      </label>
+      <label>
+        Run ID
+        <input id="run-id" type="text" autocomplete="off" readonly />
+      </label>
+      <div>
+        <button id="configure" type="button">Configure five-case calibration</button>
+        <button id="step" type="button" disabled>Run one case</button>
+        <button id="status" type="button" disabled>Check status</button>
+      </div>
+      <pre id="output" aria-live="polite">Ready. No paid call has started.</pre>
+    </main>
+    <script src="/stage3r-calibration-operator.js"></script>
+  </body>
+</html>
