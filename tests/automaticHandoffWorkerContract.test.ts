@@ -54,17 +54,19 @@ test("persisted handoff status matches the exact quality-approved client reply",
   );
 });
 
-test("a corrected final reply is re-verified before becoming delivery eligible", async () => {
-  const worker = await readFile(
-    new URL("../src/worker.ts", import.meta.url),
-    "utf8",
-  );
+test("corrected final replies receive a bounded independent re-verification", async () => {
+  const [worker, gate] = await Promise.all([
+    readFile(new URL("../src/worker.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/ai/finalResponseGate.ts", import.meta.url), "utf8"),
+  ]);
   assert.match(worker, /initialFinalVerification/);
-  assert.match(worker, /const finalVerification = initialFinalVerification\.approved/);
-  assert.match(worker, /draftReply: finalReply/);
+  assert.match(worker, /runFinalResponseGate/);
+  assert.match(worker, /verificationAttempts/);
+  assert.match(gate, /MAX_FINAL_RESPONSE_CORRECTIONS = 2/);
+  assert.match(gate, /correctionsApplied < MAX_FINAL_RESPONSE_CORRECTIONS/);
   assert.match(
     worker,
-    /deterministic\.risk === "black"[\s\S]{0,100}urgentSafetyReplyFor\(interpreted\.text\)/,
+    /deterministic\.risk === "black"[\s\S]{0,120}urgentSafetyReplyFor\(interpreted\.text\)/,
   );
   assert.match(
     worker,

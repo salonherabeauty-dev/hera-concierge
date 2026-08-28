@@ -136,6 +136,10 @@ test("one queue item evaluates one exact final response and records forensic evi
   assert.match(source, /providerSendCount:\s*0/);
   assert.match(source, /duplicateFinalCandidates:\s*0/);
   assert.match(source, /modelCallCount/);
+  assert.match(source, /second_corrected_final_verification/);
+  assert.match(source, /runtime_final_response_deterministic_quality_failed/);
+  assert.match(source, /runtime_final_response_verifier_rejected/);
+  assert.match(source, /finalGate:/);
   assert.match(costSource, /anthropic\/claude-sonnet-5/);
   assert.match(costSource, /input:\s*0\.000003/);
   assert.match(costSource, /output:\s*0\.000015/);
