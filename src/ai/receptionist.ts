@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { gateway } from "@ai-sdk/gateway";
+import { gateway, GatewayInternalServerError } from "@ai-sdk/gateway";
 import {
   isStepCount,
   Output,
@@ -360,6 +360,7 @@ function structuredGenerationSafeFields(
 }
 
 function retryableStructuredGenerationError(error: unknown): boolean {
+  if (GatewayInternalServerError.isInstance(error)) return true;
   const name = error instanceof Error ? error.name : "";
   const message = error instanceof Error ? error.message : String(error);
   const diagnostic = error as {
