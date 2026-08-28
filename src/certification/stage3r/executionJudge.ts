@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { gateway, GatewayResponseError } from "@ai-sdk/gateway";
+import {
+  gateway,
+  GatewayInternalServerError,
+  GatewayResponseError,
+} from "@ai-sdk/gateway";
 import {
   isStepCount,
   NoObjectGeneratedError,
@@ -210,8 +214,11 @@ export async function judgeStage3rCaseWithUsage(input: {
         generated = await agent.generate({ prompt, timeout: 90_000 });
         break;
       } catch (error) {
+        const retryableGatewayFailure =
+          GatewayResponseError.isInstance(error) ||
+          GatewayInternalServerError.isInstance(error);
         if (
-          !GatewayResponseError.isInstance(error) ||
+          !retryableGatewayFailure ||
           gatewayRetries >= STAGE3R_JUDGE_GATEWAY_RESPONSE_RETRIES
         ) {
           throw error;

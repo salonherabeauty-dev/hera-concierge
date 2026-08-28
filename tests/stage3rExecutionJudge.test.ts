@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
-import { GatewayResponseError } from "@ai-sdk/gateway";
+import {
+  GatewayInternalServerError,
+  GatewayResponseError,
+} from "@ai-sdk/gateway";
 import { NoOutputGeneratedError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type {
@@ -403,6 +406,39 @@ test("one malformed Gateway response is retried and separately accounted", async
   assert.equal(ledger.starts.length, 2);
   assert.equal(ledger.failures.length, 1);
   assert.equal(ledger.failures[0]?.errorCode, "gatewayresponseerror");
+  assert.equal(ledger.completions.length, 1);
+});
+
+test("one transient Gateway internal-server error is retried and separately accounted", async () => {
+  let calls = 0;
+  const model = new MockLanguageModelV4({
+    provider: "offline",
+    modelId: forensicConfiguration.modelId,
+    doGenerate: async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw new GatewayInternalServerError({
+          message: "Offline transient Gateway internal-server error.",
+          statusCode: 500,
+        });
+      }
+      return offlineJudgeResponse({
+        content: [{ type: "text", text: JSON.stringify(validJudgeOutput) }],
+        finishReason: "stop",
+        modelId: forensicConfiguration.modelId,
+      });
+    },
+  });
+  const ledger = new RecordingJudgeLedger();
+
+  const judged = await runOfflineJudge({ model, ledger });
+
+  assert.equal(judged.structuredOutputValid, true);
+  assert.equal(STAGE3R_JUDGE_GATEWAY_RESPONSE_RETRIES, 1);
+  assert.equal(model.doGenerateCalls.length, 2);
+  assert.equal(ledger.starts.length, 2);
+  assert.equal(ledger.failures.length, 1);
+  assert.equal(ledger.failures[0]?.errorCode, "gatewayinternalservererror");
   assert.equal(ledger.completions.length, 1);
 });
 
