@@ -21,9 +21,9 @@ import {
 } from "../../src/certification/stage3r/types.js";
 
 const EMERGENCY_CALIBRATION_TOKEN_SHA256 =
-  "de0acae3bfa9bade5bf8269a207bb3d62db8f8b7eaba6f8c78c8e86135d1bcbe";
+  "7708fd5c9df9b032e131df3572ef2752a823952c23cac84d3f9d73e5764df76d";
 const EMERGENCY_CALIBRATION_EXPIRES_AT_MS = Date.parse(
-  "2026-08-28T13:00:00Z",
+  "2026-08-28T18:00:00Z",
 );
 const EMERGENCY_CALIBRATION_CASE_INDICES = [0, 6, 10, 20, 1910] as const;
 const EMERGENCY_CALIBRATION_COST_CAP_USD = 10;
