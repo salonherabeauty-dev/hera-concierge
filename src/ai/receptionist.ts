@@ -5,6 +5,7 @@ import {
   Output,
   ToolLoopAgent,
   tool,
+  type LanguageModel,
   type ModelMessage,
 } from "ai";
 import { z } from "zod";
@@ -34,6 +35,10 @@ import {
 } from "../types.js";
 import type { InterpretedInbound } from "../whatsapp/media.js";
 import { logOperationalEvent, safeErrorFields } from "../observability/log.js";
+import {
+  createGenerationAttemptLifecycle,
+  type GenerationAttemptLedger,
+} from "./generationAttempts.js";
 
 export const RESPONSE_PROMPT_VERSION = "hera-receptionist-response-1.6.1";
 export const VERIFIER_PROMPT_VERSION = "hera-receptionist-verifier-1.6.1";
@@ -43,12 +48,15 @@ export const FINAL_RESPONSE_VERIFIER_PROMPT_VERSION =
 const MAX_STRUCTURED_MODEL_ATTEMPTS = 3;
 const RESPONSE_MAX_OUTPUT_TOKENS = 3_600;
 const VERIFIER_MAX_OUTPUT_TOKENS = 3_000;
+export const RESPONSE_AGENT_MAX_STEPS = 6;
 
 export interface AiRuntimeConfig {
   primaryModel: string;
   fallbackModels: string[];
   verifierModel: string;
   transcriptionModel: string;
+  modelFactory?: (modelId: string) => LanguageModel;
+  generationAttemptLedger?: GenerationAttemptLedger;
 }
 
 export interface GeneratedDecision {
@@ -277,6 +285,8 @@ function jsonValue(value: unknown): JsonValue {
 interface StructuredGenerationResult {
   readonly output: unknown;
   readonly finishReason: unknown;
+  readonly steps: readonly unknown[];
+  readonly response: { modelId?: unknown };
   readonly usage: {
     outputTokens?: unknown;
     outputTokenDetails?: {
@@ -293,6 +303,8 @@ type StructuredGenerationError = Error & {
   generationOutputTokens?: unknown;
   generationReasoningTokens?: unknown;
   generationTextTokens?: unknown;
+  generationStepCount?: unknown;
+  generationModelId?: unknown;
 };
 
 function forceStructuredOutput(result: StructuredGenerationResult): void {
@@ -306,6 +318,8 @@ function forceStructuredOutput(result: StructuredGenerationResult): void {
       diagnostic.generationReasoningTokens =
         result.usage.outputTokenDetails?.reasoningTokens;
       diagnostic.generationTextTokens = result.usage.outputTokenDetails?.textTokens;
+      diagnostic.generationStepCount = result.steps.length;
+      diagnostic.generationModelId = result.response.modelId;
     }
     throw error;
   }
@@ -334,12 +348,29 @@ function structuredGenerationSafeFields(
     generationReasoningTokens:
       typeof reasoningTokens === "number" ? reasoningTokens : null,
     generationTextTokens: typeof textTokens === "number" ? textTokens : null,
+    generationStepCount:
+      typeof diagnostic?.generationStepCount === "number"
+        ? diagnostic.generationStepCount
+        : null,
+    generationModelId:
+      typeof diagnostic?.generationModelId === "string"
+        ? diagnostic.generationModelId.slice(0, 100)
+        : null,
   };
 }
 
 function retryableStructuredGenerationError(error: unknown): boolean {
   const name = error instanceof Error ? error.name : "";
   const message = error instanceof Error ? error.message : String(error);
+  const diagnostic = error as {
+    finishReason?: unknown;
+    generationFinishReason?: unknown;
+  };
+  const finishReason =
+    diagnostic.generationFinishReason ?? diagnostic.finishReason;
+  if (typeof finishReason === "string" && finishReason !== "stop") {
+    return false;
+  }
   return /NoObjectGenerated|NoOutputGenerated|APICall|RateLimit|Timeout|Schema|JSON|parse/i.test(
     name + " " + message,
   );
@@ -355,7 +386,7 @@ function distinctModels(models: string[]): string[] {
 async function generateWithStructuredFallback<T>(input: {
   stage: "response" | "verification" | "final_verification";
   models: string[];
-  run: (modelId: string, remainingModels: string[]) => Promise<T>;
+  run: (modelId: string) => Promise<T>;
 }): Promise<T> {
   const models = distinctModels(input.models);
   if (models.length === 0) throw new Error("No AI model is configured");
@@ -366,7 +397,7 @@ async function generateWithStructuredFallback<T>(input: {
     if (!modelId) continue;
     const nextModel = models[index + 1] ?? null;
     try {
-      return await input.run(modelId, models.slice(index + 1));
+      return await input.run(modelId);
     } catch (error) {
       lastError = error;
       const canRetry =
@@ -386,6 +417,21 @@ async function generateWithStructuredFallback<T>(input: {
   }
 
   throw lastError;
+}
+
+function configuredLanguageModel(
+  config: AiRuntimeConfig,
+  modelId: string,
+): LanguageModel {
+  return config.modelFactory?.(modelId) ?? gateway(modelId);
+}
+
+export function prepareReceptionistAgentStep(stepNumber: number): {
+  toolChoice?: "none";
+} {
+  return stepNumber === RESPONSE_AGENT_MAX_STEPS - 1
+    ? { toolChoice: "none" }
+    : {};
 }
 
 function historyMessages(
@@ -517,10 +563,15 @@ export async function generateReceptionistDecision(input: {
       input.config.verifierModel,
       ...input.config.fallbackModels,
     ],
-    run: async (modelId, remainingModels) => {
+    run: async (modelId) => {
+      const attempts = createGenerationAttemptLifecycle({
+        ledger: input.config.generationAttemptLedger,
+        stage: "response",
+        configuredModelId: modelId,
+      });
       const agent = new ToolLoopAgent({
         id: "hera-whatsapp-receptionist",
-        model: gateway(modelId),
+        model: configuredLanguageModel(input.config, modelId),
         instructions: RESPONSE_INSTRUCTIONS,
         tools: {
           searchHeraKnowledge: searchKnowledge,
@@ -529,13 +580,18 @@ export async function generateReceptionistDecision(input: {
           getHeraDigitalTools,
         },
         output: Output.object({ schema: agentDecisionSchema }),
-        stopWhen: isStepCount(6),
+        stopWhen: isStepCount(RESPONSE_AGENT_MAX_STEPS),
+        prepareStep: async (step) => {
+          await attempts.prepareStep(step);
+          return prepareReceptionistAgentStep(step.stepNumber);
+        },
+        maxRetries: 0,
         maxOutputTokens: RESPONSE_MAX_OUTPUT_TOKENS,
         temperature: 0.1,
         reasoning: "medium",
+        onStepEnd: attempts.onStepEnd,
         providerOptions: {
           gateway: {
-            ...(remainingModels.length ? { models: remainingModels } : {}),
             tags: ["hera", "whatsapp", "receptionist", "response"],
             user: userId,
             serviceTier: "priority",
@@ -543,16 +599,22 @@ export async function generateReceptionistDecision(input: {
           },
         },
       });
-      const generated = await agent.generate({
-        messages: historyMessages(
-          input.history,
-          input.context.message.id,
-          input.interpreted,
-        ),
-        timeout: 75_000,
-      });
-      forceStructuredOutput(generated);
-      return generated;
+      try {
+        const generated = await agent.generate({
+          messages: historyMessages(
+            input.history,
+            input.context.message.id,
+            input.interpreted,
+          ),
+          timeout: 75_000,
+        });
+        attempts.assertHealthy();
+        forceStructuredOutput(generated);
+        return generated;
+      } catch (error) {
+        await attempts.failOpen(error);
+        throw error;
+      }
     },
   });
   const output = result.output;
@@ -587,20 +649,30 @@ export async function verifyReceptionistDecision(input: {
       input.config.primaryModel,
       ...input.config.fallbackModels,
     ],
-    run: async (modelId, remainingModels) => {
+    run: async (modelId) => {
+      const attempts = createGenerationAttemptLifecycle({
+        ledger: input.config.generationAttemptLedger,
+        stage: "verification",
+        configuredModelId: modelId,
+      });
       const verifier = new ToolLoopAgent({
         id: "hera-whatsapp-verifier",
-        model: gateway(modelId),
+        model: configuredLanguageModel(input.config, modelId),
         instructions: VERIFIER_INSTRUCTIONS,
         tools: {},
         output: Output.object({ schema: verificationSchema }),
         stopWhen: isStepCount(2),
+        prepareStep: async (step) => {
+          await attempts.prepareStep(step);
+          return {};
+        },
+        maxRetries: 0,
         maxOutputTokens: VERIFIER_MAX_OUTPUT_TOKENS,
         temperature: 0,
         reasoning: "low",
+        onStepEnd: attempts.onStepEnd,
         providerOptions: {
           gateway: {
-            ...(remainingModels.length ? { models: remainingModels } : {}),
             tags: ["hera", "whatsapp", "receptionist", "verification"],
             user: anonymousUserId(input.contactId),
             serviceTier: "priority",
@@ -608,21 +680,27 @@ export async function verifyReceptionistDecision(input: {
           },
         },
       });
-      const generated = await verifier.generate({
-        prompt: JSON.stringify({
-          conversationHistory: input.history.map((message) => ({
-            direction: message.direction,
-            text: message.text.slice(0, 5000),
-            createdAt: message.createdAt,
-          })),
-          clientMessage: input.originalMessage,
-          proposedDecision: input.decision,
-          approvedEvidence: input.evidence,
-        }),
-        timeout: 50_000,
-      });
-      forceStructuredOutput(generated);
-      return generated;
+      try {
+        const generated = await verifier.generate({
+          prompt: JSON.stringify({
+            conversationHistory: input.history.map((message) => ({
+              direction: message.direction,
+              text: message.text.slice(0, 5000),
+              createdAt: message.createdAt,
+            })),
+            clientMessage: input.originalMessage,
+            proposedDecision: input.decision,
+            approvedEvidence: input.evidence,
+          }),
+          timeout: 50_000,
+        });
+        attempts.assertHealthy();
+        forceStructuredOutput(generated);
+        return generated;
+      } catch (error) {
+        await attempts.failOpen(error);
+        throw error;
+      }
     },
   });
   return {
@@ -653,20 +731,30 @@ export async function verifyFinalClientReply(input: {
       input.config.primaryModel,
       ...input.config.fallbackModels,
     ],
-    run: async (modelId, remainingModels) => {
+    run: async (modelId) => {
+      const attempts = createGenerationAttemptLifecycle({
+        ledger: input.config.generationAttemptLedger,
+        stage: "final_verification",
+        configuredModelId: modelId,
+      });
       const verifier = new ToolLoopAgent({
         id: "hera-whatsapp-final-response-verifier",
-        model: gateway(modelId),
+        model: configuredLanguageModel(input.config, modelId),
         instructions: FINAL_RESPONSE_VERIFIER_INSTRUCTIONS,
         tools: {},
         output: Output.object({ schema: finalResponseVerificationSchema }),
         stopWhen: isStepCount(2),
+        prepareStep: async (step) => {
+          await attempts.prepareStep(step);
+          return {};
+        },
+        maxRetries: 0,
         maxOutputTokens: VERIFIER_MAX_OUTPUT_TOKENS,
         temperature: 0,
         reasoning: "low",
+        onStepEnd: attempts.onStepEnd,
         providerOptions: {
           gateway: {
-            ...(remainingModels.length ? { models: remainingModels } : {}),
             tags: ["hera", "whatsapp", "final-response-quality"],
             user: anonymousUserId(input.contactId),
             serviceTier: "priority",
@@ -674,25 +762,31 @@ export async function verifyFinalClientReply(input: {
           },
         },
       });
-      const generated = await verifier.generate({
-        prompt: JSON.stringify({
-          conversationHistory: input.history.map((message) => ({
-            direction: message.direction,
-            text: message.text.slice(0, 5000),
-            createdAt: message.createdAt,
-          })),
-          clientMessage: input.originalMessage,
-          proposedDecision: input.decision,
-          approvedEvidence: input.evidence,
-          deterministicPolicy: input.policy,
-          finalHandoffAssessment: input.handoff,
-          exactPostPolicyDraft: input.draftReply,
-          deterministicDraftQuality: input.deterministicDraftQuality,
-        }),
-        timeout: 50_000,
-      });
-      forceStructuredOutput(generated);
-      return generated;
+      try {
+        const generated = await verifier.generate({
+          prompt: JSON.stringify({
+            conversationHistory: input.history.map((message) => ({
+              direction: message.direction,
+              text: message.text.slice(0, 5000),
+              createdAt: message.createdAt,
+            })),
+            clientMessage: input.originalMessage,
+            proposedDecision: input.decision,
+            approvedEvidence: input.evidence,
+            deterministicPolicy: input.policy,
+            finalHandoffAssessment: input.handoff,
+            exactPostPolicyDraft: input.draftReply,
+            deterministicDraftQuality: input.deterministicDraftQuality,
+          }),
+          timeout: 50_000,
+        });
+        attempts.assertHealthy();
+        forceStructuredOutput(generated);
+        return generated;
+      } catch (error) {
+        await attempts.failOpen(error);
+        throw error;
+      }
     },
   });
 

@@ -5,7 +5,12 @@ import {
   NoObjectGeneratedError,
   Output,
   ToolLoopAgent,
+  type LanguageModel,
 } from "ai";
+import {
+  createGenerationAttemptLifecycle,
+  type GenerationAttemptLedger,
+} from "../../ai/generationAttempts.js";
 import { logOperationalEvent } from "../../observability/log.js";
 import {
   type Stage3rCase,
@@ -117,15 +122,24 @@ export async function judgeStage3rCaseWithUsage(input: {
   approvedEvidence: unknown;
   order: Stage3rOrder;
   repeatedRun: number;
+  modelFactory?: (modelId: string) => LanguageModel;
+  generationAttemptLedger?: GenerationAttemptLedger;
 }): Promise<InstrumentedJudgeResult> {
   const displayed = pair({
     order: input.order,
     candidate: input.candidateResponse,
     reference: input.case.referenceResponse,
   });
+  const attempts = createGenerationAttemptLifecycle({
+    ledger: input.generationAttemptLedger,
+    stage: `judge:${input.configuration.judgeId}:${input.order}:${input.repeatedRun}`,
+    configuredModelId: input.configuration.modelId,
+  });
   const agent = new ToolLoopAgent({
     id: input.configuration.judgeId,
-    model: gateway(input.configuration.modelId),
+    model:
+      input.modelFactory?.(input.configuration.modelId) ??
+      gateway(input.configuration.modelId),
     instructions: STAGE3R_JUDGE_INSTRUCTIONS,
     tools: {},
     output: Output.object({
@@ -135,9 +149,15 @@ export async function judgeStage3rCaseWithUsage(input: {
         "Independent blind-label reviews for each displayed response and a pairwise material preference.",
     }),
     stopWhen: isStepCount(2),
+    prepareStep: async (step) => {
+      await attempts.prepareStep(step);
+      return {};
+    },
+    maxRetries: 0,
     maxOutputTokens: 1800,
     temperature: 0,
     reasoning: "high",
+    onStepEnd: attempts.onStepEnd,
     providerOptions: {
       gateway: {
         tags: ["hera", "stage3r", "certification", input.configuration.emphasis],
@@ -173,6 +193,7 @@ export async function judgeStage3rCaseWithUsage(input: {
       }),
       timeout: 90_000,
     });
+    attempts.assertHealthy();
     const output = generated.output;
     const metadata = jsonSafe((generated as unknown as { providerMetadata?: unknown }).providerMetadata);
     const usage = jsonSafe((generated as unknown as { totalUsage?: unknown; usage?: unknown }).totalUsage ?? generated.usage);
@@ -243,6 +264,7 @@ export async function judgeStage3rCaseWithUsage(input: {
       structuredOutputValid: true,
     };
   } catch (error) {
+    await attempts.failOpen(error);
     if (!NoObjectGeneratedError.isInstance(error)) throw error;
     const textRepair = parseStage3rJudgeOutputText(error.text);
     const causeRepair = textRepair

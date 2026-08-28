@@ -20,6 +20,10 @@ const evaluatorUrl = new URL(
   "../src/certification/stage3r/executionEvaluator.ts",
   import.meta.url,
 );
+const costUrl = new URL(
+  "../src/certification/stage3r/cost.ts",
+  import.meta.url,
+);
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
 test("PostgreSQL accepts the Stage 3-R resumable execution migration", async () => {
@@ -113,7 +117,10 @@ test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp
 });
 
 test("one queue item evaluates one exact final response and records forensic evidence", async () => {
-  const source = await readFile(evaluatorUrl, "utf8");
+  const [source, costSource] = await Promise.all([
+    readFile(evaluatorUrl, "utf8"),
+    readFile(costUrl, "utf8"),
+  ]);
   assert.match(source, /generateReceptionistDecision/);
   assert.match(source, /verifyReceptionistDecision/);
   assert.match(source, /assessGrounding/);
@@ -129,7 +136,8 @@ test("one queue item evaluates one exact final response and records forensic evi
   assert.match(source, /providerSendCount:\s*0/);
   assert.match(source, /duplicateFinalCandidates:\s*0/);
   assert.match(source, /modelCallCount/);
-  assert.match(source, /anthropic\/claude-sonnet-5/);
-  assert.match(source, /input:\s*0\.000003/);
-  assert.match(source, /output:\s*0\.000015/);
+  assert.match(costSource, /anthropic\/claude-sonnet-5/);
+  assert.match(costSource, /input:\s*0\.000003/);
+  assert.match(costSource, /output:\s*0\.000015/);
+  assert.doesNotMatch(source, /Promise\.all\([\s\S]*judgeConfigurations\.map/);
 });

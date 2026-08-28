@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { buildStage3rCorpus } from "../../src/certification/stage3r/corpus.js";
+import { createStage3rAttemptLedger } from "../../src/certification/stage3r/attemptLedger.js";
 import { evaluateStage3rExecutionCase } from "../../src/certification/stage3r/executionEvaluator.js";
 import { getStage3rJudgeConfigurations } from "../../src/certification/stage3r/judge.js";
 import { getAiConfig, getDatabaseConfig } from "../../src/config.js";
@@ -146,6 +147,21 @@ function isExactEmergencyCalibration(
 
 function safeCode(error: unknown): string {
   if (!(error instanceof Error)) return "stage3r_unknown_failure";
+  const diagnostic = error as Error & {
+    finishReason?: unknown;
+    generationFinishReason?: unknown;
+  };
+  const finishReason =
+    diagnostic.generationFinishReason ?? diagnostic.finishReason;
+  if (
+    /NoOutputGenerated/i.test(error.name) &&
+    typeof finishReason === "string"
+  ) {
+    return `stage3r_no_structured_output_${finishReason}`
+      .replace(/[^a-z0-9]+/gi, "_")
+      .toLowerCase()
+      .slice(0, 120);
+  }
   if (/^stage3r_[a-z0-9_:.-]+$/i.test(error.message)) {
     return error.message
       .replace(/[^a-z0-9]+/gi, "_")
@@ -159,6 +175,34 @@ function safeCode(error: unknown): string {
     .replace(/[^a-z0-9]+/gi, "_")
     .toLowerCase()
     .slice(0, 80) || "stage3r_processing_failure";
+}
+
+function generationFailureFields(
+  error: unknown,
+): Record<string, string | number | null> {
+  if (!(error instanceof Error)) {
+    return { finishReason: null, generationStepCount: null, responseModel: null };
+  }
+  const diagnostic = error as Error & {
+    finishReason?: unknown;
+    generationFinishReason?: unknown;
+    generationStepCount?: unknown;
+    generationModelId?: unknown;
+  };
+  const finishReason =
+    diagnostic.generationFinishReason ?? diagnostic.finishReason;
+  return {
+    finishReason:
+      typeof finishReason === "string" ? finishReason.slice(0, 40) : null,
+    generationStepCount:
+      typeof diagnostic.generationStepCount === "number"
+        ? diagnostic.generationStepCount
+        : null,
+    responseModel:
+      typeof diagnostic.generationModelId === "string"
+        ? diagnostic.generationModelId.slice(0, 100)
+        : null,
+  };
 }
 
 function requirePreviewSafety(): void {
@@ -392,6 +436,24 @@ export default async function handler(
     ) {
       throw new Error("stage3r_run_deployment_identity_mismatch");
     }
+    if (beforeClaim?.costInstrumentationBlocked) {
+      response.status(200).json({
+        ok: false,
+        state: "cost_instrumentation_blocked",
+        runId,
+        execution: beforeClaim,
+      });
+      return;
+    }
+    if (beforeClaim?.modelAttemptCapReached) {
+      response.status(200).json({
+        ok: false,
+        state: "model_attempt_cap_reached",
+        runId,
+        execution: beforeClaim,
+      });
+      return;
+    }
     if (beforeClaim?.costCapReached) {
       response.status(200).json({
         ok: true,
@@ -442,7 +504,16 @@ export default async function handler(
     if (!caseItem) throw new Error("stage3r_case_index_out_of_range");
 
     try {
-      const result = await evaluateStage3rExecutionCase(caseItem, getAiConfig());
+      const result = await evaluateStage3rExecutionCase(caseItem, {
+        ...getAiConfig(),
+        generationAttemptLedger: createStage3rAttemptLedger({
+          supabase,
+          runId,
+          queueId: String(claim.queue_id),
+          lockToken: String(claim.lock_token),
+          caseIndex,
+        }),
+      });
       const { error: commitError } = await supabase.rpc(
         "ai_stage3r_commit_case",
         {
@@ -500,6 +571,12 @@ export default async function handler(
       });
     } catch (error) {
       const errorCode = safeCode(error);
+      logOperationalEvent("error", "stage3r_case_execution_failed", {
+        errorCode,
+        caseIndex,
+        ...generationFailureFields(error),
+        ...safeErrorFields(error),
+      });
       const { data: retryState } = await supabase.rpc("ai_stage3r_retry_case", {
         p_queue_id: claim.queue_id,
         p_lock_token: claim.lock_token,

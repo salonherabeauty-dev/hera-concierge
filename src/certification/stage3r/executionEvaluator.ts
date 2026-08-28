@@ -43,6 +43,11 @@ import {
 } from "./judge.js";
 import { judgeStage3rCaseWithUsage } from "./executionJudge.js";
 import {
+  estimatedPriorityCost,
+  PRIORITY_PRICE_SNAPSHOT_2026_08_27,
+  stage3rUsageTokens,
+} from "./cost.js";
+import {
   candidateNonInferiorityRate,
   materiallyPositionConsistent,
   materiallyRepeatedJudgeConsistent,
@@ -194,80 +199,6 @@ interface ModelUsagePart {
   stage: string;
   modelId: string;
   usage: unknown;
-}
-
-const PRIORITY_PRICE_SNAPSHOT_2026_08_27: Readonly<
-  Record<string, { input: number; output: number; basis: string }>
-> = {
-  "openai/gpt-5.6-sol": {
-    input: 0.000004,
-    output: 0.00002,
-    basis: "Vercel AI Gateway priority tier",
-  },
-  "openai/gpt-5.6-terra": {
-    input: 0.000004,
-    output: 0.000024,
-    basis: "Vercel AI Gateway priority tier",
-  },
-  "anthropic/claude-opus-5": {
-    input: 0.00001,
-    output: 0.00005,
-    basis: "Vercel AI Gateway fast-tier conservative ceiling",
-  },
-  "anthropic/claude-sonnet-5": {
-    input: 0.000003,
-    output: 0.000015,
-    basis: "Vercel AI Gateway maximum listed provider rate on 2026-08-27",
-  },
-};
-
-function usageTokens(value: unknown): { input: number; output: number; total: number } {
-  let input = 0;
-  let output = 0;
-  const seen = new Set<object>();
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== "object") return;
-    if (seen.has(node as object)) return;
-    seen.add(node as object);
-    if (Array.isArray(node)) {
-      node.forEach(visit);
-      return;
-    }
-    const record = node as Record<string, unknown>;
-    if (
-      typeof record.inputTokens === "number" &&
-      typeof record.outputTokens === "number"
-    ) {
-      input += record.inputTokens;
-      output += record.outputTokens;
-      return;
-    }
-    Object.values(record).forEach(visit);
-  };
-  visit(value);
-  return { input, output, total: input + output };
-}
-
-function estimatedPriorityCost(parts: readonly ModelUsagePart[]): {
-  costUsd: number | null;
-  issues: string[];
-} {
-  let total = 0;
-  const issues: string[] = [];
-  for (const part of parts) {
-    const price = PRIORITY_PRICE_SNAPSHOT_2026_08_27[part.modelId];
-    if (!price) {
-      issues.push(`missing_price:${part.modelId}`);
-      continue;
-    }
-    const tokens = usageTokens(part.usage);
-    if (tokens.total <= 0) {
-      issues.push(`missing_usage:${part.stage}:${part.modelId}`);
-      continue;
-    }
-    total += tokens.input * price.input + tokens.output * price.output;
-  }
-  return { costUsd: issues.length === 0 ? total : null, issues };
 }
 
 function scoreMean(scores: Stage3rDimensionScores): number {
@@ -565,45 +496,42 @@ export async function evaluateStage3rExecutionCase(
     caseItem,
     judgeConfigurations,
   );
-  const instrumented = (
-    await Promise.all(
-      judgeConfigurations.map(async (configuration) => {
-        const configurationResults: Array<
-          Awaited<ReturnType<typeof judgeStage3rCaseWithUsage>>
-        > = [];
-        for (const execution of judgePlan.filter(
-          (item) => item.configuration.judgeId === configuration.judgeId,
-        )) {
-          const judged = await judgeStage3rCaseWithUsage({
-              configuration: execution.configuration,
-              case: caseItem,
-              candidateResponse: exactFinalResponse,
-              responseHash,
-              generatorModelId,
-              approvedEvidence: {
-                sources: decision.sources,
-                factualBasis: decision.factualBasis,
-                grounding,
-                policy,
-                handoff,
-                policyVersion: POLICY_VERSION,
-                groundingPolicyVersion: GROUNDING_POLICY_VERSION,
-                handoffPolicyVersion: HUMAN_HANDOFF_POLICY_VERSION,
-                finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
-                responsePromptVersion: RESPONSE_PROMPT_VERSION,
-                verifierPromptVersion: VERIFIER_PROMPT_VERSION,
-                finalVerifierPromptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
-              },
-              order: execution.order,
-              repeatedRun: execution.repeatedRun,
-            });
-          configurationResults.push(judged);
-          if (!judged.structuredOutputValid) break;
-        }
-        return configurationResults;
-      }),
-    )
-  ).flat();
+  const instrumented: Array<
+    Awaited<ReturnType<typeof judgeStage3rCaseWithUsage>>
+  > = [];
+  for (const configuration of judgeConfigurations) {
+    for (const execution of judgePlan.filter(
+      (item) => item.configuration.judgeId === configuration.judgeId,
+    )) {
+      const judged = await judgeStage3rCaseWithUsage({
+        configuration: execution.configuration,
+        case: caseItem,
+        candidateResponse: exactFinalResponse,
+        responseHash,
+        generatorModelId,
+        approvedEvidence: {
+          sources: decision.sources,
+          factualBasis: decision.factualBasis,
+          grounding,
+          policy,
+          handoff,
+          policyVersion: POLICY_VERSION,
+          groundingPolicyVersion: GROUNDING_POLICY_VERSION,
+          handoffPolicyVersion: HUMAN_HANDOFF_POLICY_VERSION,
+          finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+          responsePromptVersion: RESPONSE_PROMPT_VERSION,
+          verifierPromptVersion: VERIFIER_PROMPT_VERSION,
+          finalVerifierPromptVersion: FINAL_RESPONSE_VERIFIER_PROMPT_VERSION,
+        },
+        order: execution.order,
+        repeatedRun: execution.repeatedRun,
+        modelFactory: config.modelFactory,
+        generationAttemptLedger: config.generationAttemptLedger,
+      });
+      instrumented.push(judged);
+      if (!judged.structuredOutputValid) break;
+    }
+  }
   const judgeResults = instrumented.map((item) => item.result);
   usageParts.push(...instrumented.map((item, index) => ({
     stage: `judge_${index + 1}`,
@@ -617,7 +545,7 @@ export async function evaluateStage3rExecutionCase(
     groundedHeraFacts: grounding.grounded || !grounding.required,
     generatorModelId,
   });
-  const tokens = usageTokens(usageParts);
+  const tokens = stage3rUsageTokens(usageParts);
   const cost = estimatedPriorityCost(usageParts);
   return {
     caseItem,
