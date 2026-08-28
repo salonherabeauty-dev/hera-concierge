@@ -3,6 +3,7 @@ import { gateway } from "@ai-sdk/gateway";
 import {
   isStepCount,
   NoObjectGeneratedError,
+  NoOutputGeneratedError,
   Output,
   ToolLoopAgent,
   type LanguageModel,
@@ -21,6 +22,7 @@ import {
 } from "./types.js";
 import {
   STAGE3R_JUDGE_INSTRUCTIONS,
+  STAGE3R_JUDGE_MAX_OUTPUT_TOKENS,
   type Stage3rJudgeConfiguration,
 } from "./judge.js";
 import {
@@ -135,6 +137,10 @@ export async function judgeStage3rCaseWithUsage(input: {
     stage: `judge:${input.configuration.judgeId}:${input.order}:${input.repeatedRun}`,
     configuredModelId: input.configuration.modelId,
   });
+  let observedModelId = input.configuration.modelId;
+  let observedFinishReason: string | null = null;
+  let observedUsage: unknown = null;
+  let observedProviderMetadata: unknown = null;
   const agent = new ToolLoopAgent({
     id: input.configuration.judgeId,
     model:
@@ -154,10 +160,15 @@ export async function judgeStage3rCaseWithUsage(input: {
       return {};
     },
     maxRetries: 0,
-    maxOutputTokens: 1800,
+    maxOutputTokens: STAGE3R_JUDGE_MAX_OUTPUT_TOKENS,
     temperature: 0,
     reasoning: "high",
-    onStepEnd: attempts.onStepEnd,
+    onStepEnd: async (step) => {
+      observedModelId = step.response.modelId || input.configuration.modelId;
+      observedFinishReason = step.finishReason;
+      observedUsage = jsonSafe(step.usage);
+      await attempts.onStepEnd(step);
+    },
     providerOptions: {
       gateway: {
         tags: ["hera", "stage3r", "certification", input.configuration.emphasis],
@@ -194,9 +205,48 @@ export async function judgeStage3rCaseWithUsage(input: {
       timeout: 90_000,
     });
     attempts.assertHealthy();
+    observedModelId = generated.response.modelId || input.configuration.modelId;
+    observedFinishReason = generated.finishReason;
+    observedProviderMetadata = jsonSafe(
+      (generated as unknown as { providerMetadata?: unknown }).providerMetadata,
+    );
+    observedUsage = jsonSafe(
+      (generated as unknown as { totalUsage?: unknown; usage?: unknown }).totalUsage ??
+        generated.usage,
+    );
+    if (generated.finishReason !== "stop") {
+      logOperationalEvent("error", "stage3r_judge_non_stop_finish_reason", {
+        judgeId: input.configuration.judgeId,
+        attemptedModel: input.configuration.modelId,
+        responseModel: observedModelId,
+        order: input.order,
+        repeatedRun: input.repeatedRun,
+        finishReason: generated.finishReason,
+      });
+      return {
+        result: {
+          judgeId: input.configuration.judgeId,
+          provider: input.configuration.provider,
+          modelId: observedModelId,
+          generatorModelId: input.generatorModelId,
+          order: input.order,
+          responseHash: input.responseHash,
+          scores: invalidStage3rJudgeScores(),
+          criticalFlags: ["judge_structured_output_invalid"],
+          issues: ["Judge response ended before its structured judgment was complete."],
+          preference: "not_applicable",
+          rawPreference: "not_applicable",
+          confidence: 0,
+          repeatedRun: input.repeatedRun,
+        },
+        usage: observedUsage,
+        providerMetadata: observedProviderMetadata,
+        costUsd: findCost(observedProviderMetadata),
+        latencyMs: Date.now() - started,
+        structuredOutputValid: false,
+      };
+    }
     const output = generated.output;
-    const metadata = jsonSafe((generated as unknown as { providerMetadata?: unknown }).providerMetadata);
-    const usage = jsonSafe((generated as unknown as { totalUsage?: unknown; usage?: unknown }).totalUsage ?? generated.usage);
     const mapped = mapStage3rJudgeOutput({
       output,
       order: input.order,
@@ -225,9 +275,9 @@ export async function judgeStage3rCaseWithUsage(input: {
           confidence: 0,
           repeatedRun: input.repeatedRun,
         },
-        usage,
-        providerMetadata: metadata,
-        costUsd: findCost(metadata),
+        usage: observedUsage,
+        providerMetadata: observedProviderMetadata,
+        costUsd: findCost(observedProviderMetadata),
         latencyMs: Date.now() - started,
         structuredOutputValid: false,
       };
@@ -257,19 +307,22 @@ export async function judgeStage3rCaseWithUsage(input: {
         confidence: output.confidence,
         repeatedRun: input.repeatedRun,
       },
-      usage,
-      providerMetadata: metadata,
-      costUsd: findCost(metadata),
+      usage: observedUsage,
+      providerMetadata: observedProviderMetadata,
+      costUsd: findCost(observedProviderMetadata),
       latencyMs: Date.now() - started,
       structuredOutputValid: true,
     };
   } catch (error) {
     await attempts.failOpen(error);
-    if (!NoObjectGeneratedError.isInstance(error)) throw error;
-    const textRepair = parseStage3rJudgeOutputText(error.text);
+    const objectError = NoObjectGeneratedError.isInstance(error) ? error : null;
+    const outputError = NoOutputGeneratedError.isInstance(error) ? error : null;
+    if (!objectError && !outputError) throw error;
+    const textRepair = parseStage3rJudgeOutputText(objectError?.text);
+    const errorCause = objectError?.cause ?? outputError?.cause;
     const causeRepair = textRepair
       ? null
-      : parseStage3rJudgeOutputCause(error.cause);
+      : parseStage3rJudgeOutputCause(errorCause);
     const repaired = textRepair ?? causeRepair;
     const mapped = repaired
       ? mapStage3rJudgeOutput({
@@ -279,8 +332,8 @@ export async function judgeStage3rCaseWithUsage(input: {
         })
       : null;
     const repairSource = textRepair ? "text" : causeRepair ? "cause_value" : null;
-    const modelId = error.response?.modelId || input.configuration.modelId;
-    const usage = jsonSafe(error.usage);
+    const modelId = objectError?.response?.modelId || observedModelId;
+    const usage = objectError ? jsonSafe(objectError.usage) : observedUsage;
     logOperationalEvent(
       mapped ? "warn" : "error",
       mapped
@@ -292,12 +345,12 @@ export async function judgeStage3rCaseWithUsage(input: {
         responseModel: modelId,
         order: input.order,
         repeatedRun: input.repeatedRun,
-        finishReason: error.finishReason ?? null,
-        outputTokens: error.usage?.outputTokens ?? null,
+        finishReason: objectError?.finishReason ?? observedFinishReason,
+        outputTokens: objectError?.usage?.outputTokens ?? null,
         repairSource,
         outputDiagnostic: stage3rJudgeOutputDiagnostic({
-          text: error.text,
-          cause: error.cause,
+          text: objectError?.text,
+          cause: errorCause,
         }),
       },
     );
@@ -319,8 +372,8 @@ export async function judgeStage3rCaseWithUsage(input: {
           repeatedRun: input.repeatedRun,
         },
         usage,
-        providerMetadata: null,
-        costUsd: null,
+        providerMetadata: observedProviderMetadata,
+        costUsd: findCost(observedProviderMetadata),
         latencyMs: Date.now() - started,
         structuredOutputValid: false,
       };
@@ -351,8 +404,8 @@ export async function judgeStage3rCaseWithUsage(input: {
         repeatedRun: input.repeatedRun,
       },
       usage,
-      providerMetadata: null,
-      costUsd: null,
+      providerMetadata: observedProviderMetadata,
+      costUsd: findCost(observedProviderMetadata),
       latencyMs: Date.now() - started,
       structuredOutputValid: true,
     };
