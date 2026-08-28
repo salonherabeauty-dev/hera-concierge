@@ -5,6 +5,7 @@ import {
   verifyReceptionistDecision,
   type AiRuntimeConfig,
 } from "../../ai/receptionist.js";
+import { runFinalResponseGate } from "../../ai/finalResponseGate.js";
 import type { ReceptionistRepository } from "../../db/repository.js";
 import { assessGrounding, type GroundingAssessment } from "../../policy/grounding.js";
 import { assessHumanHandoff } from "../../policy/handoff.js";
@@ -250,58 +251,39 @@ export async function runStage3rExactResponse(input: {
   const draft = cleanReply(
     handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
   );
-  const draftQuality = assessFinalResponseQuality({
-    clientMessage: input.case.message,
-    reply: draft,
-    decision,
-    policy,
-    handoff,
-    risk: policy.risk,
-  });
-  const initialFinalVerification = await verifyFinalClientReply({
-    originalMessage: input.case.message,
-    history,
+  const finalGate = await runFinalResponseGate({
     draftReply: draft,
-    decision,
-    evidence: responseEvidence,
-    policy,
-    handoff,
-    deterministicDraftQuality: asJson(draftQuality),
-    contactId: context.contact.id,
-    config: input.ai,
+    forcedReply:
+      deterministic.risk === "black"
+        ? urgentSafetyReplyFor(input.case.message)
+        : null,
+    cleanReply,
+    assessQuality: (reply) => assessFinalResponseQuality({
+      clientMessage: input.case.message,
+      reply,
+      decision,
+      policy,
+      handoff,
+      risk: policy.risk,
+    }),
+    verify: (reply, quality) => verifyFinalClientReply({
+      originalMessage: input.case.message,
+      history,
+      draftReply: reply,
+      decision,
+      evidence: responseEvidence,
+      policy,
+      handoff,
+      deterministicDraftQuality: asJson(quality),
+      contactId: context.contact.id,
+      config: input.ai,
+    }),
   });
-  if (!initialFinalVerification.approved && !initialFinalVerification.correctedReply) {
-    throw new Error("Stage 3-R final verifier rejected the response without a correction");
-  }
-  const exactFinalResponse = cleanReply(
-    deterministic.risk === "black"
-      ? urgentSafetyReplyFor(input.case.message)
-      : initialFinalVerification.approved
-        ? draft
-        : initialFinalVerification.correctedReply!,
-  );
-  const deterministicQuality = assessFinalResponseQuality({
-    clientMessage: input.case.message,
+  const {
     reply: exactFinalResponse,
-    decision,
-    policy,
-    handoff,
-    risk: policy.risk,
-  });
-  const finalVerification = initialFinalVerification.approved
-    ? initialFinalVerification
-    : await verifyFinalClientReply({
-        originalMessage: input.case.message,
-        history,
-        draftReply: exactFinalResponse,
-        decision,
-        evidence: responseEvidence,
-        policy,
-        handoff,
-        deterministicDraftQuality: asJson(deterministicQuality),
-        contactId: context.contact.id,
-        config: input.ai,
-      });
+    quality: deterministicQuality,
+    finalVerification,
+  } = finalGate;
   const responseHash = createHash("sha256")
     .update(exactFinalResponse)
     .digest("hex");

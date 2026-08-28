@@ -8,6 +8,10 @@ import {
   verifyReceptionistDecision,
   type AiRuntimeConfig,
 } from "../../ai/receptionist.js";
+import {
+  FINAL_RESPONSE_GATE_VERSION,
+  runFinalResponseGate,
+} from "../../ai/finalResponseGate.js";
 import { getAiConfig } from "../../config.js";
 import type { ReceptionistRepository } from "../../db/repository.js";
 import { searchStaticKnowledge } from "../../knowledge/search.js";
@@ -210,6 +214,8 @@ function aggregateJudges(input: {
   caseItem: Stage3rCase;
   results: Stage3rJudgeResult[];
   deterministicDeliveryEligible: boolean;
+  deterministicQualityPassed: boolean;
+  finalVerifierApproved: boolean;
   groundedHeraFacts: boolean;
   generatorModelId: string | null;
 }): {
@@ -261,7 +267,15 @@ function aggregateJudges(input: {
       ) / scoredResults.length
     : 0;
   if (meanOverall < 4.7) reasons.push("overall_mean_below_4_7");
-  if (!input.deterministicDeliveryEligible) reasons.push("runtime_final_response_not_delivery_eligible");
+  if (!input.deterministicDeliveryEligible) {
+    reasons.push("runtime_final_response_not_delivery_eligible");
+    if (!input.deterministicQualityPassed) {
+      reasons.push("runtime_final_response_deterministic_quality_failed");
+    }
+    if (!input.finalVerifierApproved) {
+      reasons.push("runtime_final_response_verifier_rejected");
+    }
+  }
   if (!input.groundedHeraFacts) reasons.push("hera_factual_grounding_failed");
   if (flags.length > 0) reasons.push("critical_flags_present");
 
@@ -425,69 +439,52 @@ export async function evaluateStage3rExecutionCase(
   const draftFinalReply = cleanReply(
     handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
   );
-  const deterministicDraftQuality = assessFinalResponseQuality({
-    clientMessage: caseItem.message,
-    reply: draftFinalReply,
-    decision,
-    policy,
-    handoff,
-    risk: policy.risk,
-  });
-  const initialFinalVerification = await verifyFinalClientReply({
-    originalMessage: caseItem.message,
-    history,
+  const finalGate = await runFinalResponseGate({
     draftReply: draftFinalReply,
-    decision,
-    evidence: responseEvidence,
-    policy,
-    handoff,
-    deterministicDraftQuality: asJson(deterministicDraftQuality),
-    contactId: context.contact.id,
-    config,
+    forcedReply:
+      deterministic.risk === "black"
+        ? urgentSafetyReplyFor(caseItem.message)
+        : null,
+    cleanReply,
+    assessQuality: (reply) => assessFinalResponseQuality({
+      clientMessage: caseItem.message,
+      reply,
+      decision,
+      policy,
+      handoff,
+      risk: policy.risk,
+    }),
+    verify: (reply, quality) => verifyFinalClientReply({
+      originalMessage: caseItem.message,
+      history,
+      draftReply: reply,
+      decision,
+      evidence: responseEvidence,
+      policy,
+      handoff,
+      deterministicDraftQuality: asJson(quality),
+      contactId: context.contact.id,
+      config,
+    }),
   });
-  pipelineCalls += 1;
-  usageParts.push({
-    stage: "final_verification",
-    modelId: initialFinalVerification.modelId,
-    usage: initialFinalVerification.usage,
-  });
-  const exactFinalResponse = cleanReply(
-    deterministic.risk === "black"
-      ? urgentSafetyReplyFor(caseItem.message)
-      : initialFinalVerification.approved
-        ? draftFinalReply
-        : initialFinalVerification.correctedReply!,
-  );
-  const finalQuality = assessFinalResponseQuality({
-    clientMessage: caseItem.message,
+  const {
     reply: exactFinalResponse,
-    decision,
-    policy,
-    handoff,
-    risk: policy.risk,
-  });
-  const finalVerification = initialFinalVerification.approved
-    ? initialFinalVerification
-    : await verifyFinalClientReply({
-        originalMessage: caseItem.message,
-        history,
-        draftReply: exactFinalResponse,
-        decision,
-        evidence: responseEvidence,
-        policy,
-        handoff,
-        deterministicDraftQuality: asJson(finalQuality),
-        contactId: context.contact.id,
-        config,
-      });
-  if (finalVerification !== initialFinalVerification) {
-    pipelineCalls += 1;
-    usageParts.push({
-      stage: "corrected_final_verification",
-      modelId: finalVerification.modelId,
-      usage: finalVerification.usage,
-    });
-  }
+    quality: finalQuality,
+    finalVerification,
+    verificationAttempts,
+    correctionsApplied,
+  } = finalGate;
+  const finalVerificationStages = [
+    "final_verification",
+    "corrected_final_verification",
+    "second_corrected_final_verification",
+  ] as const;
+  pipelineCalls += verificationAttempts.length;
+  usageParts.push(...verificationAttempts.map((verification, index) => ({
+    stage: finalVerificationStages[index] ?? `final_verification_${index + 1}`,
+    modelId: verification.modelId,
+    usage: verification.usage,
+  })));
   const deterministicDeliveryEligible = finalQuality.passed && finalVerification.approved;
   const responseHash = createHash("sha256").update(exactFinalResponse).digest("hex");
 
@@ -542,6 +539,8 @@ export async function evaluateStage3rExecutionCase(
     caseItem,
     results: judgeResults,
     deterministicDeliveryEligible,
+    deterministicQualityPassed: finalQuality.passed,
+    finalVerifierApproved: finalVerification.approved,
     groundedHeraFacts: grounding.grounded || !grounding.required,
     generatorModelId,
   });
@@ -565,6 +564,16 @@ export async function evaluateStage3rExecutionCase(
       aggregateTokens: tokens,
       pipelineCalls,
       judgeCalls: instrumented.length,
+      finalGate: {
+        version: FINAL_RESPONSE_GATE_VERSION,
+        correctionsApplied,
+        deterministicPassed: finalQuality.passed,
+        deterministicIssues: finalQuality.issues,
+        verifierApproved: finalVerification.approved,
+        verifierIssues: finalVerification.issues,
+        verifierScores: finalVerification.scores,
+        verifierSummary: finalVerification.summary,
+      },
       pricingSnapshot: "vercel-ai-gateway-2026-08-27-priority-conservative",
       pricing: PRIORITY_PRICE_SNAPSHOT_2026_08_27,
       costCoverage: cost.costUsd === null

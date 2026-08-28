@@ -47,6 +47,10 @@ import {
   assessFinalResponseQuality,
   FINAL_RESPONSE_QUALITY_POLICY_VERSION,
 } from "./policy/finalResponseQuality.js";
+import {
+  FINAL_RESPONSE_GATE_VERSION,
+  runFinalResponseGate,
+} from "./ai/finalResponseGate.js";
 import { detectSupportedClientLocale } from "./policy/locale.js";
 import {
   logOperationalEvent,
@@ -359,55 +363,43 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   const draftFinalReply = cleanReply(
     handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
   );
-  const deterministicDraftQuality = assessFinalResponseQuality({
-    clientMessage: interpreted.text,
-    reply: draftFinalReply,
-    decision,
-    policy,
-    handoff,
-    risk: policy.risk,
-  });
-  const initialFinalVerification = await verifyFinalClientReply({
-    originalMessage: interpreted.text,
-    history,
+  const finalGate = await runFinalResponseGate({
     draftReply: draftFinalReply,
-    decision,
-    evidence: responseEvidence,
-    policy,
-    handoff,
-    deterministicDraftQuality: asJson(deterministicDraftQuality),
-    contactId: context.contact.id,
-    config: runtime.ai,
+    forcedReply:
+      deterministic.risk === "black"
+        ? urgentSafetyReplyFor(interpreted.text)
+        : null,
+    cleanReply,
+    assessQuality: (reply) => assessFinalResponseQuality({
+      clientMessage: interpreted.text,
+      reply,
+      decision,
+      policy,
+      handoff,
+      risk: policy.risk,
+    }),
+    verify: (reply, quality) => verifyFinalClientReply({
+      originalMessage: interpreted.text,
+      history,
+      draftReply: reply,
+      decision,
+      evidence: responseEvidence,
+      policy,
+      handoff,
+      deterministicDraftQuality: asJson(quality),
+      contactId: context.contact.id,
+      config: runtime.ai,
+    }),
   });
-  const finalReply = cleanReply(
-    deterministic.risk === "black"
-      ? urgentSafetyReplyFor(interpreted.text)
-      : initialFinalVerification.approved
-        ? draftFinalReply
-        : initialFinalVerification.correctedReply!,
-  );
-  const finalQuality = assessFinalResponseQuality({
-    clientMessage: interpreted.text,
+  const {
     reply: finalReply,
-    decision,
-    policy,
-    handoff,
-    risk: policy.risk,
-  });
-  const finalVerification = initialFinalVerification.approved
-    ? initialFinalVerification
-    : await verifyFinalClientReply({
-        originalMessage: interpreted.text,
-        history,
-        draftReply: finalReply,
-        decision,
-        evidence: responseEvidence,
-        policy,
-        handoff,
-        deterministicDraftQuality: asJson(finalQuality),
-        contactId: context.contact.id,
-        config: runtime.ai,
-      });
+    draftQuality: deterministicDraftQuality,
+    quality: finalQuality,
+    initialVerification: initialFinalVerification,
+    finalVerification,
+    verificationAttempts,
+    correctionsApplied,
+  } = finalGate;
   if (
     await completeSupersededJob(
       runtime,
@@ -419,16 +411,13 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   const deliveryEligible = finalQuality.passed && finalVerification.approved;
   const verificationUsage = asJson({
     initial: initialFinalVerification.usage,
-    exactFinal:
-      finalVerification === initialFinalVerification
-        ? null
-        : finalVerification.usage,
+    exactFinal: verificationAttempts.length === 1 ? null : finalVerification.usage,
+    attempts: verificationAttempts.map((attempt) => attempt.usage),
   });
-  const verificationLatencyMs =
-    initialFinalVerification.latencyMs +
-    (finalVerification === initialFinalVerification
-      ? 0
-      : finalVerification.latencyMs);
+  const verificationLatencyMs = verificationAttempts.reduce(
+    (total, attempt) => total + attempt.latencyMs,
+    0,
+  );
   await runtime.repository.recordDecision({
     conversationId: context.message.conversationId,
     sourceMessageId: context.message.id,
@@ -447,6 +436,7 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
       groundingPolicyVersion: GROUNDING_POLICY_VERSION,
       handoffPolicyVersion: HUMAN_HANDOFF_POLICY_VERSION,
       finalQualityPolicyVersion: FINAL_RESPONSE_QUALITY_POLICY_VERSION,
+      finalResponseGateVersion: FINAL_RESPONSE_GATE_VERSION,
       policy,
       handoff,
       draftFinalReply,
@@ -475,8 +465,16 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
         latencyMs: finalVerification.latencyMs,
         usage: finalVerification.usage,
       },
-      correctionReverified:
-        initialFinalVerification.approved || finalVerification.approved,
+      verificationAttempts: verificationAttempts.map((attempt) => ({
+        approved: attempt.approved,
+        issues: attempt.issues,
+        scores: attempt.scores,
+        summary: attempt.summary,
+        modelId: attempt.modelId,
+        latencyMs: attempt.latencyMs,
+      })),
+      correctionsApplied,
+      correctionReverified: finalVerification.approved,
       deliveryEligible,
     }),
     usage: verificationUsage,
