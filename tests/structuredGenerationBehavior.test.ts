@@ -4,6 +4,7 @@ import type {
   LanguageModelV4CallOptions,
   LanguageModelV4GenerateResult,
 } from "@ai-sdk/provider";
+import { GatewayInternalServerError } from "@ai-sdk/gateway";
 import { MockLanguageModelV4 } from "ai/test";
 import {
   generateReceptionistDecision,
@@ -339,6 +340,48 @@ test("schema fallback is one explicit application layer with no hidden Gateway m
     ).providerOptions?.gateway;
     assert.equal(gatewayOptions?.models, undefined);
   }
+});
+
+test("a transient Gateway internal-server failure advances to the next bounded model", async () => {
+  const firstId = "openai/gpt-5.6-sol";
+  const secondId = "anthropic/claude-opus-5";
+  const first = new MockLanguageModelV4({
+    provider: "offline",
+    modelId: firstId,
+    doGenerate: async () => {
+      throw new GatewayInternalServerError({
+        message: "Offline transient Gateway internal-server error.",
+        statusCode: 500,
+      });
+    },
+  });
+  const second = new MockLanguageModelV4({
+    provider: "offline",
+    modelId: secondId,
+    doGenerate: async () => finalResponse(secondId),
+  });
+  const ledger = new RecordingLedger();
+  ledger.failPriced = true;
+
+  const result = await generate(
+    config({
+      primary: firstId,
+      verifier: secondId,
+      ledger,
+      models: new Map([
+        [firstId, first],
+        [secondId, second],
+      ]),
+    }),
+  );
+
+  assert.equal(result.modelId, secondId);
+  assert.equal(first.doGenerateCalls.length, 1);
+  assert.equal(second.doGenerateCalls.length, 1);
+  assert.equal(ledger.starts.length, 2);
+  assert.equal(ledger.failures.length, 1);
+  assert.equal(ledger.failures[0]?.errorCode, "gatewayinternalservererror");
+  assert.equal(ledger.completions.length, 1);
 });
 
 test("unpriced usage stops before an application fallback can spend again", async () => {
