@@ -106,25 +106,21 @@ export function getD360Config(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
+export const HERA_OPENAI_MODEL_ID = "openai/gpt-5.6-sol";
+export const HERA_OPENAI_REASONING_EFFORT = "max";
+export const HERA_AI_PROVIDER_POLICY_VERSION =
+  "hera-openai-sol-max-only-1.0.0";
+
 const aiSchema = z.object({
-  HERA_AI_PRIMARY_MODEL: nonEmpty.default("openai/gpt-5.6-sol"),
-  HERA_AI_FALLBACK_MODELS: z
-    .string()
-    .default("anthropic/claude-opus-5,openai/gpt-5.6-terra"),
-  HERA_AI_VERIFIER_MODEL: nonEmpty.default("anthropic/claude-opus-5"),
   HERA_AI_TRANSCRIPTION_MODEL: nonEmpty.default("openai/gpt-4o-transcribe"),
 });
 
 export function getAiConfig(env: NodeJS.ProcessEnv = process.env) {
   const value = parse(aiSchema, env, "AI");
-  const fallbackModels = value.HERA_AI_FALLBACK_MODELS.split(",")
-    .map((model) => model.trim())
-    .filter(Boolean);
-
   return {
-    primaryModel: value.HERA_AI_PRIMARY_MODEL,
-    fallbackModels,
-    verifierModel: value.HERA_AI_VERIFIER_MODEL,
+    primaryModel: HERA_OPENAI_MODEL_ID,
+    fallbackModels: [] as string[],
+    verifierModel: HERA_OPENAI_MODEL_ID,
     transcriptionModel: value.HERA_AI_TRANSCRIPTION_MODEL,
   };
 }

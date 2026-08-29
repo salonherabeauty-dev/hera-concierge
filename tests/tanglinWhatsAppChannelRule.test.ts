@@ -8,8 +8,10 @@ import {
   TANGLIN_WHATSAPP_CHANNEL_RULE,
 } from "../src/policy/bookingExperience.js";
 import { HERA_TANGLIN_WHATSAPP_CHANNEL } from "../src/command-centre/receptionistWorkspaceBoundary.js";
+import { OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS } from "../src/ai/receptionist.js";
 
-const receptionistUrl = new URL("../src/ai/receptionist.ts", import.meta.url);
+const coreUrl = new URL("../src/ai/receptionistCore.ts", import.meta.url);
+const runtimeUrl = new URL("../src/ai/receptionist.ts", import.meta.url);
 const migrationUrl = new URL(
   "../supabase/migrations/20260830000000_tanglin_only_whatsapp_channel.sql",
   import.meta.url,
@@ -25,12 +27,19 @@ test("the owner-approved channel is explicitly Tanglin Mall only", () => {
   assert.match(BOOKING_OWNERSHIP_VERIFIER_PRINCIPLE, /outlet.*Tanglin Mall/i);
 });
 
-test("both response generation and independent verification receive the channel rule", async () => {
-  const source = await readFile(receptionistUrl, "utf8");
-  assert.match(source, /BOOKING_OWNERSHIP_PRINCIPLE/);
-  assert.match(source, /BOOKING_OWNERSHIP_VERIFIER_PRINCIPLE/);
-  assert.match(source, /RESPONSE_INSTRUCTIONS/);
-  assert.match(source, /VERIFIER_INSTRUCTIONS/);
+test("generation, verification and the final OpenAI writer all receive the channel rule", async () => {
+  const [core, runtime] = await Promise.all([
+    readFile(coreUrl, "utf8"),
+    readFile(runtimeUrl, "utf8"),
+  ]);
+  assert.match(core, /BOOKING_OWNERSHIP_PRINCIPLE/);
+  assert.match(core, /BOOKING_OWNERSHIP_VERIFIER_PRINCIPLE/);
+  assert.match(core, /RESPONSE_INSTRUCTIONS/);
+  assert.match(core, /VERIFIER_INSTRUCTIONS/);
+  assert.match(runtime, /OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS/);
+  assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /Tanglin Mall is already established/i);
+  assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /Never ask which outlet or atelier/i);
+  assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /never route this conversation to Sentosa/i);
 });
 
 test("database migration records owner authority and blocks wrong-outlet human sends", async () => {
