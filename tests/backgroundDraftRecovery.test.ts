@@ -36,7 +36,7 @@ test("selected fresh inbound messages recover drafts automatically without sendi
   assert.match(source, /REPLY_WINDOW_MS/);
   assert.match(source, /MAX_AUTO_DRAFT_ATTEMPTS\s*=\s*3/);
   assert.match(source, /AUTO_DRAFT_COOLDOWN_MS\s*=\s*45_000/);
-  assert.match(source, /\["retry"\]/);
+  assert.match(source, /status\s*===\s*"retry"/);
   assert.doesNotMatch(source, /receptionist-message|Send to Client|sendText|360dialog/i);
 });
 
