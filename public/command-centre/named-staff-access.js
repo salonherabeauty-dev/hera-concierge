@@ -64,36 +64,55 @@
     document.getElementById(modalId)?.remove();
   }
 
+  function launcherPresentation() {
+    if (!state.staff) {
+      return {
+        text: "Staff access",
+        title: "Open named staff access.",
+      };
+    }
+    if (isPreviewOwner()) {
+      return {
+        text: "Named staff sign-in",
+        title: "Sign in as the actual receptionist so every approval is named.",
+      };
+    }
+    return {
+      text: `${state.staff.displayName} · ${humanize(state.staff.role)}`,
+      title: "Named staff session is active.",
+    };
+  }
+
   function updateLauncher() {
     const launcher = document.getElementById(launcherId);
     if (!(launcher instanceof HTMLButtonElement)) return;
-    if (!state.staff) {
-      launcher.textContent = "Staff access";
-      return;
+    const presentation = launcherPresentation();
+
+    // MutationObserver watches child-list changes. Replacing identical text on
+    // every callback creates an endless microtask loop and prevents Safari from
+    // painting the authenticated Command Centre. Only mutate when values differ.
+    if (launcher.textContent !== presentation.text) {
+      launcher.textContent = presentation.text;
     }
-    launcher.textContent = isPreviewOwner()
-      ? "Named staff sign-in"
-      : `${state.staff.displayName} · ${humanize(state.staff.role)}`;
-    launcher.title = isPreviewOwner()
-      ? "Sign in as the actual receptionist so every approval is named."
-      : "Named staff session is active.";
+    if (launcher.title !== presentation.title) {
+      launcher.title = presentation.title;
+    }
   }
 
   function ensureLauncher() {
     const topbar = document.querySelector(".topbar__actions");
     const previewBanner = document.getElementById("hera-preview-access-banner");
     if (!topbar || !previewBanner) return;
-    if (document.getElementById(launcherId)) {
-      updateLauncher();
-      return;
-    }
 
-    const button = document.createElement("button");
-    button.id = launcherId;
-    button.type = "button";
-    button.className = "button button--secondary named-staff-launcher";
-    button.dataset.namedStaffAction = "open";
-    topbar.prepend(button);
+    let button = document.getElementById(launcherId);
+    if (!(button instanceof HTMLButtonElement)) {
+      button = document.createElement("button");
+      button.id = launcherId;
+      button.type = "button";
+      button.className = "button button--secondary named-staff-launcher";
+      button.dataset.namedStaffAction = "open";
+      topbar.prepend(button);
+    }
     updateLauncher();
   }
 
@@ -254,7 +273,7 @@
 
   window.setInterval(() => {
     ensureLauncher();
-  }, 2000);
+  }, 5000);
 
   void loadSession();
 })();
