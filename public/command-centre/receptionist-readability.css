@@ -1,0 +1,122 @@
+/* Receptionist-first readability layer. Loaded after the structural workspace CSS. */
+.fd-brand-copy strong {
+  font-size: 22px;
+}
+
+.fd-brand-copy span,
+.fd-sync__channel {
+  font-size: 12px;
+}
+
+.fd-sync small,
+.fd-eyebrow,
+.fd-inbox-title > span,
+.fd-conversation__title time,
+.fd-meta-label,
+.fd-window-label,
+.fd-channel-note,
+.fd-note-row span {
+  font-size: 10px;
+}
+
+.fd-inbox-title h1 {
+  font-size: 28px;
+}
+
+.fd-search input,
+.fd-context-help,
+.fd-context-empty,
+.fd-task-row p,
+.fd-note-row p,
+.fd-context-list dt,
+.fd-context-list dd,
+.fd-composer__subtitle,
+.fd-draft-state,
+.fd-status-card p {
+  font-size: 11px;
+}
+
+.fd-tab,
+.fd-chip,
+.fd-details-button,
+.fd-button,
+.fd-show-more,
+.fd-client-copy span,
+.fd-message__meta,
+.fd-section-heading > span:not(.fd-context-badge),
+.fd-context-badge {
+  font-size: 11px;
+}
+
+.fd-tab strong,
+.fd-chip--compact,
+.fd-context-badge {
+  font-size: 10px;
+}
+
+.fd-conversation__title strong,
+.fd-conversation__preview,
+.fd-client-copy strong,
+.fd-composer__title,
+.fd-section-heading h3,
+.fd-booking-card > strong,
+.fd-task-row strong {
+  font-size: 13px;
+}
+
+.fd-message__bubble > p,
+.fd-draft {
+  font-size: 14px;
+}
+
+.fd-conversation {
+  min-height: 92px;
+}
+
+.fd-button {
+  min-height: 42px;
+  padding-inline: 16px;
+}
+
+.fd-button--send {
+  min-width: 154px;
+}
+
+.fd-context-list > div {
+  grid-template-columns: 92px minmax(0, 1fr);
+  padding-block: 6px;
+}
+
+.fd-note-form textarea {
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .fd-brand-copy strong {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .fd-message__bubble > p,
+  .fd-draft,
+  .fd-search input {
+    font-size: 15px;
+  }
+
+  .fd-conversation__title strong,
+  .fd-client-copy strong {
+    font-size: 14px;
+  }
+
+  .fd-conversation__preview,
+  .fd-composer__title {
+    font-size: 13px;
+  }
+
+  .fd-tab,
+  .fd-button,
+  .fd-details-button {
+    font-size: 12px;
+  }
+}
