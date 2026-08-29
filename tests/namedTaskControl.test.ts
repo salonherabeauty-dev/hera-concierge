@@ -116,11 +116,11 @@ test("deliberate return to AI is guarded by open human work", async () => {
   assert.doesNotMatch(conversation, /preview_read_only/);
 });
 
-test("the protected Preview UI exposes outcomes without a WhatsApp send action", async () => {
-  const index = await readFile("public/command-centre/index.html", "utf8");
+test("the advanced protected Preview UI preserves named task outcomes without autonomous WhatsApp sending", async () => {
+  const advanced = await readFile("public/command-centre/advanced.html", "utf8");
   const script = await readFile("public/command-centre/preview-operator.js", "utf8");
-  assert.match(index, /preview-operator\.js/);
-  assert.match(index, /preview-operator\.css/);
+  assert.match(advanced, /preview-operator\.js/);
+  assert.match(advanced, /preview-operator\.css/);
   assert.match(script, /appointment_confirmed/);
   assert.match(script, /alternative_offered/);
   assert.match(script, /test_completed/);
