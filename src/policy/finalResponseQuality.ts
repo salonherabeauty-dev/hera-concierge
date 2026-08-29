@@ -10,7 +10,7 @@ import {
 } from "./locale.js";
 
 export const FINAL_RESPONSE_QUALITY_POLICY_VERSION =
-  "hera-final-response-quality-1.3.0";
+  "hera-final-response-quality-1.4.0";
 
 export interface FinalResponseQualityAssessment {
   passed: boolean;
@@ -31,6 +31,8 @@ const INTERNAL_LANGUAGE =
   /(?:\b(?:handoff|human-action task|internal queue|priority queue|workflow|verifier|model name|policy rule|backend|system prompt)\b|内部(?:队列|流程)|工作流程|验证器|模型名称|系统提示|barisan dalaman|aliran kerja|pengesah|nama model|arahan sistem|உள் வரிசை|பணிப்பாய்வு|சரிபார்ப்பான்|மாதிரி பெயர்|கணினி வழிமுறை)/iu;
 const GENERIC_HUMAN_ACKNOWLEDGEMENT =
   /certainly\.?\s+i(?:'|’)ve sent your request to hera(?:'|’)s team for direct assistance\.?\s+a staff member will continue with you as soon as available\.?/i;
+const BUREAUCRATIC_PROCESS_NOTICE =
+  /(?:\bappointment[- ]change request\b|\bfor verification and confirmation\b|\bpassed your\b.{0,90}\brequest to (?:our|the) reception team\b|\bplaced (?:this|your request)\b.{0,70}\b(?:queue|verification)\b)/i;
 const ESCALATION_CLAIM =
   /(?:\b(?:sent|passed|routed|placed|escalated|forwarded)\b.{0,100}\b(?:team|manager|management|reception|staff)\b|\b(?:team|manager|management|reception|staff)\b.{0,100}\b(?:will|shall)\b.{0,30}\b(?:review|contact|continue|assist|follow up|check)\b|(?:已|已经)?(?:转交|提交|上报|交给).{0,20}(?:团队|经理|店长|前台|工作人员)|(?:团队|经理|店长|前台|工作人员).{0,20}(?:会|将)(?:审核|联系|跟进|协助|查询)|(?:telah|sudah)\s+(?:dihantar|diserahkan|dirujuk).{0,50}(?:pasukan|pengurus|penerimaan|kakitangan)|(?:pasukan|pengurus|penerimaan|kakitangan).{0,50}(?:akan|bakal).{0,30}(?:semak|hubungi|bantu|susulan)|(?:அனுப்பப்பட்டுள்ளது|ஒப்படைக்கப்பட்டுள்ளது|மேலிடப்பட்டுள்ளது).{0,40}(?:குழு|மேலாளர்|வரவேற்பு|பணியாளர்)|(?:குழு|மேலாளர்|வரவேற்பு|பணியாளர்).{0,40}(?:மதிப்பாய்வு|தொடர்பு|உதவ|தொடர்ந்து))/iu;
 const PRIVACY_HANDOFF_CLAIM =
@@ -52,17 +54,24 @@ const MEDICAL_CLAIM =
 const EMOJI = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u;
 
 const EMPATHY: Record<SupportedClientLocale, RegExp> = {
-  en: /\b(?:sorry|understand|appreciate|thank you for explaining|unhappy|concern|disappointed|frustrating|experience)\b/i,
-  zh: /抱歉|遗憾|理解|感谢您说明|谢谢您说明|不满意|担忧|失望|经历/u,
-  ms: /\b(?:maaf|faham|memahami|terima kasih kerana menjelaskan|tidak puas hati|tak puas hati|kecewa|pengalaman|kebimbangan|aduan)\b/i,
-  ta: /மன்னிக்கவும்|வருந்துகிறோம்|புரிந்துகொள்கிறோம்|விளக்கியதற்கு நன்றி|திருப்தி இல்லை|கவலை|ஏமாற்றம்|அனுபவம்/u,
+  en: /\b(?:sorry|understand|appreciate|thank you for explaining|unhappy|concern|disappointed|frustrating|experience|take care|hope)\b/i,
+  zh: /抱歉|遗憾|理解|感谢您说明|谢谢您说明|不满意|担忧|失望|经历|保重|希望/u,
+  ms: /\b(?:maaf|faham|memahami|terima kasih kerana menjelaskan|tidak puas hati|tak puas hati|kecewa|pengalaman|kebimbangan|aduan|jaga diri|harap)\b/i,
+  ta: /மன்னிக்கவும்|வருந்துகிறோம்|புரிந்துகொள்கிறோம்|விளக்கியதற்கு நன்றி|திருப்தி இல்லை|கவலை|ஏமாற்றம்|அனுபவம்|கவனித்துக் கொள்ளுங்கள்|நம்புகிறோம்/u,
+};
+
+const DISTRESS_CONTEXT: Record<SupportedClientLocale, RegExp> = {
+  en: /\b(?:not feeling well|unwell|sick|ill|hospital|medical emergency|family emergency|accident|bereavement|passed away|daughter|son|child|mother|father|family)\b/i,
+  zh: /不舒服|生病|医院|医疗紧急|家庭紧急|事故|去世|女儿|儿子|孩子|母亲|父亲|家人/u,
+  ms: /\b(?:tidak sihat|sakit|hospital|kecemasan perubatan|kecemasan keluarga|kemalangan|meninggal|anak perempuan|anak lelaki|anak|ibu|bapa|keluarga)\b/i,
+  ta: /உடல்நிலை சரியில்லை|நோய்|மருத்துவமனை|மருத்துவ அவசரம்|குடும்ப அவசரம்|விபத்து|இறந்த|மகள்|மகன்|குழந்தை|அம்மா|அப்பா|குடும்பம்/u,
 };
 
 const OWNERSHIP: Record<SupportedClientLocale, RegExp> = {
-  en: /\b(?:salon manager|manager|management|authorised team|privacy team|technical lead|reception team|outlet team|hera(?:'|’)s team|staff member)\b/i,
-  zh: /沙龙经理|经理|店长|管理团队|授权团队|隐私团队|技术负责人|前台团队|分店团队|Hera团队|工作人员/u,
-  ms: /\b(?:pengurus salon|pengurus|pihak pengurusan|pasukan diberi kuasa|pasukan privasi|ketua teknikal|pasukan penerimaan|pasukan cawangan|pasukan Hera|kakitangan)\b/i,
-  ta: /சலூன் மேலாளர்|மேலாளர்|நிர்வாகம்|அங்கீகரிக்கப்பட்ட குழு|தனியுரிமை குழு|தொழில்நுட்ப தலைவர்|வரவேற்பு குழு|கிளை குழு|Hera குழு|பணியாளர்/u,
+  en: /\b(?:salon manager|manager|management|authorised team|privacy team|technical lead|reception team|reception|outlet team|hera(?:'|’)s team|staff member)\b/i,
+  zh: /沙龙经理|经理|店长|管理团队|授权团队|隐私团队|技术负责人|前台团队|前台|分店团队|Hera团队|工作人员/u,
+  ms: /\b(?:pengurus salon|pengurus|pihak pengurusan|pasukan diberi kuasa|pasukan privasi|ketua teknikal|pasukan penerimaan|penerimaan|pasukan cawangan|pasukan Hera|kakitangan)\b/i,
+  ta: /சலூன் மேலாளர்|மேலாளர்|நிர்வாகம்|அங்கீகரிக்கப்பட்ட குழு|தனியுரிமை குழு|தொழில்நுட்ப தலைவர்|வரவேற்பு குழு|வரவேற்பு|கிளை குழு|Hera குழு|பணியாளர்/u,
 };
 
 const MANAGER_OWNERSHIP: Record<SupportedClientLocale, RegExp> = {
@@ -204,6 +213,13 @@ export function assessFinalResponseQuality(input: {
   const facts = input.handoff.collectedFacts;
   const isEmergency =
     input.risk === "black" || input.handoff.scope === "emergency";
+  const distressContext = matches(
+    DISTRESS_CONTEXT,
+    locale,
+    input.clientMessage,
+  );
+  const needsContextualEmpathy =
+    type === "complaint_review" || distressContext;
 
   if (!reply) issues.push("The final client reply is empty.");
   if (reply.length > 4000) issues.push("The final client reply exceeds the delivery limit.");
@@ -215,6 +231,27 @@ export function assessFinalResponseQuality(input: {
   }
   if (sentenceCount(reply) > 6) {
     issues.push("The final client reply is unnecessarily long.");
+  }
+  if (BUREAUCRATIC_PROCESS_NOTICE.test(reply)) {
+    issues.push(
+      "The final reply sounds like a bureaucratic process notice rather than warm, client-centred Hera service.",
+    );
+  }
+  if (
+    needsContextualEmpathy &&
+    !matches(EMPATHY, locale, reply)
+  ) {
+    issues.push(
+      "The final reply does not acknowledge the client’s personal circumstances with appropriate care.",
+    );
+  }
+  if (
+    distressContext &&
+    !matches(DISTRESS_CONTEXT, locale, reply)
+  ) {
+    issues.push(
+      "The final reply ignores the specific personal circumstance the client explained.",
+    );
   }
   if (
     input.handoff.createTask &&
@@ -353,8 +390,10 @@ export function assessFinalResponseQuality(input: {
     LIABILITY_ADMISSION,
     GUARANTEED_REMEDY,
   ].some((pattern) => pattern.test(reply));
-  const contextualEmpathy =
-    type === "complaint_review" ? matches(EMPATHY, locale, reply) : true;
+  const contextualEmpathy = needsContextualEmpathy
+    ? matches(EMPATHY, locale, reply) &&
+      (!distressContext || matches(DISTRESS_CONTEXT, locale, reply))
+    : true;
   const specificity =
     type === "complaint_review" || type === "booking_action"
       ? includesKnownFact(reply, facts.service) && includesKnownFact(reply, facts.outlet)
@@ -373,6 +412,7 @@ export function assessFinalResponseQuality(input: {
     !EMOJI.test(reply) &&
     !reply.includes("!") &&
     !reply.includes("！") &&
+    !BUREAUCRATIC_PROCESS_NOTICE.test(reply) &&
     sentenceCount(reply) <= 6;
 
   if (input.handoff.createTask && !ownership) {
