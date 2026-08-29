@@ -3,7 +3,7 @@ import {
   HERA_INTERNAL_PILOT_BRANCH,
 } from "../config.js";
 
-export const HERA_TANGLIN_WHATSAPP_CHANNEL = "Tanglin WhatsApp";
+export const HERA_TANGLIN_WHATSAPP_CHANNEL = "Tanglin Mall WhatsApp";
 
 export interface ReceptionistWorkspaceBoundary {
   preview: boolean;
@@ -62,7 +62,7 @@ export function requireTanglinWhatsAppChannel(
   requireReceptionistWorkspacePreview(boundary);
   if (!boundary.providerReady) {
     const error = new Error(
-      "Tanglin WhatsApp delivery is not available on this Preview.",
+      "Tanglin Mall WhatsApp delivery is not available on this Preview.",
     );
     error.name = "ReceptionistWorkspaceProviderUnavailableError";
     throw error;
