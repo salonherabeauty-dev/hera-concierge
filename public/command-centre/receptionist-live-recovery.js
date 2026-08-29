@@ -237,6 +237,18 @@ function createChip(label, tone) {
   return chip;
 }
 
+function recoverySignature(conversation) {
+  return JSON.stringify([
+    conversation?.clientDisplayName ?? "",
+    conversation?.phoneEnding ?? "",
+    conversation?.lastMessagePreview ?? "",
+    conversation?.lastMessageAt ?? "",
+    conversation?.operatingMode ?? "",
+    conversation?.currentRisk ?? "",
+    Number(conversation?.openTaskCount ?? 0),
+  ]);
+}
+
 function createRecoveredNeedsReplyRow(conversation) {
   const button = document.createElement("button");
   button.type = "button";
@@ -244,6 +256,7 @@ function createRecoveredNeedsReplyRow(conversation) {
   button.dataset.action = "select-conversation";
   button.dataset.conversationId = String(conversation.id);
   button.dataset.recoveredNeedsReply = "true";
+  button.dataset.recoverySignature = recoverySignature(conversation);
   const selected =
     recoveryState.lastSelectedConversationId === conversation.id;
   if (selected) button.classList.add("fd-conversation--selected");
@@ -295,6 +308,13 @@ function createRecoveredNeedsReplyRow(conversation) {
   return button;
 }
 
+function setCountText(element, value) {
+  const next = String(value);
+  if (element instanceof HTMLElement && element.textContent !== next) {
+    element.textContent = next;
+  }
+}
+
 function repairFilterCounts() {
   const conversations = [...recoveryState.conversations.values()];
   const needsCount = conversations.filter(needsReplyInInbox).length;
@@ -302,14 +322,18 @@ function repairFilterCounts() {
     (conversation) => conversation?.operatingMode === "management",
   ).length;
 
-  const needsTab = root.querySelector('.fd-tab[data-filter="needs"] strong');
-  if (needsTab instanceof HTMLElement) needsTab.textContent = String(needsCount);
-  const heldTab = root.querySelector('.fd-tab[data-filter="held"] strong');
-  if (heldTab instanceof HTMLElement) heldTab.textContent = String(heldCount);
-  const inboxNeedCount = root.querySelector(".fd-inbox-title > span strong");
-  if (inboxNeedCount instanceof HTMLElement) {
-    inboxNeedCount.textContent = String(needsCount);
-  }
+  setCountText(
+    root.querySelector('.fd-tab[data-filter="needs"] strong'),
+    needsCount,
+  );
+  setCountText(
+    root.querySelector('.fd-tab[data-filter="held"] strong'),
+    heldCount,
+  );
+  setCountText(
+    root.querySelector(".fd-inbox-title > span strong"),
+    needsCount,
+  );
 }
 
 function repairMissingNeedsReplyRows() {
@@ -330,7 +354,9 @@ function repairMissingNeedsReplyRows() {
   const desired = [...recoveryState.conversations.values()]
     .filter(needsReplyInInbox)
     .filter((conversation) => matchesInboxSearch(conversation, search));
-  const desiredIds = new Set(desired.map((conversation) => conversation.id));
+  const desiredById = new Map(
+    desired.map((conversation) => [conversation.id, conversation]),
+  );
 
   const ordinaryIds = new Set(
     [...list.querySelectorAll(
@@ -343,7 +369,12 @@ function repairMissingNeedsReplyRows() {
 
   for (const row of recoveredRows) {
     const id = row.dataset.conversationId;
-    if (!id || !desiredIds.has(id) || ordinaryIds.has(id)) row.remove();
+    const current = id ? desiredById.get(id) : null;
+    const stale = Boolean(
+      current &&
+        row.dataset.recoverySignature !== recoverySignature(current),
+    );
+    if (!id || !current || ordinaryIds.has(id) || stale) row.remove();
   }
 
   const visibleIds = new Set(
