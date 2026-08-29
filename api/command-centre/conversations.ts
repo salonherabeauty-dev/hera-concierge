@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { authenticateCommandCentre } from "../../src/command-centre/auth.js";
+import { createFrontDeskRepository } from "../../src/command-centre/frontDeskRepository.js";
 import {
   clientSafeError,
   methodNotAllowed,
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
-import { createCommandCentreReadRepository } from "../../src/command-centre/readRepository.js";
 import type { RiskLevel } from "../../src/types.js";
 
 function conversationLimit(request: VercelRequest): number {
@@ -42,7 +42,7 @@ export default async function handler(
     const searchValue = Array.isArray(request.query.search)
       ? request.query.search[0]
       : request.query.search;
-    const repository = createCommandCentreReadRepository();
+    const repository = createFrontDeskRepository();
     const conversations = await repository.listConversations({
       mode:
         modeValue === "management"
