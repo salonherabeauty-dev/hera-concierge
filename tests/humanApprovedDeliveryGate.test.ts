@@ -145,7 +145,7 @@ test("API sends only after atomic reservation and second preflight", async () =>
   assert.match(source, /expectedSourceMessageId/);
   assert.match(source, /expectedResponseHash/);
   assert.match(source, /expectedPhoneEnding/);
-  assert.match(source, /repository\.fail/);
+  assert.match(source, /repository[\s\S]{0,80}\.fail\(/);
   assert.match(source, /sent_pending_audit_reconciliation/);
   assert.doesNotMatch(source, /drainReceptionist/);
   assert.doesNotMatch(source, /authorizeInternalPilot/);
