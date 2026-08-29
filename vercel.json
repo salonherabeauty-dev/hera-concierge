@@ -72,6 +72,9 @@
     "api/command-centre/receptionist-regenerate.ts": {
       "maxDuration": 300
     },
+    "api/command-centre/receptionist-draft.ts": {
+      "maxDuration": 300
+    },
     "api/command-centre/**/*.ts": {
       "maxDuration": 30
     }

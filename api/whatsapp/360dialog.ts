@@ -7,6 +7,10 @@ import {
   getWhatsAppProviderConfig,
 } from "../../src/config.js";
 import { D360CoexistenceStore } from "../../src/db/coexistence.js";
+import {
+  ingestPreviewHumanReviewMessage,
+  usePreviewHumanReviewIngest,
+} from "../../src/db/previewHumanReviewIngest.js";
 import { SupabaseReceptionistRepository } from "../../src/db/repository.js";
 import {
   logOperationalEvent,
@@ -132,6 +136,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       database.url,
       database.serviceRoleKey,
     );
+    const humanReviewDrafting = usePreviewHumanReviewIngest();
 
     let humanEchoesInserted = 0;
     ingestionStage = "ingest_human_echoes";
@@ -150,7 +155,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
     const wakeableJobIds: string[] = [];
     ingestionStage = "ingest_inbound_messages";
     for (const message of parsed.inbound) {
-      const result = await repository.ingestInbound(message);
+      const result = humanReviewDrafting
+        ? await ingestPreviewHumanReviewMessage({
+            databaseUrl: database.url,
+            serviceRoleKey: database.serviceRoleKey,
+            message,
+          })
+        : await repository.ingestInbound(message);
       if (result.inserted) inboundInserted += 1;
       if (result.jobId) wakeableJobIds.push(result.jobId);
     }
@@ -205,6 +216,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       inboundCount: parsed.inbound.length,
       inboundInserted,
       targetedJobCount: wakeableJobIds.length,
+      humanReviewDrafting,
       statusCount: parsed.statuses.length,
       humanEchoCount: parsed.humanEchoes.length,
       humanEchoesInserted,

@@ -7,6 +7,7 @@ import {
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
+import type { ConversationSummary } from "../../src/command-centre/types.js";
 import type { RiskLevel } from "../../src/types.js";
 
 function conversationLimit(request: VercelRequest): number {
@@ -20,6 +21,25 @@ function conversationLimit(request: VercelRequest): number {
     throw error;
   }
   return Math.max(1, Math.min(Number(value), 300));
+}
+
+function normalizeExpiredHumanHandling(
+  conversation: ConversationSummary,
+  now = Date.now(),
+): ConversationSummary {
+  if (
+    conversation.operatingMode !== "management" ||
+    !conversation.humanTakeoverUntil
+  ) {
+    return conversation;
+  }
+  const until = Date.parse(conversation.humanTakeoverUntil);
+  if (!Number.isFinite(until) || until > now) return conversation;
+  return {
+    ...conversation,
+    operatingMode: "ai",
+    humanTakeoverUntil: null,
+  };
 }
 
 export default async function handler(
@@ -43,24 +63,26 @@ export default async function handler(
       ? request.query.search[0]
       : request.query.search;
     const repository = createFrontDeskRepository();
-    const conversations = await repository.listConversations({
-      mode:
-        modeValue === "management"
-          ? "management"
-          : modeValue === "ai"
-            ? "ai"
+    const conversations = (
+      await repository.listConversations({
+        mode:
+          modeValue === "management"
+            ? "management"
+            : modeValue === "ai"
+              ? "ai"
+              : null,
+        risk:
+          riskValue === "green" ||
+          riskValue === "amber" ||
+          riskValue === "red" ||
+          riskValue === "black"
+            ? (riskValue as RiskLevel)
             : null,
-      risk:
-        riskValue === "green" ||
-        riskValue === "amber" ||
-        riskValue === "red" ||
-        riskValue === "black"
-          ? (riskValue as RiskLevel)
-          : null,
-      search:
-        typeof searchValue === "string" ? searchValue.slice(0, 120) : null,
-      limit: conversationLimit(request),
-    });
+        search:
+          typeof searchValue === "string" ? searchValue.slice(0, 120) : null,
+        limit: conversationLimit(request),
+      })
+    ).map((conversation) => normalizeExpiredHumanHandling(conversation));
     return response.status(200).json({
       conversations,
       count: conversations.length,
