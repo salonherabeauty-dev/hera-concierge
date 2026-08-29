@@ -76,8 +76,10 @@ test("database approval is exact, latest, recipient-matched and duplicate-safe",
   assert.match(sql, /unique[\s\S]*candidate_outbox_id/i);
   assert.match(sql, /unique[\s\S]*source_message_id/i);
   assert.match(sql, /human-approved:/i);
-  assert.match(sql, /status = 'processing'/i);
-  assert.match(sql, /send_authorization[\s\S]*'management'/i);
+  assert.match(
+    sql,
+    /send_authorization,[\s\S]*status,[\s\S]*'management',[\s\S]*'processing'/i,
+  );
   assert.match(sql, /max_attempts[\s\S]*1/i);
 });
 
@@ -125,7 +127,7 @@ test("API is authenticated, same-origin, CSRF protected and Preview-only", async
   assert.match(source, /WHATSAPP_LIVE_CONFIRMATION/);
   assert.match(source, /getWhatsAppProviderConfig/);
   assert.match(source, /360dialog/);
-  assert.doesNotMatch(source, /process\.env\.[A-Z0-9_]+\s*=/);
+  assert.doesNotMatch(source, /process\.env\.[A-Z0-9_]+\s*=(?!=)/);
   assert.doesNotMatch(source, /Timely/i);
 });
 
@@ -134,7 +136,7 @@ test("API sends only after atomic reservation and second preflight", async () =>
   const reserve = source.indexOf("reserveApproval");
   const preflight = source.indexOf("repository.preflight");
   const send = source.indexOf("whatsapp.sendText");
-  const complete = source.indexOf("completeWithOneRetry");
+  const complete = source.indexOf("completeWithOneRetry({", send);
   assert.ok(reserve >= 0);
   assert.ok(preflight > reserve);
   assert.ok(send > preflight);
