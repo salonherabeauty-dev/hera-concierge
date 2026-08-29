@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type {
-  LanguageModelV4CallOptions,
-  LanguageModelV4GenerateResult,
-} from "@ai-sdk/provider";
+import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { GatewayInternalServerError } from "@ai-sdk/gateway";
 import { MockLanguageModelV4 } from "ai/test";
 import {
   generateReceptionistDecision,
+  HERA_OPENAI_MODEL_ID,
   RESPONSE_AGENT_MAX_STEPS,
   type AiRuntimeConfig,
 } from "../src/ai/receptionist.js";
@@ -183,22 +181,19 @@ const repository = {
 } as unknown as ReceptionistRepository;
 
 function config(input: {
-  primary: string;
-  verifier?: string;
-  fallback?: string[];
   ledger: GenerationAttemptLedger;
-  models: Map<string, MockLanguageModelV4>;
+  model: MockLanguageModelV4;
+  requestedModelIds?: string[];
 }): AiRuntimeConfig {
   return {
-    primaryModel: input.primary,
-    verifierModel: input.verifier ?? input.primary,
-    fallbackModels: input.fallback ?? [],
-    transcriptionModel: "offline/transcription",
+    primaryModel: "ignored/primary",
+    verifierModel: "ignored/verifier",
+    fallbackModels: ["ignored/fallback"],
+    transcriptionModel: "openai/gpt-4o-transcribe",
     generationAttemptLedger: input.ledger,
     modelFactory: (modelId) => {
-      const model = input.models.get(modelId);
-      if (!model) throw new Error(`missing offline model: ${modelId}`);
-      return model;
+      input.requestedModelIds?.push(modelId);
+      return input.model;
     },
   };
 }
@@ -223,67 +218,46 @@ async function generate(ai: AiRuntimeConfig) {
 }
 
 test("the final receptionist step disables tools and produces structured output offline", async () => {
-  const modelId = "openai/gpt-5.6-sol";
   let calls = 0;
   const model = new MockLanguageModelV4({
     provider: "offline",
-    modelId,
+    modelId: HERA_OPENAI_MODEL_ID,
     doGenerate: async () => {
       calls += 1;
       return calls < RESPONSE_AGENT_MAX_STEPS
-        ? toolResponse(modelId, calls)
-        : finalResponse(modelId);
+        ? toolResponse(HERA_OPENAI_MODEL_ID, calls)
+        : finalResponse(HERA_OPENAI_MODEL_ID);
     },
   });
   const ledger = new RecordingLedger();
+  const requestedModelIds: string[] = [];
 
-  const result = await generate(
-    config({ primary: modelId, ledger, models: new Map([[modelId, model]]) }),
-  );
+  const result = await generate(config({ ledger, model, requestedModelIds }));
 
   assert.equal(result.decision.reply, decision.reply);
   assert.equal(model.doGenerateCalls.length, RESPONSE_AGENT_MAX_STEPS);
-  assert.deepEqual(
-    model.doGenerateCalls.at(-1)?.toolChoice,
-    { type: "none" },
-  );
+  assert.deepEqual(model.doGenerateCalls.at(-1)?.toolChoice, { type: "none" });
   assert.equal(ledger.starts.length, RESPONSE_AGENT_MAX_STEPS);
   assert.equal(ledger.completions.length, RESPONSE_AGENT_MAX_STEPS);
   assert.equal(ledger.failures.length, 0);
+  assert.ok(requestedModelIds.every((id) => id === HERA_OPENAI_MODEL_ID));
 });
 
 test("a non-stop finish reason is preserved instead of becoming an unexplained failure", async () => {
-  const modelId = "openai/gpt-5.6-sol";
-  const fallbackId = "anthropic/claude-opus-5";
   const model = new MockLanguageModelV4({
     provider: "offline",
-    modelId,
+    modelId: HERA_OPENAI_MODEL_ID,
     doGenerate: async () =>
       response({
         content: [{ type: "text", text: JSON.stringify(decision) }],
         finishReason: "length",
-        modelId,
+        modelId: HERA_OPENAI_MODEL_ID,
       }),
-  });
-  const fallback = new MockLanguageModelV4({
-    provider: "offline",
-    modelId: fallbackId,
-    doGenerate: async () => finalResponse(fallbackId),
   });
   const ledger = new RecordingLedger();
 
   await assert.rejects(
-    generate(
-      config({
-        primary: modelId,
-        verifier: fallbackId,
-        ledger,
-        models: new Map([
-          [modelId, model],
-          [fallbackId, fallback],
-        ]),
-      }),
-    ),
+    generate(config({ ledger, model })),
     (error: unknown) => {
       const diagnostic = error as Error & {
         generationFinishReason?: unknown;
@@ -293,61 +267,40 @@ test("a non-stop finish reason is preserved instead of becoming an unexplained f
       assert.equal(diagnostic.name, "AI_NoOutputGeneratedError");
       assert.equal(diagnostic.generationFinishReason, "length");
       assert.equal(diagnostic.generationStepCount, 1);
-      assert.equal(diagnostic.generationModelId, modelId);
+      assert.equal(diagnostic.generationModelId, HERA_OPENAI_MODEL_ID);
       return true;
     },
   );
   assert.equal(model.doGenerateCalls.length, 1);
-  assert.equal(fallback.doGenerateCalls.length, 0);
   assert.equal(ledger.completions[0]?.finishReason, "length");
 });
 
-test("schema fallback is one explicit application layer with no hidden Gateway model list", async () => {
-  const firstId = "openai/gpt-5.6-sol";
-  const secondId = "anthropic/claude-opus-5";
-  const first = new MockLanguageModelV4({
+test("schema failure remains one OpenAI-only attempt and fails closed", async () => {
+  const requestedModelIds: string[] = [];
+  const model = new MockLanguageModelV4({
     provider: "offline",
-    modelId: firstId,
-    doGenerate: async () => invalidStructuredResponse(firstId),
-  });
-  const second = new MockLanguageModelV4({
-    provider: "offline",
-    modelId: secondId,
-    doGenerate: async () => finalResponse(secondId),
+    modelId: HERA_OPENAI_MODEL_ID,
+    doGenerate: async () => invalidStructuredResponse(HERA_OPENAI_MODEL_ID),
   });
   const ledger = new RecordingLedger();
 
-  const result = await generate(
-    config({
-      primary: firstId,
-      verifier: secondId,
-      ledger,
-      models: new Map([
-        [firstId, first],
-        [secondId, second],
-      ]),
-    }),
+  await assert.rejects(() =>
+    generate(config({ ledger, model, requestedModelIds })),
   );
 
-  assert.equal(result.modelId, secondId);
-  assert.equal(first.doGenerateCalls.length, 1);
-  assert.equal(second.doGenerateCalls.length, 1);
-  for (const call of [...first.doGenerateCalls, ...second.doGenerateCalls]) {
-    const gatewayOptions = (
-      call as LanguageModelV4CallOptions & {
-        providerOptions?: { gateway?: Record<string, unknown> };
-      }
-    ).providerOptions?.gateway;
-    assert.equal(gatewayOptions?.models, undefined);
-  }
+  assert.equal(model.doGenerateCalls.length, 1);
+  assert.deepEqual(requestedModelIds, [HERA_OPENAI_MODEL_ID]);
+  const call = model.doGenerateCalls[0];
+  assert.deepEqual(call?.providerOptions?.gateway?.order, ["openai"]);
+  assert.deepEqual(call?.providerOptions?.gateway?.only, ["openai"]);
+  assert.equal(call?.providerOptions?.openai?.reasoningEffort, "max");
 });
 
-test("a transient Gateway internal-server failure advances to the next bounded model", async () => {
-  const firstId = "openai/gpt-5.6-sol";
-  const secondId = "anthropic/claude-opus-5";
-  const first = new MockLanguageModelV4({
+test("a transient Gateway failure cannot cross to another provider", async () => {
+  const requestedModelIds: string[] = [];
+  const model = new MockLanguageModelV4({
     provider: "offline",
-    modelId: firstId,
+    modelId: HERA_OPENAI_MODEL_ID,
     doGenerate: async () => {
       throw new GatewayInternalServerError({
         message: "Offline transient Gateway internal-server error.",
@@ -355,85 +308,53 @@ test("a transient Gateway internal-server failure advances to the next bounded m
       });
     },
   });
-  const second = new MockLanguageModelV4({
-    provider: "offline",
-    modelId: secondId,
-    doGenerate: async () => finalResponse(secondId),
-  });
   const ledger = new RecordingLedger();
   ledger.failPriced = true;
 
-  const result = await generate(
-    config({
-      primary: firstId,
-      verifier: secondId,
-      ledger,
-      models: new Map([
-        [firstId, first],
-        [secondId, second],
-      ]),
-    }),
+  await assert.rejects(
+    () => generate(config({ ledger, model, requestedModelIds })),
+    (error: unknown) => GatewayInternalServerError.isInstance(error),
   );
 
-  assert.equal(result.modelId, secondId);
-  assert.equal(first.doGenerateCalls.length, 1);
-  assert.equal(second.doGenerateCalls.length, 1);
-  assert.equal(ledger.starts.length, 2);
+  assert.equal(model.doGenerateCalls.length, 1);
+  assert.deepEqual(requestedModelIds, [HERA_OPENAI_MODEL_ID]);
+  assert.equal(ledger.starts.length, 1);
   assert.equal(ledger.failures.length, 1);
-  assert.equal(ledger.failures[0]?.errorCode, "gatewayinternalservererror");
-  assert.equal(ledger.completions.length, 1);
 });
 
-test("unpriced usage stops before an application fallback can spend again", async () => {
-  const firstId = "openai/gpt-5.6-sol";
-  const secondId = "anthropic/claude-opus-5";
-  const first = new MockLanguageModelV4({
+test("unpriced usage stops before another application attempt can spend", async () => {
+  const model = new MockLanguageModelV4({
     provider: "offline",
-    modelId: firstId,
-    doGenerate: async () => finalResponse(firstId),
-  });
-  const second = new MockLanguageModelV4({
-    provider: "offline",
-    modelId: secondId,
-    doGenerate: async () => finalResponse(secondId),
+    modelId: HERA_OPENAI_MODEL_ID,
+    doGenerate: async () => finalResponse(HERA_OPENAI_MODEL_ID),
   });
   const ledger = new RecordingLedger();
   ledger.completePriced = false;
 
   await assert.rejects(
-    generate(
-      config({
-        primary: firstId,
-        verifier: secondId,
-        ledger,
-        models: new Map([
-          [firstId, first],
-          [secondId, second],
-        ]),
-      }),
-    ),
+    generate(config({ ledger, model })),
     /stage3r_generation_usage_unpriced/,
   );
-  assert.equal(first.doGenerateCalls.length, 1);
-  assert.equal(second.doGenerateCalls.length, 0);
+  assert.equal(model.doGenerateCalls.length, 1);
 });
 
-test("the attempt cap blocks a second provider step before it starts", async () => {
-  const modelId = "openai/gpt-5.6-sol";
+test("the attempt cap blocks a second tool step before it starts", async () => {
   let calls = 0;
   const model = new MockLanguageModelV4({
     provider: "offline",
-    modelId,
+    modelId: HERA_OPENAI_MODEL_ID,
     doGenerate: async () => {
       calls += 1;
-      return calls === 1 ? toolResponse(modelId, calls) : finalResponse(modelId);
+      return calls === 1
+        ? toolResponse(HERA_OPENAI_MODEL_ID, calls)
+        : finalResponse(HERA_OPENAI_MODEL_ID);
     },
   });
   const ledger = new RecordingLedger();
   ledger.startLimit = 1;
 
   await assert.rejects(
-    generate(config({ primary: modelId, ledger, models: new Map([[modelId, model]]) })),
+    generate(config({ ledger, model })),
     /stage3r_model_attempt_cap_reached/,
   );
   assert.equal(model.doGenerateCalls.length, 1);
