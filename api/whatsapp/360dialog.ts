@@ -28,6 +28,7 @@ import {
 } from "../../src/worker.js";
 
 const WEBHOOK_BACKLOG_RECOVERY_SLOTS = 2;
+const INBOUND_BURST_SETTLE_MS = 9_000;
 
 function secureHeaders(response: VercelResponse): void {
   response.setHeader("Cache-Control", "no-store");
@@ -53,6 +54,12 @@ function takeoverUntil(providerTimestamp: string, minutes: number): string {
     ? Math.min(parsed, now + 5 * 60 * 1000)
     : now;
   return new Date(bounded + minutes * 60 * 1000).toISOString();
+}
+
+function settleInboundBurst(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, INBOUND_BURST_SETTLE_MS);
+  });
 }
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
@@ -186,7 +193,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
         8,
       );
       waitUntil(
-        Promise.resolve()
+        settleInboundBurst()
           .then(() =>
             drainReceptionistForJobs(
               createProductionRuntime(),
@@ -197,12 +204,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
           .then((summary) => {
             logOperationalEvent("info", "d360_webhook_background_drain_completed", {
               correlationId,
+              burstSettleMs: INBOUND_BURST_SETTLE_MS,
               ...summary,
             });
           })
           .catch((error: unknown) => {
             logOperationalEvent("error", "d360_webhook_background_drain_failed", {
               correlationId,
+              burstSettleMs: INBOUND_BURST_SETTLE_MS,
               ...safeErrorFields(error),
             });
           }),
@@ -217,6 +226,8 @@ export default async function handler(request: VercelRequest, response: VercelRe
       inboundInserted,
       targetedJobCount: wakeableJobIds.length,
       humanReviewDrafting,
+      burstSettleMs:
+        wakeableJobIds.length > 0 ? INBOUND_BURST_SETTLE_MS : 0,
       statusCount: parsed.statuses.length,
       humanEchoCount: parsed.humanEchoes.length,
       humanEchoesInserted,
