@@ -85,9 +85,15 @@ test("the exact bureaucratic Neo complaint wording fails the luxury client-copy 
     "I’m very sorry to hear you are unhappy with today’s balayage at Tanglin Mall. I’ve passed this to our management team, who are authorised to review the service and your refund request, and they will verify the appointment and payment records before coming back to you with a confirmed outcome. So that the review is as accurate as possible, could you share the stylist’s name and clear photos. You will hear from us directly once the review is complete.";
 
   const issues = detectLuxuryClientCopyViolations(poorReply);
-  assert.ok(issues.length >= 2);
+  assert.ok(issues.length >= 1);
   assert.ok(issues.some((issue) => /bureaucratic/i.test(issue)));
-  assert.ok(issues.some((issue) => /Tanglin WhatsApp/i.test(issue)));
+});
+
+test("wrong-outlet routing fails independently from language quality", () => {
+  const wrongChannelReply =
+    "Could you confirm which Hera outlet you visited, Tanglin Mall or Sentosa, so the Sentosa team can contact you directly?";
+  const issues = detectLuxuryClientCopyViolations(wrongChannelReply);
+  assert.ok(issues.some((issue) => /Tanglin Mall-only WhatsApp channel/i.test(issue)));
 });
 
 test("a natural, caring and channel-consistent Hera complaint reply passes the deterministic language screen", () => {
