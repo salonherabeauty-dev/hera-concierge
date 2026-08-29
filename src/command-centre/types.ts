@@ -181,6 +181,18 @@ export interface ConversationJobView {
   updatedAt: string;
 }
 
+export interface BookingContextView {
+  id: string;
+  clientName: string;
+  serviceName: string;
+  stylistName: string | null;
+  locationName: string | null;
+  appointmentAt: string;
+  bookingStatus: string;
+  price: number | null;
+  currency: string;
+}
+
 export interface ConversationDetail {
   conversation: ConversationSummary;
   messages: ConversationMessageView[];
@@ -190,6 +202,7 @@ export interface ConversationDetail {
   candidates: CandidateReplyView[];
   decisions: DecisionTraceView[];
   jobs: ConversationJobView[];
+  bookings: BookingContextView[];
 }
 
 export interface CommandCentreDashboard {
