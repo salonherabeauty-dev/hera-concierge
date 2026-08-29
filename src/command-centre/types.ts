@@ -202,7 +202,7 @@ export interface ConversationDetail {
   candidates: CandidateReplyView[];
   decisions: DecisionTraceView[];
   jobs: ConversationJobView[];
-  bookings: BookingContextView[];
+  bookings?: BookingContextView[];
 }
 
 export interface CommandCentreDashboard {
