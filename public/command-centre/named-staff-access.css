@@ -1,0 +1,118 @@
+.named-staff-launcher {
+  white-space: nowrap;
+}
+
+.named-staff-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(18, 16, 15, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.named-staff-modal {
+  position: fixed;
+  z-index: 1201;
+  top: 50%;
+  left: 50%;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(176, 141, 87, 0.35);
+  border-radius: 20px;
+  background: #f7f3ed;
+  color: #211d1a;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+}
+
+.named-staff-modal > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 28px 22px;
+  border-bottom: 1px solid rgba(33, 29, 26, 0.12);
+}
+
+.named-staff-modal > header h2 {
+  margin: 4px 0 8px;
+}
+
+.named-staff-modal > header p:last-child {
+  max-width: 48ch;
+  margin: 0;
+  color: #6f655e;
+  line-height: 1.55;
+}
+
+.named-staff-modal__body {
+  display: grid;
+  gap: 18px;
+  padding: 24px 28px 28px;
+}
+
+.named-staff-assurance {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(176, 141, 87, 0.1);
+  color: #5f544c;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.named-staff-session {
+  display: grid;
+  gap: 5px;
+  padding: 18px;
+  border: 1px solid rgba(33, 29, 26, 0.12);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.named-staff-session span,
+.named-staff-session small {
+  color: #756a62;
+}
+
+.named-staff-session strong {
+  font-size: 1.1rem;
+}
+
+.named-staff-error {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f5dfdc;
+  color: #8a2f24;
+}
+
+.named-staff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .named-staff-launcher {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .named-staff-modal > header,
+  .named-staff-modal__body {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .named-staff-actions {
+    flex-direction: column-reverse;
+  }
+
+  .named-staff-actions .button {
+    width: 100%;
+  }
+}
