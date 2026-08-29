@@ -1,5 +1,9 @@
 begin;
 
+drop function if exists public.ai_cc_reject_human_delivery_candidate(
+  uuid, uuid, uuid, text, text, text
+);
+
 create or replace function public.ai_cc_reject_human_delivery_candidate(
   p_candidate_outbox_id uuid,
   p_actor_user_id uuid,
