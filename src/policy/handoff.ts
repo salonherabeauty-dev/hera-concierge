@@ -13,8 +13,9 @@ import {
   assessServiceInformation,
   SERVICE_INFORMATION_POLICY_VERSION,
 } from "./serviceInformation.js";
+import { promptInjectionReplyFor } from "./risk.js";
 
-export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.3.0";
+export const HUMAN_HANDOFF_POLICY_VERSION = "hera-human-handoff-1.4.0";
 
 const HUMAN_REQUEST_PATTERNS = [
   /\b(?:speak|talk|chat|connect|transfer|pass me|put me through)\b.{0,28}\b(?:human|person|receptionist|manager|staff|someone)\b/i,
@@ -391,7 +392,7 @@ function defaultAcknowledgement(
     return "Thank you. I’ve placed the transaction request with the authorised team for verification and a confirmed outcome.";
   }
   if (taskType === "privacy_legal") {
-    return "Thank you. I’ve routed this to Hera’s authorised privacy and management team for direct review.";
+    return "Thank you. I’ve routed this to Hera’s authorised privacy team for direct review.";
   }
   if (taskType === "arrival_issue") {
     return "Thank you for updating us. I’ve placed this in the outlet team’s urgent queue for immediate coordination.";
@@ -481,6 +482,12 @@ function taskTypeFor(input: {
   policy: PolicyAssessment;
   proposal: AgentHandoffProposal;
 }): HandoffTaskType | null {
+  if (
+    input.policy.securityFlags.includes("prompt_injection_attempt") &&
+    input.policy.replyOverride === promptInjectionReplyFor(input.message)
+  ) {
+    return null;
+  }
   // Highest consequence wins. A request for a person changes ownership and
   // scope, but it must not erase the underlying booking, safety or complaint action.
   if (

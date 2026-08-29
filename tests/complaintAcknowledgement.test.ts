@@ -83,7 +83,7 @@ test("an explicit manager request preserves a specific empathetic complaint ackn
     decision: complaintDecision(),
   });
 
-  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.3.0");
+  assert.equal(HUMAN_HANDOFF_POLICY_VERSION, "hera-human-handoff-1.4.0");
   assert.equal(result.createTask, true);
   assert.equal(result.taskType, "complaint_review");
   assert.equal(result.scope, "full_takeover");

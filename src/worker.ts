@@ -35,6 +35,8 @@ import {
   classifyDeterministicRisk,
   highestRisk,
   POLICY_VERSION,
+  promptInjectionReplyFor,
+  shouldUsePromptInjectionReply,
   urgentSafetyReplyFor,
 } from "./policy/risk.js";
 import {
@@ -363,12 +365,17 @@ async function processJob(runtime: WorkerRuntime, job: ReceptionistJob): Promise
   const draftFinalReply = cleanReply(
     handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
   );
+  const forcePromptInjectionReply =
+    shouldUsePromptInjectionReply(deterministic, context.conversationRisk) &&
+    policy.risk !== "black";
   const finalGate = await runFinalResponseGate({
     draftReply: draftFinalReply,
     forcedReply:
       deterministic.risk === "black"
         ? urgentSafetyReplyFor(interpreted.text)
-        : null,
+        : forcePromptInjectionReply
+          ? promptInjectionReplyFor(interpreted.text)
+          : null,
     cleanReply,
     assessQuality: (reply) => assessFinalResponseQuality({
       clientMessage: interpreted.text,
