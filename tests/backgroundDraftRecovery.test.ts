@@ -20,6 +20,13 @@ const alternateUrl = new URL(
   import.meta.url,
 );
 
+function moduleBody(source: string): string {
+  return source.replace(
+    /^import\s*\{[\s\S]*?\}\s*from\s*"[^"]+";\s*/,
+    "",
+  );
+}
+
 test("verified client replies fit the handoff persistence contract", async () => {
   const sql = await readFile(migrationUrl, "utf8");
   assert.doesNotThrow(() => parse(sql));
@@ -29,7 +36,8 @@ test("verified client replies fit the handoff persistence contract", async () =>
 
 test("selected fresh inbound messages recover drafts automatically without sending", async () => {
   const source = await readFile(recoveryUrl, "utf8");
-  assert.doesNotThrow(() => new Function(source));
+  assert.doesNotThrow(() => new Function(moduleBody(source)));
+  assert.match(source, /^import\s*\{/);
   assert.match(source, /maybeRecoverSelectedDraft/);
   assert.match(source, /\/api\/command-centre\/receptionist-draft/);
   assert.match(source, /latest\.direction\s*!==\s*"inbound"/);
@@ -60,5 +68,6 @@ test("both receptionist entry points load live recovery after the base workspace
     assert.ok(workspace >= 0);
     assert.ok(workspace < emergency);
     assert.ok(emergency < recovery);
+    assert.match(html, /<script type="module"/);
   }
 });
