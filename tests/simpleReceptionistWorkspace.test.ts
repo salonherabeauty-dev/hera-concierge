@@ -4,7 +4,7 @@ import test from "node:test";
 import { parse } from "libpg-query";
 
 const indexUrl = new URL(
-  "../public/command-centre/reception.html",
+  "../public/command-centre/index.html",
   import.meta.url,
 );
 const advancedUrl = new URL(
@@ -31,6 +31,18 @@ const regenerateApiUrl = new URL(
   "../api/command-centre/receptionist-regenerate.ts",
   import.meta.url,
 );
+const conversationsApiUrl = new URL(
+  "../api/command-centre/conversations.ts",
+  import.meta.url,
+);
+const clientContextApiUrl = new URL(
+  "../api/command-centre/client-context.ts",
+  import.meta.url,
+);
+const frontDeskRepositoryUrl = new URL(
+  "../src/command-centre/frontDeskRepository.ts",
+  import.meta.url,
+);
 const repositoryUrl = new URL(
   "../src/command-centre/receptionistWorkspaceRepository.ts",
   import.meta.url,
@@ -51,7 +63,7 @@ async function migrationSql(): Promise<string> {
 }
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("the default Command Centre is a simple receptionist workspace", async () => {
+test("the default Command Centre is the professional receptionist workspace", async () => {
   const [index, advanced, ui, css] = await Promise.all([
     readFile(indexUrl, "utf8"),
     readFile(advancedUrl, "utf8"),
@@ -67,23 +79,53 @@ test("the default Command Centre is a simple receptionist workspace", async () =
   assert.match(advanced, /human-delivery-gate\.js/);
   assert.match(advanced, /assets\/app\.js/);
   assert.doesNotThrow(() => new Function(ui));
-  assert.match(css, /@media \(max-width: 820px\)/);
+  assert.match(css, /grid-template-columns:\s*minmax\(292px, 330px\)[\s\S]*minmax\(270px, 310px\)/);
+  assert.match(css, /@media \(max-width: 760px\)/);
 });
 
-test("receptionist sees exactly the requested working actions", async () => {
+test("front desk sees a complete inbox and the approved working actions", async () => {
   const ui = await readFile(uiUrl, "utf8");
-  assert.equal((ui.match(/<textarea/g) ?? []).length, 1);
+  assert.equal((ui.match(/<textarea/g) ?? []).length, 2);
+  assert.match(ui, /Hera Reception Desk/);
+  assert.match(ui, /Needs reply/);
+  assert.match(ui, /Waiting for client/);
+  assert.match(ui, /Answered today/);
+  assert.match(ui, /On hold/);
+  assert.match(ui, /All conversations/);
+  assert.match(ui, /Search client, last 4 digits or message/);
   assert.match(ui, /Reply to client/);
   assert.match(ui, /Send to Client/);
   assert.match(ui, /Regenerate/);
   assert.match(ui, /Take Over \/ Hold/);
   assert.match(ui, /Sent only from Tanglin WhatsApp/);
   assert.match(ui, /messageText: state\.draft/);
+  assert.match(ui, /conversations\?limit=300/);
   assert.match(ui, /receptionist-queue\?limit=100/);
+  assert.match(ui, /client-context\?id=/);
+  assert.match(ui, /Internal notes/);
+  assert.match(ui, /action: "add_note"/);
   assert.doesNotMatch(ui, /Escalate/i);
   assert.doesNotMatch(ui, /final response quality/i);
   assert.doesNotMatch(ui, /response hash/i);
   assert.doesNotMatch(ui, /modelId/i);
+});
+
+test("complete inbox and client context remain authenticated and bounded", async () => {
+  const [conversationsApi, contextApi, frontDeskRepository] = await Promise.all([
+    readFile(conversationsApiUrl, "utf8"),
+    readFile(clientContextApiUrl, "utf8"),
+    readFile(frontDeskRepositoryUrl, "utf8"),
+  ]);
+  assert.match(conversationsApi, /authenticateCommandCentre/);
+  assert.match(conversationsApi, /Math\.min\(Number\(value\), 300\)/);
+  assert.match(conversationsApi, /createFrontDeskRepository/);
+  assert.match(contextApi, /authenticateCommandCentre/);
+  assert.match(contextApi, /ai_lookup_bookings_by_mobile|createFrontDeskRepository/);
+  assert.match(contextApi, /Timely must be checked/);
+  assert.match(frontDeskRepository, /Math\.min\(input\.limit \?\? 250, 300\)/);
+  assert.match(frontDeskRepository, /ai_lookup_bookings_by_mobile/);
+  assert.match(frontDeskRepository, /provider_timestamp/);
+  assert.doesNotMatch(frontDeskRepository, /NEXT_PUBLIC/);
 });
 
 test("edited or unchanged replies use only the Tanglin 360dialog route", async () => {
