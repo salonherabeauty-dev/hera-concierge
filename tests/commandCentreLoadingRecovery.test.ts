@@ -10,8 +10,8 @@ const stabilityUrl = new URL(
   "../public/command-centre/runtime-stability.js",
   import.meta.url,
 );
-const indexUrl = new URL(
-  "../public/command-centre/index.html",
+const advancedUrl = new URL(
+  "../public/command-centre/advanced.html",
   import.meta.url,
 );
 const queueMigrationUrl = new URL(
@@ -32,16 +32,16 @@ test("named staff launcher updates are idempotent and cannot starve browser pain
   );
 });
 
-test("runtime stabilizer is loaded before the other Command Centre enhancements", async () => {
-  const [index, stability] = await Promise.all([
-    readFile(indexUrl, "utf8"),
+test("runtime stabilizer is loaded before the other advanced Command Centre enhancements", async () => {
+  const [advanced, stability] = await Promise.all([
+    readFile(advancedUrl, "utf8"),
     readFile(stabilityUrl, "utf8"),
   ]);
-  const preview = index.indexOf("preview-operator.js");
-  const stabilizer = index.indexOf("runtime-stability.js");
-  const delivery = index.indexOf("human-delivery-gate.js");
-  const named = index.indexOf("named-staff-access.js");
-  const app = index.indexOf("assets/app.js");
+  const preview = advanced.indexOf("preview-operator.js");
+  const stabilizer = advanced.indexOf("runtime-stability.js");
+  const delivery = advanced.indexOf("human-delivery-gate.js");
+  const named = advanced.indexOf("named-staff-access.js");
+  const app = advanced.indexOf("assets/app.js");
   assert.ok(preview >= 0);
   assert.ok(preview < stabilizer);
   assert.ok(stabilizer < delivery);
