@@ -92,9 +92,11 @@ const openAiSolMaxMiddleware = {
 function openAiSolMaxModel(
   sourceFactory?: (modelId: string) => LanguageModel,
 ): LanguageModel {
-  const source = sourceFactory
+  const candidate = sourceFactory
     ? sourceFactory(HERA_OPENAI_MODEL_ID)
     : gateway(HERA_OPENAI_MODEL_ID);
+  const source =
+    typeof candidate === "string" ? gateway(candidate) : candidate;
   return wrapLanguageModel({
     model: source,
     middleware: openAiSolMaxMiddleware,
