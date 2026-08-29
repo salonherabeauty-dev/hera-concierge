@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const authUrl = new URL("../src/command-centre/auth.ts", import.meta.url);
-const indexUrl = new URL(
-  "../public/command-centre/index.html",
+const advancedUrl = new URL(
+  "../public/command-centre/advanced.html",
   import.meta.url,
 );
 const accessUrl = new URL(
@@ -37,13 +37,13 @@ test("the protected Preview permits named staff password sign-in without weakeni
   assert.match(source, /process\.env\.WHATSAPP_SEND_MODE === "shadow"/);
 });
 
-test("the Preview UI exposes named staff sign-in and sign-out without browser token storage", async () => {
-  const [index, access] = await Promise.all([
-    readFile(indexUrl, "utf8"),
+test("the advanced Preview UI preserves named staff sign-in and sign-out without browser token storage", async () => {
+  const [advanced, access] = await Promise.all([
+    readFile(advancedUrl, "utf8"),
     readFile(accessUrl, "utf8"),
   ]);
-  assert.match(index, /named-staff-access\.css/);
-  assert.match(index, /named-staff-access\.js/);
+  assert.match(advanced, /named-staff-access\.css/);
+  assert.match(advanced, /named-staff-access\.js/);
   assert.match(access, /\/api\/command-centre\/auth\/login/);
   assert.match(access, /\/api\/command-centre\/auth\/logout/);
   assert.match(access, /window\.location\.reload\(\)/);
