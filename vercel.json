@@ -13,11 +13,11 @@
   "rewrites": [
     {
       "source": "/command-centre",
-      "destination": "/command-centre/index.html"
+      "destination": "/command-centre/reception.html"
     },
     {
       "source": "/command-centre/",
-      "destination": "/command-centre/index.html"
+      "destination": "/command-centre/reception.html"
     }
   ],
   "headers": [
@@ -65,6 +65,12 @@
     "api/stage3r/worker.ts": {
       "maxDuration": "max",
       "includeFiles": "{evals/*.json,governance/stage3r-*.json}"
+    },
+    "api/command-centre/receptionist-message.ts": {
+      "maxDuration": 60
+    },
+    "api/command-centre/receptionist-regenerate.ts": {
+      "maxDuration": 300
     },
     "api/command-centre/**/*.ts": {
       "maxDuration": 30
