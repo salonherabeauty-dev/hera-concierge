@@ -7,6 +7,7 @@ import {
   secureCommandCentreHeaders,
 } from "../../src/command-centre/http.js";
 import { hasCapability } from "../../src/command-centre/permissions.js";
+import { ReceptionistWorkspaceRepository } from "../../src/command-centre/receptionistWorkspaceRepository.js";
 import type { ConversationSummary } from "../../src/command-centre/types.js";
 import type { RiskLevel } from "../../src/types.js";
 
@@ -42,6 +43,23 @@ function normalizeExpiredHumanHandling(
   };
 }
 
+function exposeReviewableDraft(
+  conversation: ConversationSummary,
+  reviewableConversationIds: ReadonlySet<string>,
+): ConversationSummary {
+  if (!reviewableConversationIds.has(conversation.id)) return conversation;
+
+  // A human-controlled complaint may still have a fully verified AI draft that
+  // the receptionist must review, edit and send. It belongs in Needs Reply,
+  // not hidden in On Hold. This is a presentation normalization only; the
+  // durable database conversation mode and all human-approval guards remain
+  // unchanged.
+  return {
+    ...conversation,
+    operatingMode: "ai",
+  };
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -62,9 +80,11 @@ export default async function handler(
     const searchValue = Array.isArray(request.query.search)
       ? request.query.search[0]
       : request.query.search;
+
     const repository = createFrontDeskRepository();
-    const conversations = (
-      await repository.listConversations({
+    const workspace = new ReceptionistWorkspaceRepository();
+    const [rawConversations, reviewableDrafts] = await Promise.all([
+      repository.listConversations({
         mode:
           modeValue === "management"
             ? "management"
@@ -81,8 +101,22 @@ export default async function handler(
         search:
           typeof searchValue === "string" ? searchValue.slice(0, 120) : null,
         limit: conversationLimit(request),
-      })
-    ).map((conversation) => normalizeExpiredHumanHandling(conversation));
+      }),
+      workspace.listQueue({
+        actorUserId: session.staff.userId,
+        limit: 100,
+      }),
+    ]);
+
+    const reviewableConversationIds = new Set(
+      reviewableDrafts.map((item) => item.conversationId),
+    );
+    const conversations = rawConversations
+      .map((conversation) => normalizeExpiredHumanHandling(conversation))
+      .map((conversation) =>
+        exposeReviewableDraft(conversation, reviewableConversationIds),
+      );
+
     return response.status(200).json({
       conversations,
       count: conversations.length,
