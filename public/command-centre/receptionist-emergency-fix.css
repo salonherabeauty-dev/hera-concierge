@@ -1,0 +1,157 @@
+/* Urgent operational repair: bounded panes, visible tabs and reliable scrolling. */
+html,
+body,
+#reception-app {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+.fd-shell {
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.fd-layout {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fd-inbox,
+.fd-workspace,
+.fd-context-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fd-conversation-list,
+.fd-thread,
+.fd-context-body,
+.fd-drawer__body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fd-conversation-list::-webkit-scrollbar,
+.fd-thread::-webkit-scrollbar,
+.fd-context-body::-webkit-scrollbar,
+.fd-drawer__body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.fd-conversation-list::-webkit-scrollbar-thumb,
+.fd-thread::-webkit-scrollbar-thumb,
+.fd-context-body::-webkit-scrollbar-thumb,
+.fd-drawer__body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(72, 59, 49, 0.28);
+  background-clip: padding-box;
+}
+
+.fd-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  overflow: visible;
+  padding: 0;
+}
+
+.fd-tab {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+  padding-inline: 11px;
+}
+
+.fd-tab:last-child {
+  grid-column: 1 / -1;
+}
+
+.fd-emergency-draft-action {
+  min-width: 150px;
+}
+
+.fd-draft-repair-note {
+  margin: 6px 0 0;
+  color: var(--fd-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fd-thread-scroll-hint {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  z-index: 8;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--fd-line-strong);
+  border-radius: 999px;
+  background: rgba(255, 253, 249, 0.94);
+  color: var(--fd-ink);
+  box-shadow: 0 6px 20px rgba(45, 35, 28, 0.12);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.fd-workspace {
+  position: relative;
+}
+
+@media (max-width: 760px) {
+  body {
+    overflow: hidden;
+  }
+
+  .fd-shell,
+  .fd-layout,
+  .fd-inbox,
+  .fd-workspace {
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 0;
+  }
+
+  .fd-layout {
+    overflow: hidden;
+  }
+
+  .fd-inbox,
+  .fd-workspace {
+    overflow: hidden;
+  }
+
+  .fd-shell--conversation .fd-workspace {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .fd-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-right: 0;
+    padding-right: 0;
+  }
+
+  .fd-thread-scroll-hint {
+    right: 12px;
+    bottom: 12px;
+  }
+}
