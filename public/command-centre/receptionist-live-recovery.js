@@ -1,3 +1,9 @@
+import {
+  isInboundHumanHandling,
+  matchesInboxSearch,
+  needsReplyInInbox,
+} from "./receptionist-inbox-policy.js";
+
 const root = document.querySelector("#reception-app");
 
 if (!(root instanceof HTMLElement)) {
@@ -12,6 +18,7 @@ const MAX_AUTO_DRAFT_ATTEMPTS = 3;
 const recoveryState = {
   conversations: new Map(),
   newestConversationId: null,
+  lastSelectedConversationId: null,
   inFlightSourceIds: new Set(),
   attempts: new Map(),
   sortScheduled: false,
@@ -58,9 +65,12 @@ function selectedConversationId() {
   const selected = root.querySelector(
     ".fd-conversation--selected[data-conversation-id]",
   );
-  return selected instanceof HTMLElement
-    ? selected.dataset.conversationId ?? null
-    : null;
+  const selectedId =
+    selected instanceof HTMLElement
+      ? selected.dataset.conversationId ?? null
+      : null;
+  if (selectedId) recoveryState.lastSelectedConversationId = selectedId;
+  return selectedId ?? recoveryState.lastSelectedConversationId;
 }
 
 function displayedPhoneEnding() {
@@ -71,6 +81,11 @@ function displayedPhoneEnding() {
 function activeFilter() {
   const active = root.querySelector(".fd-tab--active[data-filter]");
   return active instanceof HTMLElement ? active.dataset.filter ?? null : null;
+}
+
+function activeSearch() {
+  const input = root.querySelector("[data-search-input]");
+  return input instanceof HTMLInputElement ? input.value : "";
 }
 
 function effectiveMessageTime(message) {
@@ -154,6 +169,232 @@ function scheduleDraftPolling() {
   }
 }
 
+function cleanText(value) {
+  return String(value ?? "")
+    .replaceAll("â€™", "’")
+    .replaceAll("â€œ", "“")
+    .replaceAll("â€", "”")
+    .replaceAll("â€“", "–")
+    .replaceAll("â€”", "—")
+    .replaceAll("Â", "")
+    .replaceAll("�", "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compact(value, maximum = 78) {
+  const text = cleanText(value);
+  return text.length > maximum ? `${text.slice(0, maximum - 1)}…` : text;
+}
+
+function initials(value) {
+  const text = cleanText(value);
+  if (!text) return "H";
+  return text
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.slice(0, 1).toUpperCase())
+    .join("");
+}
+
+function singaporeDay(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function formatRowTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const difference = Date.now() - date.getTime();
+  if (difference >= 0 && difference < 60_000) return "Now";
+  if (difference >= 0 && difference < 3_600_000) {
+    return `${Math.max(1, Math.floor(difference / 60_000))}m`;
+  }
+  if (singaporeDay(date) === singaporeDay(new Date())) {
+    return new Intl.DateTimeFormat("en-SG", {
+      timeZone: "Asia/Singapore",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
+  return new Intl.DateTimeFormat("en-SG", {
+    timeZone: "Asia/Singapore",
+    day: "numeric",
+    month: "short",
+  }).format(date);
+}
+
+function createChip(label, tone) {
+  const chip = document.createElement("span");
+  chip.className = `fd-chip fd-chip--${tone} fd-chip--compact`;
+  chip.textContent = label;
+  return chip;
+}
+
+function recoverySignature(conversation) {
+  return JSON.stringify([
+    conversation?.clientDisplayName ?? "",
+    conversation?.phoneEnding ?? "",
+    conversation?.lastMessagePreview ?? "",
+    conversation?.lastMessageAt ?? "",
+    conversation?.operatingMode ?? "",
+    conversation?.currentRisk ?? "",
+    Number(conversation?.openTaskCount ?? 0),
+  ]);
+}
+
+function createRecoveredNeedsReplyRow(conversation) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "fd-conversation";
+  button.dataset.action = "select-conversation";
+  button.dataset.conversationId = String(conversation.id);
+  button.dataset.recoveredNeedsReply = "true";
+  button.dataset.recoverySignature = recoverySignature(conversation);
+  const selected =
+    recoveryState.lastSelectedConversationId === conversation.id;
+  if (selected) button.classList.add("fd-conversation--selected");
+  button.setAttribute("aria-current", selected ? "true" : "false");
+
+  const avatar = document.createElement("span");
+  avatar.className = "fd-avatar";
+  avatar.textContent = initials(conversation.clientDisplayName);
+
+  const body = document.createElement("span");
+  body.className = "fd-conversation__body";
+
+  const title = document.createElement("span");
+  title.className = "fd-conversation__title";
+  const name = document.createElement("strong");
+  name.textContent = cleanText(conversation.clientDisplayName) ||
+    `Client •••• ${String(conversation.phoneEnding ?? "")}`;
+  const time = document.createElement("time");
+  time.textContent = formatRowTime(conversation.lastMessageAt);
+  title.append(name, time);
+
+  const preview = document.createElement("span");
+  preview.className = "fd-conversation__preview";
+  preview.textContent =
+    compact(conversation.lastMessagePreview) || "New WhatsApp message";
+
+  const meta = document.createElement("span");
+  meta.className = "fd-conversation__meta";
+  meta.append(createChip("Needs reply", "gold"));
+  if (isInboundHumanHandling(conversation)) {
+    meta.append(createChip("Human handling", "purple"));
+  }
+  if (conversation.currentRisk === "black") {
+    meta.append(createChip("Emergency", "red"));
+  } else if (conversation.currentRisk === "red") {
+    meta.append(createChip("Urgent", "red"));
+  } else if (conversation.currentRisk === "amber") {
+    meta.append(createChip("Needs care", "gold"));
+  }
+  if (Number(conversation.openTaskCount) > 0) {
+    const open = document.createElement("span");
+    open.className = "fd-meta-label";
+    open.textContent = `${Number(conversation.openTaskCount)} open`;
+    meta.append(open);
+  }
+
+  body.append(title, preview, meta);
+  button.append(avatar, body);
+  return button;
+}
+
+function setCountText(element, value) {
+  const next = String(value);
+  if (element instanceof HTMLElement && element.textContent !== next) {
+    element.textContent = next;
+  }
+}
+
+function repairFilterCounts() {
+  const conversations = [...recoveryState.conversations.values()];
+  const needsCount = conversations.filter(needsReplyInInbox).length;
+  const heldCount = conversations.filter(
+    (conversation) => conversation?.operatingMode === "management",
+  ).length;
+
+  setCountText(
+    root.querySelector('.fd-tab[data-filter="needs"] strong'),
+    needsCount,
+  );
+  setCountText(
+    root.querySelector('.fd-tab[data-filter="held"] strong'),
+    heldCount,
+  );
+  setCountText(
+    root.querySelector(".fd-inbox-title > span strong"),
+    needsCount,
+  );
+}
+
+function repairMissingNeedsReplyRows() {
+  const list = root.querySelector("[data-inbox-list]");
+  if (!(list instanceof HTMLElement)) return;
+
+  repairFilterCounts();
+  const recoveredRows = [...list.querySelectorAll(
+    '[data-recovered-needs-reply="true"][data-conversation-id]',
+  )].filter((row) => row instanceof HTMLElement);
+
+  if (activeFilter() !== "needs") {
+    for (const row of recoveredRows) row.remove();
+    return;
+  }
+
+  const search = activeSearch();
+  const desired = [...recoveryState.conversations.values()]
+    .filter(needsReplyInInbox)
+    .filter((conversation) => matchesInboxSearch(conversation, search));
+  const desiredById = new Map(
+    desired.map((conversation) => [conversation.id, conversation]),
+  );
+
+  const ordinaryIds = new Set(
+    [...list.querySelectorAll(
+      '.fd-conversation[data-conversation-id]:not([data-recovered-needs-reply="true"])',
+    )]
+      .filter((row) => row instanceof HTMLElement)
+      .map((row) => row.dataset.conversationId)
+      .filter(Boolean),
+  );
+
+  for (const row of recoveredRows) {
+    const id = row.dataset.conversationId;
+    const current = id ? desiredById.get(id) : null;
+    const stale = Boolean(
+      current &&
+        row.dataset.recoverySignature !== recoverySignature(current),
+    );
+    if (!id || !current || ordinaryIds.has(id) || stale) row.remove();
+  }
+
+  const visibleIds = new Set(
+    [...list.querySelectorAll(".fd-conversation[data-conversation-id]")]
+      .filter((row) => row instanceof HTMLElement)
+      .map((row) => row.dataset.conversationId)
+      .filter(Boolean),
+  );
+
+  let added = false;
+  for (const conversation of desired) {
+    if (visibleIds.has(conversation.id)) continue;
+    list.append(createRecoveredNeedsReplyRow(conversation));
+    visibleIds.add(conversation.id);
+    added = true;
+  }
+
+  if (added) list.querySelector(".fd-empty-list")?.remove();
+}
+
 function sortedConversationIds() {
   return [...recoveryState.conversations.values()]
     .sort(
@@ -170,7 +411,7 @@ function sortVisibleInbox() {
   const rows = [...list.querySelectorAll(
     ".fd-conversation[data-conversation-id]",
   )].filter((row) => row instanceof HTMLElement);
-  if (rows.length < 2) return;
+  if (rows.length === 0) return;
 
   const rank = new Map(
     sortedConversationIds().map((id, index) => [id, index]),
@@ -187,13 +428,13 @@ function sortVisibleInbox() {
     list.append(fragment);
   }
 
-  const newestId = sortedConversationIds()[0] ?? null;
+  const newestVisibleId = sorted[0]?.dataset.conversationId ?? null;
   if (
-    newestId &&
-    newestId !== recoveryState.newestConversationId &&
+    newestVisibleId &&
+    newestVisibleId !== recoveryState.newestConversationId &&
     ["needs", "all"].includes(activeFilter() ?? "")
   ) {
-    recoveryState.newestConversationId = newestId;
+    recoveryState.newestConversationId = newestVisibleId;
     list.scrollTop = 0;
   }
 }
@@ -209,6 +450,7 @@ async function refreshConversationOrder() {
         .filter((conversation) => conversation?.id)
         .map((conversation) => [conversation.id, conversation]),
     );
+    repairMissingNeedsReplyRows();
     sortVisibleInbox();
   } catch {
     // The main workspace already provides a visible error if the inbox cannot load.
@@ -220,6 +462,7 @@ function scheduleInboxSort(delay = 0) {
   recoveryState.sortScheduled = true;
   window.setTimeout(() => {
     recoveryState.sortScheduled = false;
+    repairMissingNeedsReplyRows();
     sortVisibleInbox();
   }, delay);
 }
@@ -354,8 +597,26 @@ function scheduleAutoDraftCheck(delay = 1_200) {
   }, delay);
 }
 
+root.addEventListener(
+  "click",
+  (event) => {
+    const target =
+      event.target instanceof Element
+        ? event.target.closest("[data-action]")
+        : null;
+    const action = target?.getAttribute("data-action");
+    if (action === "select-conversation") {
+      recoveryState.lastSelectedConversationId =
+        target?.getAttribute("data-conversation-id") || null;
+    } else if (action === "back") {
+      recoveryState.lastSelectedConversationId = null;
+    }
+  },
+  true,
+);
+
 const observer = new MutationObserver(() => {
-  scheduleInboxSort(60);
+  scheduleInboxSort(40);
   scheduleAutoDraftCheck(900);
 });
 observer.observe(root, { childList: true, subtree: true });
@@ -367,4 +628,4 @@ window.setInterval(() => {
   if (document.visibilityState !== "visible") return;
   void refreshConversationOrder();
   scheduleAutoDraftCheck(800);
-}, 12_000);
+}, 8_000);
