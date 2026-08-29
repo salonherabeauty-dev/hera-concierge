@@ -70,6 +70,14 @@ test("corrected final replies receive a bounded independent re-verification", as
   );
   assert.match(
     worker,
+    /const forcePromptInjectionReply =[\s\S]{0,180}shouldUsePromptInjectionReply/,
+  );
+  assert.match(
+    worker,
+    /forcePromptInjectionReply[\s\S]{0,100}promptInjectionReplyFor\(interpreted\.text\)/,
+  );
+  assert.match(
+    worker,
     /const deliveryEligible = finalQuality\.passed && finalVerification\.approved/,
   );
 });

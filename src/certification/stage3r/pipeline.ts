@@ -14,6 +14,8 @@ import {
   assessPolicy,
   classifyDeterministicRisk,
   highestRisk,
+  promptInjectionReplyFor,
+  shouldUsePromptInjectionReply,
   urgentSafetyReplyFor,
 } from "../../policy/risk.js";
 import type {
@@ -251,12 +253,17 @@ export async function runStage3rExactResponse(input: {
   const draft = cleanReply(
     handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
   );
+  const forcePromptInjectionReply =
+    shouldUsePromptInjectionReply(deterministic, context.conversationRisk) &&
+    policy.risk !== "black";
   const finalGate = await runFinalResponseGate({
     draftReply: draft,
     forcedReply:
       deterministic.risk === "black"
         ? urgentSafetyReplyFor(input.case.message)
-        : null,
+        : forcePromptInjectionReply
+          ? promptInjectionReplyFor(input.case.message)
+          : null,
     cleanReply,
     assessQuality: (reply) => assessFinalResponseQuality({
       clientMessage: input.case.message,

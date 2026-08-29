@@ -105,6 +105,14 @@ test("the Stage 3-R pipeline reproduces final verification without provider or p
     source,
     /deterministic\.risk === "black"[\s\S]{0,100}urgentSafetyReplyFor\(input\.case\.message\)/,
   );
+  assert.match(
+    source,
+    /const forcePromptInjectionReply =[\s\S]{0,180}shouldUsePromptInjectionReply/,
+  );
+  assert.match(
+    source,
+    /forcePromptInjectionReply[\s\S]{0,100}promptInjectionReplyFor\(input\.case\.message\)/,
+  );
   assert.match(source, /providerSendCount:\s*0/);
   assert.match(source, /duplicateFinalCandidates:\s*0/);
   assert.doesNotMatch(

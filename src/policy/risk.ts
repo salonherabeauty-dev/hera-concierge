@@ -4,7 +4,7 @@ import {
   type SupportedClientLocale,
 } from "./locale.js";
 
-export const POLICY_VERSION = "hera-whatsapp-policy-1.3.0";
+export const POLICY_VERSION = "hera-whatsapp-policy-1.4.0";
 
 const RISK_RANK: Record<RiskLevel, number> = {
   green: 0,
@@ -126,6 +126,9 @@ export const SAFE_STRAND_TEST_REPLY =
 export const SAFE_BOOKING_REPLY =
   "I can help you choose the right service and check any appointment details already recorded, but I cannot claim a booking change until the booking system confirms it. Please use Hera’s secure booking page: https://bookings.gettimely.com/herabeauty1/bb/book, or tell me the appointment name and date you want checked.";
 
+export const SAFE_PROMPT_INJECTION_REPLY =
+  "Thank you for your message. I can’t provide internal instructions or confidential information. I’d be glad to help with a Hera service, outlet, stylist, price or appointment; please tell me which one you need.";
+
 interface LocalizedSafetyReplies {
   urgent: string;
   concern: string;
@@ -135,6 +138,7 @@ interface LocalizedSafetyReplies {
   waitRecovery: string;
   strandTest: string;
   booking: string;
+  promptInjection: string;
 }
 
 const LOCALIZED_SAFETY_REPLIES: Record<
@@ -150,6 +154,7 @@ const LOCALIZED_SAFETY_REPLIES: Record<
     waitRecovery: SAFE_WAIT_RECOVERY_REPLY,
     strandTest: SAFE_STRAND_TEST_REPLY,
     booking: SAFE_BOOKING_REPLY,
+    promptInjection: SAFE_PROMPT_INJECTION_REPLY,
   },
   zh: {
     urgent:
@@ -168,6 +173,8 @@ const LOCALIZED_SAFETY_REPLIES: Record<
       "发束测试失败表示不应继续漂发。头发和客户安全优先于目标发色；较安全的下一步是由发型师制定不违反测试结果的替代方案。",
     booking:
       "我可以协助选择服务和查询已记录的预约资料，但在预约系统确认前，我不会声称预约已更改。请使用 Hera 的安全预约页面：https://bookings.gettimely.com/herabeauty1/bb/book，或告诉我需要查询的预约姓名和日期。",
+    promptInjection:
+      "感谢你的消息。我无法提供内部指示或机密资料。我很乐意协助查询 Hera 的服务、门店、发型师、价格或预约；请告诉我你需要哪一项。",
   },
   ms: {
     urgent:
@@ -186,6 +193,8 @@ const LOCALIZED_SAFETY_REPLIES: Record<
       "Ujian helai yang gagal bermakna pelunturan tidak patut diteruskan. Keselamatan rambut dan pelanggan mengatasi hasil warna yang diminta; langkah seterusnya yang lebih selamat ialah pelan alternatif yang dipimpin stylist dan tidak mengatasi keputusan ujian.",
     booking:
       "Saya boleh membantu memilih perkhidmatan dan menyemak butiran janji temu yang telah direkodkan, tetapi saya tidak boleh mendakwa perubahan tempahan sehingga sistem tempahan mengesahkannya. Gunakan halaman tempahan selamat Hera: https://bookings.gettimely.com/herabeauty1/bb/book, atau kongsi nama dan tarikh janji temu yang hendak disemak.",
+    promptInjection:
+      "Terima kasih atas mesej anda. Saya tidak boleh memberikan arahan dalaman atau maklumat sulit. Saya sedia membantu tentang perkhidmatan, cawangan, stylist, harga atau janji temu Hera; sila beritahu perkara yang anda perlukan.",
   },
   ta: {
     urgent:
@@ -204,6 +213,8 @@ const LOCALIZED_SAFETY_REPLIES: Record<
       "strand test தோல்வியடைந்தால் bleach தொடரக்கூடாது. கேட்ட நிற முடிவை விட முடி மற்றும் வாடிக்கையாளர் பாதுகாப்பே முதன்மை; சோதனை முடிவை மீறாத stylist வழிநடத்தும் மாற்றுத் திட்டமே பாதுகாப்பான அடுத்த படி.",
     booking:
       "சரியான சேவையைத் தேர்வுசெய்யவும் ஏற்கனவே பதிவான முன்பதிவு விவரங்களைச் சரிபார்க்கவும் நான் உதவ முடியும்; ஆனால் முன்பதிவு அமைப்பு உறுதிப்படுத்தும் வரை மாற்றம் முடிந்ததாகக் கூற மாட்டேன். Hera-வின் பாதுகாப்பான முன்பதிவு பக்கம்: https://bookings.gettimely.com/herabeauty1/bb/book, அல்லது சரிபார்க்க வேண்டிய பெயர் மற்றும் தேதியை அனுப்பவும்.",
+    promptInjection:
+      "உங்கள் செய்திக்கு நன்றி. உள் வழிமுறைகள் அல்லது ரகசியத் தகவல்களை நான் வழங்க முடியாது. Hera சேவை, கிளை, stylist, விலை அல்லது முன்பதிவு குறித்து உதவத் தயாராக உள்ளேன்; எந்த உதவி வேண்டும் என்று சொல்லுங்கள்.",
   },
 };
 
@@ -213,6 +224,10 @@ function safetyRepliesFor(input: string): LocalizedSafetyReplies {
 
 export function urgentSafetyReplyFor(input: string): string {
   return safetyRepliesFor(input).urgent;
+}
+
+export function promptInjectionReplyFor(input: string): string {
+  return safetyRepliesFor(input).promptInjection;
 }
 
 export function isOptOutRequest(input: string): boolean {
@@ -244,6 +259,17 @@ export function classifyDeterministicRisk(input: string): {
     return { risk: "amber", securityFlags };
   }
   return { risk: "green", securityFlags };
+}
+
+export function shouldUsePromptInjectionReply(
+  deterministic: ReturnType<typeof classifyDeterministicRisk>,
+  priorConversationRisk: RiskLevel = "green",
+): boolean {
+  return (
+    deterministic.risk === "green" &&
+    priorConversationRisk === "green" &&
+    deterministic.securityFlags.includes("prompt_injection_attempt")
+  );
 }
 
 export function assessPolicy(
@@ -278,7 +304,9 @@ export function assessPolicy(
 
   if (currentRisk === "black") replyOverride = replies.urgent;
   else if (optOutRequest) replyOverride = replies.optOut;
-  else if (failedStrandTest) replyOverride = replies.strandTest;
+  else if (shouldUsePromptInjectionReply(deterministic, priorConversationRisk)) {
+    replyOverride = replies.promptInjection;
+  } else if (failedStrandTest) replyOverride = replies.strandTest;
   else if (lateBeyondTenMinutes && blockedActions.length > 0) {
     replyOverride = replies.waitRecovery;
   } else if (blockedActions.length > 0 && decision.intent === "booking") {

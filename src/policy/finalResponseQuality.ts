@@ -10,7 +10,7 @@ import {
 } from "./locale.js";
 
 export const FINAL_RESPONSE_QUALITY_POLICY_VERSION =
-  "hera-final-response-quality-1.2.0";
+  "hera-final-response-quality-1.3.0";
 
 export interface FinalResponseQualityAssessment {
   passed: boolean;
@@ -33,6 +33,10 @@ const GENERIC_HUMAN_ACKNOWLEDGEMENT =
   /certainly\.?\s+i(?:'|’)ve sent your request to hera(?:'|’)s team for direct assistance\.?\s+a staff member will continue with you as soon as available\.?/i;
 const ESCALATION_CLAIM =
   /(?:\b(?:sent|passed|routed|placed|escalated|forwarded)\b.{0,100}\b(?:team|manager|management|reception|staff)\b|\b(?:team|manager|management|reception|staff)\b.{0,100}\b(?:will|shall)\b.{0,30}\b(?:review|contact|continue|assist|follow up|check)\b|(?:已|已经)?(?:转交|提交|上报|交给).{0,20}(?:团队|经理|店长|前台|工作人员)|(?:团队|经理|店长|前台|工作人员).{0,20}(?:会|将)(?:审核|联系|跟进|协助|查询)|(?:telah|sudah)\s+(?:dihantar|diserahkan|dirujuk).{0,50}(?:pasukan|pengurus|penerimaan|kakitangan)|(?:pasukan|pengurus|penerimaan|kakitangan).{0,50}(?:akan|bakal).{0,30}(?:semak|hubungi|bantu|susulan)|(?:அனுப்பப்பட்டுள்ளது|ஒப்படைக்கப்பட்டுள்ளது|மேலிடப்பட்டுள்ளது).{0,40}(?:குழு|மேலாளர்|வரவேற்பு|பணியாளர்)|(?:குழு|மேலாளர்|வரவேற்பு|பணியாளர்).{0,40}(?:மதிப்பாய்வு|தொடர்பு|உதவ|தொடர்ந்து))/iu;
+const PRIVACY_HANDOFF_CLAIM =
+  /\b(?:privacy|data protection)\b.{0,100}\b(?:team|officer|management)\b.{0,100}(?:\b(?:will|shall)\b.{0,30})?\b(?:review|contact|follow up|handle|investigate|assess)\b/iu;
+const MANAGEMENT_HANDOFF_CLAIM =
+  /\b(?:manager|management|managing director)\b.{0,100}(?:\b(?:will|shall)\b.{0,30})?\b(?:review|contact|follow up|handle|investigate|assess|advise)\b/iu;
 const BOOKING_COMPLETION =
   /(?:\b(?:i|we)(?:'|’)ve\s+(?:booked|confirmed|reserved|secured)|\b(?:appointment|booking|slot)\s+(?:is|has been|was)\s+(?:booked|confirmed|reserved|secured)\b|(?:已|已经)(?:为您|为你)?(?:预订|预约|确认|保留)(?:了|好)?|(?:预约|时段).{0,8}(?:已确认|已预订|已保留)|(?:telah|sudah).{0,24}(?:menempah|mengesahkan|menyimpan slot)|(?:tempahan|janji temu).{0,24}(?:telah|sudah).{0,12}(?:disahkan|ditempah)|(?:முன்பதிவு|சந்திப்பு).{0,24}(?:உறுதிசெய்யப்பட்டது|செய்யப்பட்டது)|(?:நான்|நாங்கள்).{0,24}முன்பதிவு செய்துவிட்ட)/iu;
 const FINANCIAL_COMPLETION =
@@ -236,6 +240,22 @@ export function assessFinalResponseQuality(input: {
   }
   if (!input.handoff.createTask && ESCALATION_CLAIM.test(reply)) {
     issues.push("The final reply claims a human escalation that was not durably created.");
+  }
+  if (
+    PRIVACY_HANDOFF_CLAIM.test(reply) &&
+    (!input.handoff.createTask ||
+      input.handoff.assignedRole !== "privacy_officer")
+  ) {
+    issues.push("The final reply claims unsupported privacy-team ownership.");
+  }
+  if (
+    MANAGEMENT_HANDOFF_CLAIM.test(reply) &&
+    (!input.handoff.createTask ||
+      !["salon_manager", "managing_director"].includes(
+        input.handoff.assignedRole ?? "",
+      ))
+  ) {
+    issues.push("The final reply claims unsupported management ownership.");
   }
   if (
     AUTHORITY_REQUIRED_INTENTS.has(input.decision.intent) &&

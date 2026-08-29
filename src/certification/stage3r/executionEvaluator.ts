@@ -32,6 +32,8 @@ import {
   classifyDeterministicRisk,
   highestRisk,
   POLICY_VERSION,
+  promptInjectionReplyFor,
+  shouldUsePromptInjectionReply,
   urgentSafetyReplyFor,
 } from "../../policy/risk.js";
 import type {
@@ -439,12 +441,17 @@ export async function evaluateStage3rExecutionCase(
   const draftFinalReply = cleanReply(
     handoff.clientReplyOverride ?? policy.replyOverride ?? decision.reply,
   );
+  const forcePromptInjectionReply =
+    shouldUsePromptInjectionReply(deterministic, context.conversationRisk) &&
+    policy.risk !== "black";
   const finalGate = await runFinalResponseGate({
     draftReply: draftFinalReply,
     forcedReply:
       deterministic.risk === "black"
         ? urgentSafetyReplyFor(caseItem.message)
-        : null,
+        : forcePromptInjectionReply
+          ? promptInjectionReplyFor(caseItem.message)
+          : null,
     cleanReply,
     assessQuality: (reply) => assessFinalResponseQuality({
       clientMessage: caseItem.message,

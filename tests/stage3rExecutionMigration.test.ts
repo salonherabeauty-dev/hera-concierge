@@ -83,7 +83,7 @@ test("the protected worker is Preview-only, shadow-only and cannot send WhatsApp
   assert.match(source, /STAGE3R_EXECUTION_TOKEN/);
   assert.match(source, /EMERGENCY_CALIBRATION_TOKEN_SHA256/);
   assert.match(source, /createHash\("sha256"\)/);
-  assert.match(source, /2026-08-29T12:00:00Z/);
+  assert.match(source, /2026-08-29T18:00:00Z/);
   assert.match(source, /\[0, 6, 10, 20, 1910\]/);
   assert.match(source, /EMERGENCY_CALIBRATION_COST_CAP_USD = 10/);
   assert.match(source, /emergency_calibration_scope_mismatch/);
@@ -131,6 +131,14 @@ test("one queue item evaluates one exact final response and records forensic evi
   assert.match(
     source,
     /deterministic\.risk === "black"[\s\S]{0,100}urgentSafetyReplyFor\(caseItem\.message\)/,
+  );
+  assert.match(
+    source,
+    /const forcePromptInjectionReply =[\s\S]{0,180}shouldUsePromptInjectionReply/,
+  );
+  assert.match(
+    source,
+    /forcePromptInjectionReply[\s\S]{0,100}promptInjectionReplyFor\(caseItem\.message\)/,
   );
   assert.match(source, /judgeStage3rCaseWithUsage/);
   assert.match(source, /providerSendCount:\s*0/);
