@@ -9,6 +9,10 @@ export type CommandCentreCapability =
   | "view_conversations"
   | "view_audit"
   | "view_quality"
+  | "review_delivery"
+  | "approve_delivery"
+  | "reject_delivery"
+  | "escalate_delivery"
   | "create_task"
   | "accept_task"
   | "assign_task"
@@ -18,12 +22,19 @@ export type CommandCentreCapability =
   | "manage_staff"
   | "manage_system";
 
-const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapability>> = {
+const ROLE_CAPABILITIES: Record<
+  CommandCentreRole,
+  ReadonlySet<CommandCentreCapability>
+> = {
   owner: new Set([
     "view_dashboard",
     "view_conversations",
     "view_audit",
     "view_quality",
+    "review_delivery",
+    "approve_delivery",
+    "reject_delivery",
+    "escalate_delivery",
     "create_task",
     "accept_task",
     "assign_task",
@@ -38,6 +49,10 @@ const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapa
     "view_conversations",
     "view_audit",
     "view_quality",
+    "review_delivery",
+    "approve_delivery",
+    "reject_delivery",
+    "escalate_delivery",
     "create_task",
     "accept_task",
     "assign_task",
@@ -52,6 +67,10 @@ const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapa
     "view_conversations",
     "view_audit",
     "view_quality",
+    "review_delivery",
+    "approve_delivery",
+    "reject_delivery",
+    "escalate_delivery",
     "create_task",
     "accept_task",
     "assign_task",
@@ -62,6 +81,10 @@ const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapa
   receptionist: new Set([
     "view_dashboard",
     "view_conversations",
+    "review_delivery",
+    "approve_delivery",
+    "reject_delivery",
+    "escalate_delivery",
     "create_task",
     "accept_task",
     "transition_task",
@@ -71,6 +94,10 @@ const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapa
   technical_lead: new Set([
     "view_dashboard",
     "view_conversations",
+    "review_delivery",
+    "approve_delivery",
+    "reject_delivery",
+    "escalate_delivery",
     "create_task",
     "accept_task",
     "transition_task",
@@ -80,6 +107,9 @@ const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapa
   finance_admin: new Set([
     "view_dashboard",
     "view_conversations",
+    "review_delivery",
+    "approve_delivery",
+    "escalate_delivery",
     "accept_task",
     "transition_task",
     "add_note",
@@ -88,6 +118,10 @@ const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapa
     "view_dashboard",
     "view_conversations",
     "view_audit",
+    "review_delivery",
+    "approve_delivery",
+    "reject_delivery",
+    "escalate_delivery",
     "accept_task",
     "transition_task",
     "control_conversation",
@@ -98,6 +132,7 @@ const ROLE_CAPABILITIES: Record<CommandCentreRole, ReadonlySet<CommandCentreCapa
     "view_conversations",
     "view_audit",
     "view_quality",
+    "review_delivery",
   ]),
 };
 
@@ -156,7 +191,11 @@ export function canControlScope(
     return role === "technical_lead" || role === "privacy_officer";
   }
   if (scope === "full_takeover") {
-    return role === "receptionist" || role === "technical_lead" || role === "privacy_officer";
+    return (
+      role === "receptionist" ||
+      role === "technical_lead" ||
+      role === "privacy_officer"
+    );
   }
   return role !== "auditor";
 }

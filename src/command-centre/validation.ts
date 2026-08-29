@@ -16,10 +16,19 @@ const ASSIGNABLE_ROLES = [
   "privacy_officer",
 ] as const;
 
+const HUMAN_DELIVERY_ESCALATION_ROLES = [
+  "salon_manager",
+  "technical_lead",
+  "finance_admin",
+  "privacy_officer",
+] as const;
+
 const uuid = z.string().uuid();
 const optionalUuid = uuid.nullish().transform((value) => value ?? null);
 const trimmed = (minimum: number, maximum: number) =>
   z.string().trim().min(minimum).max(maximum);
+const responseHash = z.string().regex(/^[a-f0-9]{64}$/);
+const phoneEnding = z.string().regex(/^[0-9]{4}$/);
 
 export const bootstrapBodySchema = z.object({
   email: z.string().trim().email().max(320).transform((value) => value.toLowerCase()),
@@ -92,6 +101,31 @@ export const conversationActionBodySchema = z.discriminatedUnion("action", [
     conversationId: uuid,
     taskId: optionalUuid,
     note: trimmed(1, 4000),
+  }),
+]);
+
+const humanDeliveryCandidate = {
+  candidateId: uuid,
+  expectedSourceMessageId: uuid,
+  expectedResponseHash: responseHash,
+  expectedPhoneEnding: phoneEnding,
+};
+
+export const humanDeliveryActionBodySchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("approve"),
+    ...humanDeliveryCandidate,
+  }),
+  z.object({
+    action: z.literal("reject"),
+    ...humanDeliveryCandidate,
+    reason: trimmed(5, 1000),
+  }),
+  z.object({
+    action: z.literal("escalate"),
+    ...humanDeliveryCandidate,
+    escalationRole: z.enum(HUMAN_DELIVERY_ESCALATION_ROLES),
+    reason: trimmed(5, 1000),
   }),
 ]);
 

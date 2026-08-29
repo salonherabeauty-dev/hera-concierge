@@ -59,11 +59,17 @@ function isRole(value: string): value is CommandCentreRole {
 
 function mapStaff(row: StaffProfileRow): CommandCentreStaff {
   if (!isRole(row.role)) throw new Error("Invalid command centre role");
-  if (row.status !== "active" && row.status !== "suspended" && row.status !== "disabled") {
+  if (
+    row.status !== "active" &&
+    row.status !== "suspended" &&
+    row.status !== "disabled"
+  ) {
     throw new Error("Invalid command centre status");
   }
   const outletScope = Array.isArray(row.outlet_scope)
-    ? row.outlet_scope.filter((value): value is string => typeof value === "string")
+    ? row.outlet_scope.filter(
+        (value): value is string => typeof value === "string",
+      )
     : [];
   return {
     userId: row.user_id,
@@ -135,9 +141,24 @@ export function setCommandCentreSession(
 
 export function clearCommandCentreSession(response: VercelResponse): void {
   appendSetCookies(response, [
-    serializeCookie({ name: COMMAND_CENTRE_ACCESS_COOKIE, value: "", maxAge: 0, httpOnly: true }),
-    serializeCookie({ name: COMMAND_CENTRE_REFRESH_COOKIE, value: "", maxAge: 0, httpOnly: true }),
-    serializeCookie({ name: COMMAND_CENTRE_CSRF_COOKIE, value: "", maxAge: 0, httpOnly: false }),
+    serializeCookie({
+      name: COMMAND_CENTRE_ACCESS_COOKIE,
+      value: "",
+      maxAge: 0,
+      httpOnly: true,
+    }),
+    serializeCookie({
+      name: COMMAND_CENTRE_REFRESH_COOKIE,
+      value: "",
+      maxAge: 0,
+      httpOnly: true,
+    }),
+    serializeCookie({
+      name: COMMAND_CENTRE_CSRF_COOKIE,
+      value: "",
+      maxAge: 0,
+      httpOnly: false,
+    }),
   ]);
 }
 
@@ -150,7 +171,9 @@ async function loadStaff(userId: string): Promise<CommandCentreStaff> {
     .single();
   if (error || !data) throw new Error("Command centre profile not found");
   const staff = mapStaff(data as StaffProfileRow);
-  if (staff.status !== "active") throw new Error("Command centre profile is not active");
+  if (staff.status !== "active") {
+    throw new Error("Command centre profile is not active");
+  }
 
   void database
     .from("ai_staff_profiles")
@@ -163,23 +186,16 @@ export async function authenticateCommandCentre(
   request: VercelRequest,
   response: VercelResponse,
 ): Promise<CommandCentreSession> {
-  // Vercel Authentication is the upstream identity boundary for this isolated
-  // non-main Preview. A real Supabase-backed Neo Chin Chuan operator profile is
-  // provisioned once so task ownership, optimistic locking and audit records use
-  // a genuine foreign-key-safe staff identity. No user-facing password is used.
-  if (isCommandCentrePasswordlessPreview()) {
-    return {
-      staff: await ensurePreviewOwner(),
-      csrfToken: ensurePreviewCsrf(request, response),
-    };
-  }
-
+  const preview = isCommandCentrePasswordlessPreview();
   const cookies = parseCookies(firstHeader(request.headers.cookie));
   const accessToken = cookies.get(COMMAND_CENTRE_ACCESS_COOKIE);
   const refreshToken = cookies.get(COMMAND_CENTRE_REFRESH_COOKIE);
   let csrf = cookies.get(COMMAND_CENTRE_CSRF_COOKIE) ?? csrfToken();
   const database = adminClient();
 
+  // A valid Supabase staff session takes precedence over the Preview-owner
+  // fallback. This preserves the private Vercel boundary while ensuring that
+  // every receptionist approval is attributed to the actual named staff user.
   let userId: string | null = null;
   if (accessToken) {
     const { data, error } = await database.auth.getUser(accessToken);
@@ -187,7 +203,9 @@ export async function authenticateCommandCentre(
   }
 
   if (!userId && refreshToken) {
-    const { data, error } = await database.auth.refreshSession({ refresh_token: refreshToken });
+    const { data, error } = await database.auth.refreshSession({
+      refresh_token: refreshToken,
+    });
     if (!error && data.session && data.user) {
       userId = data.user.id;
       csrf = setCommandCentreSession(response, {
@@ -199,25 +217,34 @@ export async function authenticateCommandCentre(
     }
   }
 
-  if (!userId) {
-    clearCommandCentreSession(response);
-    const error = new Error("Command centre authentication required");
-    error.name = "CommandCentreAuthenticationError";
-    throw error;
+  if (userId) {
+    if (!cookies.has(COMMAND_CENTRE_CSRF_COOKIE)) {
+      appendSetCookies(response, [
+        serializeCookie({
+          name: COMMAND_CENTRE_CSRF_COOKIE,
+          value: csrf,
+          maxAge: 60 * 60 * 24 * 30,
+          httpOnly: false,
+        }),
+      ]);
+    }
+    return { staff: await loadStaff(userId), csrfToken: csrf };
   }
 
-  if (!cookies.has(COMMAND_CENTRE_CSRF_COOKIE)) {
-    appendSetCookies(response, [
-      serializeCookie({
-        name: COMMAND_CENTRE_CSRF_COOKIE,
-        value: csrf,
-        maxAge: 60 * 60 * 24 * 30,
-        httpOnly: false,
-      }),
-    ]);
+  // Vercel Authentication remains the fallback identity boundary for isolated
+  // non-main Previews. Neo keeps access for owner testing when no named staff
+  // session is present.
+  if (preview) {
+    return {
+      staff: await ensurePreviewOwner(),
+      csrfToken: ensurePreviewCsrf(request, response),
+    };
   }
 
-  return { staff: await loadStaff(userId), csrfToken: csrf };
+  clearCommandCentreSession(response);
+  const error = new Error("Command centre authentication required");
+  error.name = "CommandCentreAuthenticationError";
+  throw error;
 }
 
 export function requireCommandCentreCsrf(request: VercelRequest): void {
@@ -234,12 +261,6 @@ export async function signInCommandCentre(input: {
   password: string;
   response: VercelResponse;
 }): Promise<CommandCentreSession> {
-  if (isCommandCentrePasswordlessPreview()) {
-    const error = new Error("Password sign-in is disabled for the protected Preview.");
-    error.name = "CommandCentreAuthenticationError";
-    throw error;
-  }
-
   const database = adminClient();
   const { data, error } = await database.auth.signInWithPassword({
     email: input.email.trim().toLowerCase(),
