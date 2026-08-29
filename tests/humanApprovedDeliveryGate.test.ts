@@ -37,8 +37,8 @@ const uiUrl = new URL(
   "../public/command-centre/human-delivery-gate.js",
   import.meta.url,
 );
-const indexUrl = new URL(
-  "../public/command-centre/index.html",
+const advancedUrl = new URL(
+  "../public/command-centre/advanced.html",
   import.meta.url,
 );
 
@@ -191,14 +191,14 @@ test("role and request contracts include supervised delivery controls", async ()
   assert.match(validation, /action: z\.literal\("escalate"\)/);
 });
 
-test("Command Centre presents exact approve, reject and escalation actions", async () => {
-  const [ui, index] = await Promise.all([
+test("advanced Command Centre preserves the original approve, reject and escalation controls", async () => {
+  const [ui, advanced] = await Promise.all([
     readFile(uiUrl, "utf8"),
-    readFile(indexUrl, "utf8"),
+    readFile(advancedUrl, "utf8"),
   ]);
   assert.doesNotThrow(() => new Function(ui));
-  assert.match(index, /human-delivery-gate\.css/);
-  assert.match(index, /human-delivery-gate\.js/);
+  assert.match(advanced, /human-delivery-gate\.css/);
+  assert.match(advanced, /human-delivery-gate\.js/);
   assert.match(ui, /Review AI replies/);
   assert.match(ui, /Approve & Send/);
   assert.match(ui, /Reject & Take Over/);
