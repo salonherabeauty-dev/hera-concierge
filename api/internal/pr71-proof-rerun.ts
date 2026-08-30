@@ -34,6 +34,12 @@ function secureHeaders(response: VercelResponse): void {
   response.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
 }
 
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -77,7 +83,7 @@ export default async function handler(
 
   const { data: job, error: jobError } = await database
     .from("ai_jobs")
-    .select("id,source_message_id,status,attempts,max_attempts")
+    .select("id,source_message_id,status,attempts,max_attempts,payload")
     .eq("id", jobId)
     .eq("source_message_id", sourceMessageId)
     .maybeSingle();
@@ -141,7 +147,6 @@ export default async function handler(
     });
   }
 
-  const runKey = `pr71-proof:${jobId}`;
   const { data: priorRun } = await database
     .from("ai_audit_log")
     .select("id")
@@ -154,6 +159,7 @@ export default async function handler(
     return response.status(409).json({ error: "Diagnostic already requested" });
   }
 
+  const runKey = `pr71-proof:${jobId}`;
   const now = new Date().toISOString();
   const { error: resetError } = await database
     .from("ai_jobs")
@@ -168,7 +174,7 @@ export default async function handler(
       completed_at: null,
       updated_at: now,
       payload: {
-        ...(typeof job === "object" ? {} : {}),
+        ...objectValue(job.payload),
         diagnosticRun: runKey,
         humanReviewOnly: true,
         automaticDeliveryAllowed: false,
