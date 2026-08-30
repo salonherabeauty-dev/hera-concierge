@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "libpg-query";
 
-const indexUrl = new URL(
-  "../public/command-centre/index.html",
+const receptionUrl = new URL(
+  "../public/command-centre/reception.html",
   import.meta.url,
 );
 const advancedUrl = new URL(
@@ -63,19 +63,19 @@ async function migrationSql(): Promise<string> {
 }
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("the default Command Centre is the professional receptionist workspace", async () => {
-  const [index, advanced, ui, css] = await Promise.all([
-    readFile(indexUrl, "utf8"),
+test("the legacy professional receptionist workspace remains separately addressable for audit", async () => {
+  const [reception, advanced, ui, css] = await Promise.all([
+    readFile(receptionUrl, "utf8"),
     readFile(advancedUrl, "utf8"),
     readFile(uiUrl, "utf8"),
     readFile(cssUrl, "utf8"),
   ]);
 
-  assert.match(index, /Hera Reception/);
-  assert.match(index, /receptionist-workspace\.css/);
-  assert.match(index, /receptionist-workspace\.js/);
-  assert.doesNotMatch(index, /human-delivery-gate\.js/);
-  assert.doesNotMatch(index, /assets\/app\.js/);
+  assert.match(reception, /Hera Reception/);
+  assert.match(reception, /receptionist-workspace\.css/);
+  assert.match(reception, /receptionist-workspace\.js/);
+  assert.doesNotMatch(reception, /human-delivery-gate\.js/);
+  assert.doesNotMatch(reception, /assets\/app\.js/);
   assert.match(advanced, /human-delivery-gate\.js/);
   assert.match(advanced, /assets\/app\.js/);
   assert.doesNotThrow(() => new Function(ui));
