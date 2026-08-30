@@ -79,8 +79,17 @@ export default async function handler(
           Date.parse(right.lastMessageAt) - Date.parse(left.lastMessageAt),
       );
 
+    const commit = process.env.VERCEL_GIT_COMMIT_SHA?.trim() || "local";
+    const branch = process.env.VERCEL_GIT_COMMIT_REF?.trim() || "local";
+
     return response.status(200).json({
       architecture: HERA_RESET_ARCHITECTURE_VERSION,
+      deployment: {
+        commit,
+        shortCommit: commit === "local" ? "local" : commit.slice(0, 8),
+        branch,
+        environment: process.env.VERCEL_ENV?.trim() || "local",
+      },
       deliveryControl: "human_only",
       automaticDeliveryAllowed: false,
       conversations: items,
