@@ -13,7 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build:command-centre": "tsc -p tsconfig.command-centre.json",
-    "build": "npm install --package-lock-only --ignore-scripts && tsx scripts/print-openai-lock.ts && npm run build:command-centre && tsx scripts/reset-gateway-build-diagnostic.ts",
+    "build": "npm install --package-lock-only --ignore-scripts && git diff -- package-lock.json && tsx scripts/print-openai-lock.ts && npm run build:command-centre && tsx scripts/reset-gateway-build-diagnostic.ts",
     "proof:pr71": "tsx scripts/pr71-build-proof.ts",
     "proof:pr73": "tsx scripts/pr73-build-proof.ts",
     "test:unit": "node --import tsx --test tests/*.test.ts",
