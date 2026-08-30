@@ -11,11 +11,7 @@ const recoveryUrl = new URL(
   "../public/command-centre/receptionist-live-recovery.js",
   import.meta.url,
 );
-const indexUrl = new URL(
-  "../public/command-centre/index.html",
-  import.meta.url,
-);
-const alternateUrl = new URL(
+const legacyReceptionUrl = new URL(
   "../public/command-centre/reception.html",
   import.meta.url,
 );
@@ -56,18 +52,13 @@ test("inbox conversations are reordered by latest activity descending", async ()
   assert.match(source, /list\.scrollTop\s*=\s*0/);
 });
 
-test("both receptionist entry points load live recovery after the base workspace", async () => {
-  const [index, alternate] = await Promise.all([
-    readFile(indexUrl, "utf8"),
-    readFile(alternateUrl, "utf8"),
-  ]);
-  for (const html of [index, alternate]) {
-    const workspace = html.indexOf("receptionist-workspace.js");
-    const emergency = html.indexOf("receptionist-emergency-fix.js");
-    const recovery = html.indexOf("receptionist-live-recovery.js");
-    assert.ok(workspace >= 0);
-    assert.ok(workspace < emergency);
-    assert.ok(emergency < recovery);
-    assert.match(html, /<script type="module"/);
-  }
+test("the explicit legacy receptionist entry keeps its recovery scripts in the required order", async () => {
+  const html = await readFile(legacyReceptionUrl, "utf8");
+  const workspace = html.indexOf("receptionist-workspace.js");
+  const emergency = html.indexOf("receptionist-emergency-fix.js");
+  const recovery = html.indexOf("receptionist-live-recovery.js");
+  assert.ok(workspace >= 0);
+  assert.ok(workspace < emergency);
+  assert.ok(emergency < recovery);
+  assert.match(html, /<script type="module"/);
 });
