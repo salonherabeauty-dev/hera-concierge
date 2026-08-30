@@ -14,6 +14,10 @@ import {
   HERA_RESET_MAX_MODEL_CALLS,
   HERA_RESET_MODEL_ID,
 } from "./config.js";
+import {
+  ResetClaimFailureRepository,
+  type ResetClaimFailureInput,
+} from "./failureRepository.js";
 import { buildResetEvidencePacket } from "./knowledge.js";
 import {
   D360ResetMediaDownloader,
@@ -38,15 +42,14 @@ import { validateResetDraft } from "./validator.js";
 
 export type ResetDraftRepository = Pick<
   ResetReceptionistRepository,
-  | "claimDrafts"
-  | "loadDraftContext"
-  | "markReady"
-  | "markFailed"
-  | "markClaimFailed"
+  "claimDrafts" | "loadDraftContext" | "markReady" | "markFailed"
 >;
 
 export interface ResetWorkerRuntime {
   repository: ResetDraftRepository;
+  markClaimFailed: (
+    input: ResetClaimFailureInput,
+  ) => Promise<Record<string, unknown>>;
   knowledgeRepository: ReceptionistRepository;
   mediaDownloader: ResetMediaDownloader;
   transcriptionModel: string;
@@ -288,7 +291,7 @@ export async function processResetDraft(
     });
 
     if (!context) {
-      const result = await runtime.repository.markClaimFailed({
+      const result = await runtime.markClaimFailed({
         draftRunId: claimed.draftRunId,
         turnId: claimed.turnId,
         failureCode: failure.code,
@@ -340,11 +343,16 @@ export function createResetWorkerRuntime(): ResetWorkerRuntime {
   const database = getDatabaseConfig();
   const d360 = getD360Config();
   const ai = getAiConfig();
+  const claimFailures = new ResetClaimFailureRepository(
+    database.url,
+    database.serviceRoleKey,
+  );
   return {
     repository: new ResetReceptionistRepository(
       database.url,
       database.serviceRoleKey,
     ),
+    markClaimFailed: (input) => claimFailures.markClaimFailed(input),
     knowledgeRepository: new SupabaseReceptionistRepository(
       database.url,
       database.serviceRoleKey,
