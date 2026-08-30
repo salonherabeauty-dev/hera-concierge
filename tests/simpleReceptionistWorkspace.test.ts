@@ -63,7 +63,7 @@ async function migrationSql(): Promise<string> {
 }
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("the default Command Centre is the professional receptionist workspace", async () => {
+test("reset v3 is the default while the historical professional workspace remains auditable", async () => {
   const [index, advanced, ui, css] = await Promise.all([
     readFile(indexUrl, "utf8"),
     readFile(advancedUrl, "utf8"),
@@ -71,9 +71,12 @@ test("the default Command Centre is the professional receptionist workspace", as
     readFile(cssUrl, "utf8"),
   ]);
 
-  assert.match(index, /Hera Reception/);
-  assert.match(index, /receptionist-workspace\.css/);
-  assert.match(index, /receptionist-workspace\.js/);
+  assert.match(index, /Hera Reception Desk/);
+  assert.match(index, /reset-reception-app/);
+  assert.match(index, /reset-workspace\.css/);
+  assert.match(index, /reset-workspace\.js/);
+  assert.doesNotMatch(index, /receptionist-workspace\.js/);
+  assert.doesNotMatch(index, /receptionist-emergency-fix/);
   assert.doesNotMatch(index, /human-delivery-gate\.js/);
   assert.doesNotMatch(index, /assets\/app\.js/);
   assert.match(advanced, /human-delivery-gate\.js/);

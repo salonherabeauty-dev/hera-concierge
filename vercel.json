@@ -13,11 +13,11 @@
   "rewrites": [
     {
       "source": "/command-centre",
-      "destination": "/command-centre/reset.html"
+      "destination": "/command-centre/index.html"
     },
     {
       "source": "/command-centre/",
-      "destination": "/command-centre/reset.html"
+      "destination": "/command-centre/index.html"
     }
   ],
   "headers": [
