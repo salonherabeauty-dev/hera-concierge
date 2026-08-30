@@ -34,13 +34,30 @@ function parseConversationIds(request: VercelRequest): string[] {
   return unique;
 }
 
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function mapState(value: Record<string, unknown>) {
+  const turnStatus = typeof value.turn_status === "string"
+    ? value.turn_status
+    : null;
+  const generationRuns = numberValue(value.generation_runs);
+  const retryAvailable =
+    (turnStatus === "failed" || turnStatus === "ready") &&
+    generationRuns < 2;
   return {
     conversationId: value.conversation_id,
     turnId: value.turn_id,
     turnVersion: value.turn_version,
-    turnStatus: value.turn_status,
+    turnStatus,
     deliveryControl: value.delivery_control,
+    generationRuns,
+    retryAvailable,
+    retryUnavailableReason:
+      (turnStatus === "failed" || turnStatus === "ready") && !retryAvailable
+        ? "retry_limit_reached"
+        : null,
     firstFragmentAt: value.first_fragment_at,
     lastFragmentAt: value.last_fragment_at,
     settleAt: value.settle_at,
@@ -55,6 +72,7 @@ function mapState(value: Record<string, unknown>) {
     jobId: value.job_id,
     jobStatus: value.job_status,
     jobAttempts: value.job_attempts,
+    jobGenerationRun: value.job_generation_run,
     jobModelAttempts: value.job_model_attempts,
   };
 }
@@ -84,7 +102,7 @@ export default async function handler(
         detectSessionInUrl: false,
       },
       global: {
-        headers: { "X-Client-Info": "hera-reset-state-v3/1.0" },
+        headers: { "X-Client-Info": "hera-reset-state-v3/1.1" },
       },
     });
 
