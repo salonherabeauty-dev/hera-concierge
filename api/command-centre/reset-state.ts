@@ -1,3 +1,4 @@
+import { waitUntil } from "@vercel/functions";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
@@ -13,6 +14,7 @@ import {
   HERA_RECEPTIONIST_RESET_VERSION,
   requireReceptionistResetV3,
 } from "../../src/reset/boundary.js";
+import { drainResetTurnJobs } from "../../src/reset/worker.js";
 
 const uuid = z.string().uuid();
 
@@ -34,13 +36,30 @@ function parseConversationIds(request: VercelRequest): string[] {
   return unique;
 }
 
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function mapState(value: Record<string, unknown>) {
+  const turnStatus = typeof value.turn_status === "string"
+    ? value.turn_status
+    : null;
+  const generationRuns = numberValue(value.generation_runs);
+  const retryAvailable =
+    (turnStatus === "failed" || turnStatus === "ready") &&
+    generationRuns < 2;
   return {
     conversationId: value.conversation_id,
     turnId: value.turn_id,
     turnVersion: value.turn_version,
-    turnStatus: value.turn_status,
+    turnStatus,
     deliveryControl: value.delivery_control,
+    generationRuns,
+    retryAvailable,
+    retryUnavailableReason:
+      (turnStatus === "failed" || turnStatus === "ready") && !retryAvailable
+        ? "retry_limit_reached"
+        : null,
     firstFragmentAt: value.first_fragment_at,
     lastFragmentAt: value.last_fragment_at,
     settleAt: value.settle_at,
@@ -55,8 +74,25 @@ function mapState(value: Record<string, unknown>) {
     jobId: value.job_id,
     jobStatus: value.job_status,
     jobAttempts: value.job_attempts,
+    jobGenerationRun: value.job_generation_run,
     jobModelAttempts: value.job_model_attempts,
   };
+}
+
+function eligibleRecoveryTurnIds(
+  values: Array<Record<string, unknown>>,
+): string[] {
+  const now = Date.now();
+  return values
+    .filter((value) => value.turn_status === "collecting")
+    .filter((value) => value.job_status === "pending")
+    .filter((value) => {
+      const settleAt = Date.parse(String(value.settle_at ?? ""));
+      return Number.isFinite(settleAt) && settleAt <= now;
+    })
+    .map((value) => value.turn_id)
+    .filter((value): value is string => typeof value === "string")
+    .slice(0, 2);
 }
 
 export default async function handler(
@@ -84,7 +120,7 @@ export default async function handler(
         detectSessionInUrl: false,
       },
       global: {
-        headers: { "X-Client-Info": "hera-reset-state-v3/1.0" },
+        headers: { "X-Client-Info": "hera-reset-state-v3/1.2" },
       },
     });
 
@@ -95,11 +131,24 @@ export default async function handler(
     const { data, error } = await query.limit(300);
     if (error) throw new Error(`load reset state: ${error.message}`);
 
+    const records = (data ?? []) as Array<Record<string, unknown>>;
+    const recoveryTurnIds = eligibleRecoveryTurnIds(records);
+    if (recoveryTurnIds.length > 0) {
+      waitUntil(
+        drainResetTurnJobs({
+          turnIds: recoveryTurnIds,
+          limit: recoveryTurnIds.length,
+          workerId: `reset-v3-session-recovery-${session.staff.userId}`,
+        }),
+      );
+    }
+
     return response.status(200).json({
       ok: true,
       resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
       exactCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-      states: (data ?? []).map((item) => mapState(item as Record<string, unknown>)),
+      previewRecoveryQueued: recoveryTurnIds.length,
+      states: records.map((item) => mapState(item)),
     });
   } catch (error) {
     if (

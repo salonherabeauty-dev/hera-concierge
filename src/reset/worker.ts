@@ -8,6 +8,8 @@ import {
 import { buildResetEvidenceBundle } from "./evidence.js";
 import {
   generateResetDraft,
+  RESET_MAX_TRANSPORT_RETRIES,
+  resetProviderFailureDiagnostic,
   ResetDraftValidationError,
 } from "./engine.js";
 import { ResetReceptionistRepository } from "./repository.js";
@@ -41,6 +43,28 @@ function failureCode(error: unknown): string {
   if (error instanceof ResetDraftValidationError) {
     return "bounded_validation_failed";
   }
+
+  const diagnostic = resetProviderFailureDiagnostic(error);
+  const providerSignal = `${diagnostic.providerErrorType ?? ""} ${diagnostic.providerErrorCode ?? ""}`;
+  if (/insufficient_quota|insufficient_funds|billing|credit/i.test(providerSignal)) {
+    return "openai_billing_required";
+  }
+  if (diagnostic.statusCode === 401 || diagnostic.statusCode === 403) {
+    return "openai_authentication_failed";
+  }
+  if (diagnostic.statusCode === 404) {
+    return "openai_model_unavailable";
+  }
+  if (diagnostic.statusCode === 408) {
+    return "openai_timeout";
+  }
+  if (diagnostic.statusCode === 429) {
+    return "openai_rate_limited";
+  }
+  if (diagnostic.statusCode !== null && diagnostic.statusCode >= 500) {
+    return "openai_service_unavailable";
+  }
+
   const name = error instanceof Error && error.name
     ? error.name
     : "draft_generation_failed";
@@ -53,6 +77,9 @@ function failureCode(error: unknown): string {
   }
   if (/no output|empty output/i.test(`${name} ${message}`)) {
     return "openai_empty_output";
+  }
+  if (/credential|api.?key|authentication/i.test(`${name} ${message}`)) {
+    return "openai_authentication_failed";
   }
   return name
     .toLowerCase()
@@ -76,6 +103,18 @@ function failureMessage(error: unknown): string {
   }
   if (name === "openai_empty_output") {
     return "OpenAI did not return a usable reply. Retry once or write the reply manually.";
+  }
+  if (name === "openai_authentication_failed") {
+    return "OpenAI authentication is unavailable in this Preview. Write the reply manually while the connection is repaired.";
+  }
+  if (name === "openai_billing_required") {
+    return "OpenAI billing is unavailable for this Preview. Write the reply manually while the connection is repaired.";
+  }
+  if (name === "openai_model_unavailable") {
+    return "GPT‑5.6 Sol is unavailable to this Preview. Write the reply manually while the connection is repaired.";
+  }
+  if (name === "openai_service_unavailable") {
+    return "OpenAI is temporarily unavailable. Retry once or write the reply manually.";
   }
   return "The AI could not prepare this reply. Retry once or write the reply manually.";
 }
@@ -119,6 +158,7 @@ async function processResetTurnJob(
         candidateId: persisted.candidateId,
         modelId: result.modelId,
         modelAttempts: result.modelAttempts,
+        transportRetriesAllowedPerCall: RESET_MAX_TRANSPORT_RETRIES,
         latencyMs: Date.now() - startedAt,
         providerSendCalls: 0,
         timelyWriteCalls: 0,
@@ -131,6 +171,7 @@ async function processResetTurnJob(
       : 0;
     const code = failureCode(error);
     const message = failureMessage(error);
+    const providerDiagnostic = resetProviderFailureDiagnostic(error);
     await runtime.repository.finishFailed({
       job,
       error,
@@ -146,6 +187,13 @@ async function processResetTurnJob(
       failureCode: code,
       failureMessage: message,
       modelAttempts,
+      transportRetriesAllowedPerCall: RESET_MAX_TRANSPORT_RETRIES,
+      providerErrorName: providerDiagnostic.name,
+      providerErrorStatus: providerDiagnostic.statusCode,
+      providerErrorRetryable: providerDiagnostic.retryable,
+      providerErrorType: providerDiagnostic.providerErrorType,
+      providerErrorCode: providerDiagnostic.providerErrorCode,
+      providerRequestId: providerDiagnostic.requestId,
       latencyMs: Date.now() - startedAt,
       providerSendCalls: 0,
       timelyWriteCalls: 0,

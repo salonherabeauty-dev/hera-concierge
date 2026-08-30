@@ -4,6 +4,7 @@ import test from "node:test";
 import { parse } from "libpg-query";
 import {
   RESET_MAX_MODEL_CALLS,
+  RESET_MAX_TRANSPORT_RETRIES,
   RESET_OPENAI_MODEL_ID,
   RESET_OPENAI_REASONING_EFFORT,
 } from "../src/reset/engine.js";
@@ -117,8 +118,15 @@ test("one Sol Max draft and at most one rewrite are code-enforced", async () => 
   assert.match(engine, /callNumber:\s*2/);
   assert.match(engine, /if \(firstValidation\.passed\)/);
   assert.match(engine, /if \(!secondValidation\.passed\)/);
-  assert.match(engine, /only:\s*\["openai"\]/);
+  assert.equal(RESET_MAX_TRANSPORT_RETRIES, 1);
+  assert.match(engine, /from "@ai-sdk\/openai"/);
+  assert.match(engine, /createOpenAI/);
+  assert.match(engine, /\.responses\(RESET_OPENAI_PROVIDER_MODEL_ID\)/);
+  assert.match(engine, /process\.env\.OPENAI_API_KEY/);
+  assert.match(engine, /maxRetries:\s*RESET_MAX_TRANSPORT_RETRIES/);
   assert.match(engine, /reasoningEffort:\s*RESET_OPENAI_REASONING_EFFORT/);
+  assert.doesNotMatch(engine, /serviceTier:\s*"priority"/);
+  assert.doesNotMatch(engine, /from "@ai-sdk\/gateway"/);
   assert.doesNotMatch(engine, /anthropic\//i);
   assert.doesNotMatch(engine, /verifyReceptionistDecision|verifyFinalClientReply|runFinalResponseGate/);
 });
@@ -163,6 +171,9 @@ test("the Command Centre exposes only truthful ready, preparing and failed state
   assert.match(source, /Take Over \/ Hold/);
   assert.match(source, /Date\.parse\(right\.lastMessageAt\) - Date\.parse\(left\.lastMessageAt\)/);
   assert.match(source, /state\.exactCommit/);
+  assert.match(source, /retryAvailable/);
+  assert.match(source, /single AI retry has already been used/i);
+  assert.doesNotMatch(source, /\/api\/command-centre\/bootstrap/);
   assert.doesNotMatch(source, /Create AI Reply/);
 });
 

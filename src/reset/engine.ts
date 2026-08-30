@@ -1,9 +1,8 @@
-import { gateway } from "@ai-sdk/gateway";
+import { createOpenAI } from "@ai-sdk/openai";
 import {
   isStepCount,
   Output,
   ToolLoopAgent,
-  wrapLanguageModel,
   type LanguageModel,
 } from "ai";
 import { z } from "zod";
@@ -18,10 +17,12 @@ import {
 import { validateResetDraft } from "./validator.js";
 
 export const RESET_OPENAI_MODEL_ID = "openai/gpt-5.6-sol";
+export const RESET_OPENAI_PROVIDER_MODEL_ID = "gpt-5.6-sol";
 export const RESET_OPENAI_REASONING_EFFORT = "max";
 export const RESET_DRAFT_ENGINE_VERSION =
-  "hera-receptionist-reset-engine-1.0.0";
+  "hera-receptionist-reset-engine-1.1.0";
 export const RESET_MAX_MODEL_CALLS = 2;
+export const RESET_MAX_TRANSPORT_RETRIES = 1;
 export const RESET_MODEL_TIMEOUT_MS = 240_000;
 
 const decisionSchema = z.object({
@@ -43,64 +44,99 @@ const decisionSchema = z.object({
   rationaleSummary: z.string().trim().min(1).max(400),
 });
 
-type GenericOptions = Record<string, unknown>;
-
-function objectOptions(value: unknown): GenericOptions {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as GenericOptions
-    : {};
-}
-
 function asJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
-function resetModel(
-  sourceFactory: ((modelId: string) => LanguageModel) | undefined,
-  abortSignal: AbortSignal,
+function directOpenAIModel(
+  sourceFactory?: (modelId: string) => LanguageModel,
 ): LanguageModel {
-  const candidate = sourceFactory
-    ? sourceFactory(RESET_OPENAI_MODEL_ID)
-    : gateway(RESET_OPENAI_MODEL_ID);
-  const source = typeof candidate === "string" ? gateway(candidate) : candidate;
-  const middleware = {
-    specificationVersion: "v3" as const,
-    transformParams: async ({ params }: { params: GenericOptions }) => {
-      const providerOptions = objectOptions(params.providerOptions);
-      const gatewayOptions = objectOptions(providerOptions.gateway);
-      const openAiOptions = objectOptions(providerOptions.openai);
-      return {
-        ...params,
-        abortSignal,
-        maxOutputTokens: Math.max(
-          typeof params.maxOutputTokens === "number" ? params.maxOutputTokens : 0,
-          8_000,
-        ),
-        providerOptions: {
-          ...providerOptions,
-          gateway: {
-            ...gatewayOptions,
-            order: ["openai"],
-            only: ["openai"],
-            serviceTier: "priority",
-            disallowPromptTraining: true,
-          },
-          openai: {
-            ...openAiOptions,
-            reasoningEffort: RESET_OPENAI_REASONING_EFFORT,
-            store: false,
-          },
-        },
-      };
-    },
-  } as unknown as Parameters<typeof wrapLanguageModel>[0]["middleware"];
+  if (sourceFactory) return sourceFactory(RESET_OPENAI_MODEL_ID);
 
-  return wrapLanguageModel({
-    model: source,
-    middleware,
-    modelId: RESET_OPENAI_MODEL_ID,
-    providerId: "openai",
-  });
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    const error = new Error(
+      "The Preview OpenAI credential is not configured for Reset v3.",
+    );
+    error.name = "ResetOpenAIConfigurationError";
+    throw error;
+  }
+
+  return createOpenAI({ apiKey }).responses(RESET_OPENAI_PROVIDER_MODEL_ID);
+}
+
+function canonicalModelId(value: unknown): string {
+  const model = typeof value === "string" && value.trim()
+    ? value.trim()
+    : RESET_OPENAI_PROVIDER_MODEL_ID;
+  return model.startsWith("openai/") ? model : `openai/${model}`;
+}
+
+function providerPayload(error: Record<string, unknown>): Record<string, unknown> | null {
+  const candidates = [error.data, error.responseBody, error.cause];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const value = candidate as Record<string, unknown>;
+      if (value.error && typeof value.error === "object" && !Array.isArray(value.error)) {
+        return value.error as Record<string, unknown>;
+      }
+      return value;
+    }
+    if (typeof candidate === "string" && candidate.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(candidate) as Record<string, unknown>;
+        if (parsed.error && typeof parsed.error === "object" && !Array.isArray(parsed.error)) {
+          return parsed.error as Record<string, unknown>;
+        }
+        return parsed;
+      } catch {
+        // Do not log or expose an unparsed provider body.
+      }
+    }
+  }
+  return null;
+}
+
+export interface ResetProviderFailureDiagnostic {
+  name: string;
+  statusCode: number | null;
+  retryable: boolean | null;
+  providerErrorType: string | null;
+  providerErrorCode: string | null;
+  requestId: string | null;
+}
+
+export function resetProviderFailureDiagnostic(
+  error: unknown,
+): ResetProviderFailureDiagnostic {
+  const value = error && typeof error === "object"
+    ? error as Record<string, unknown>
+    : {};
+  const payload = providerPayload(value);
+  const statusCode =
+    typeof value.statusCode === "number"
+      ? value.statusCode
+      : typeof value.status === "number"
+        ? value.status
+        : null;
+  return {
+    name: error instanceof Error && error.name
+      ? error.name.slice(0, 120)
+      : "UnknownError",
+    statusCode,
+    retryable:
+      typeof value.isRetryable === "boolean" ? value.isRetryable : null,
+    providerErrorType:
+      typeof payload?.type === "string" ? payload.type.slice(0, 120) : null,
+    providerErrorCode:
+      typeof payload?.code === "string" ? payload.code.slice(0, 120) : null,
+    requestId:
+      typeof value.requestId === "string"
+        ? value.requestId.slice(0, 160)
+        : typeof value.request_id === "string"
+          ? value.request_id.slice(0, 160)
+          : null,
+  };
 }
 
 const BASE_INSTRUCTIONS = [
@@ -150,29 +186,20 @@ async function oneModelCall(input: {
   latencyMs: number;
 }> {
   const startedAt = Date.now();
-  const abortSignal = AbortSignal.timeout(RESET_MODEL_TIMEOUT_MS);
   const agent = new ToolLoopAgent({
     id: `hera-receptionist-reset-v3-${input.callNumber}`,
-    model: resetModel(input.modelFactory, abortSignal),
+    model: directOpenAIModel(input.modelFactory),
     instructions: input.instructions,
     tools: {},
     output: Output.object({ schema: decisionSchema }),
     stopWhen: isStepCount(1),
-    maxRetries: 0,
+    maxRetries: RESET_MAX_TRANSPORT_RETRIES,
     maxOutputTokens: 8_000,
-    temperature: 0.1,
-    reasoning: "xhigh",
     providerOptions: {
-      gateway: {
-        tags: [
-          "hera",
-          "tanglin-whatsapp",
-          "receptionist-reset-v3",
-          input.callNumber === 1 ? "draft" : "single-rewrite",
-        ],
-        user: `hera-reset-turn-${input.evidence.turnId}`,
-        serviceTier: "priority",
-        disallowPromptTraining: true,
+      openai: {
+        reasoningEffort: RESET_OPENAI_REASONING_EFFORT,
+        store: false,
+        strictJsonSchema: true,
       },
     },
   });
@@ -190,10 +217,7 @@ async function oneModelCall(input: {
 
   return {
     decision: result.output,
-    modelId:
-      typeof result.response.modelId === "string"
-        ? result.response.modelId
-        : RESET_OPENAI_MODEL_ID,
+    modelId: canonicalModelId(result.response.modelId),
     usage: asJson(result.usage),
     latencyMs: Date.now() - startedAt,
   };
