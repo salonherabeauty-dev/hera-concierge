@@ -35,6 +35,9 @@ console.log("RESET_GATEWAY_BUILD_DIAGNOSTIC_ENV", JSON.stringify({
   commitRef: process.env.VERCEL_GIT_COMMIT_REF ?? null,
   aiGatewayApiKeyPresent: Boolean(process.env.AI_GATEWAY_API_KEY),
   vercelOidcTokenPresent: Boolean(process.env.VERCEL_OIDC_TOKEN),
+  openAiApiKeyPresent: Boolean(process.env.OPENAI_API_KEY),
+  cronSecretPresent: Boolean(process.env.CRON_SECRET),
+  cronSecretLengthValid: (process.env.CRON_SECRET?.length ?? 0) >= 24,
 }));
 
 try {
