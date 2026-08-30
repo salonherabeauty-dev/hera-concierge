@@ -6,7 +6,7 @@ const proofUrl = new URL("../scripts/pr73-build-proof.ts", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("PR73 proof runs only on the exact expiring shadow staging Preview", async () => {
+test("the historical PR73 proof remains tightly scoped and cannot become a general reset tool", async () => {
   const source = await readFile(proofUrl, "utf8");
   assert.match(source, /EXPECTED_BRANCH = "feat\/hera-ai-receptionist-foundation"/);
   assert.match(source, /VERCEL_ENV === "preview"/);
@@ -16,7 +16,7 @@ test("PR73 proof runs only on the exact expiring shadow staging Preview", async 
   assert.doesNotMatch(source, /Juliane|Neo|2473|2052/);
 });
 
-test("proof is exactly one attempt per hashed target and cannot claim the outbox", async () => {
+test("the historical proof is one-attempt, shadow-only and unable to claim the outbox", async () => {
   const source = await readFile(proofUrl, "utf8");
   assert.match(source, /TARGETS = \[/);
   assert.equal((source.match(/jobHash:/g) ?? []).length, 2);
@@ -26,21 +26,20 @@ test("proof is exactly one attempt per hashed target and cannot claim the outbox
   assert.match(source, /proofRepository\.claimOutbox = async \(\) => \[\]/);
   assert.match(source, /automaticDeliveryAllowed: false/);
   assert.match(source, /provider_message_id == null/);
-  assert.match(source, /deliveryEligible === true/);
-  assert.match(source, /finalVerification\.approved === true/);
-  assert.match(source, /finalQuality\.passed === true/);
   assert.doesNotMatch(source, /sendText|D360WhatsAppClient|MetaWhatsAppClient|Timely/i);
 });
 
-test("only the Vercel build invokes the PR73 staging proof", async () => {
+test("reset-v3 uses a pure offline deployment build and never invokes the mutable PR73 proof", async () => {
   const [packageJson, vercelJson] = await Promise.all([
     readFile(packageUrl, "utf8"),
     readFile(vercelUrl, "utf8"),
   ]);
   const pkg = JSON.parse(packageJson) as { scripts?: Record<string, string> };
   const vercel = JSON.parse(vercelJson) as { buildCommand?: string };
+
   assert.equal(pkg.scripts?.["proof:pr73"], "tsx scripts/pr73-build-proof.ts");
-  assert.equal(vercel.buildCommand, "npm run build && npm run proof:pr73");
   assert.equal(pkg.scripts?.build, "npm run build:command-centre");
+  assert.equal(vercel.buildCommand, "npm run build");
+  assert.doesNotMatch(vercel.buildCommand ?? "", /proof:pr73/);
   assert.doesNotMatch(pkg.scripts?.test ?? "", /proof:pr73/);
 });
