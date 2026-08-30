@@ -38,6 +38,9 @@ const contact: ResetTurnContact = {
   preferredLanguage: "English",
 };
 
+const OWNER_MASTER_VERSION =
+  "hera-service-price-expertise-master-v1.2-2026-08-27";
+
 test("explicit stylist names and commercial evidence outrank a broad multi-topic turn", () => {
   const queries = resetEvidenceQueries(
     "Could Monica advise on blonde balayage and how much would it cost? I also need curl hydration and extensions information.",
@@ -126,7 +129,7 @@ test("the evidence bundle preserves actual staff and price document classes and 
           excerpt:
             "Staff: Monica Babchina. Primary approved specialties: Blonding; dimensional colour; sun-kissed colour.",
           sourceUrl: null,
-          version: "owner-master-test",
+          version: OWNER_MASTER_VERSION,
           score: 1,
         });
       }
@@ -136,7 +139,7 @@ test("the evidence bundle preserves actual staff and price document classes and 
           title: "Hera official price — Balayage Full Head — Both",
           excerpt: "Approved balayage price guidance for both outlets.",
           sourceUrl: null,
-          version: "owner-master-test",
+          version: OWNER_MASTER_VERSION,
           score: 0.8,
         });
       }
