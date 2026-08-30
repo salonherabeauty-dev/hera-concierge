@@ -5,6 +5,13 @@ import {
   logOperationalEvent,
   safeErrorFields,
 } from "../../src/observability/log.js";
+import {
+  useResetReceptionist,
+} from "../../src/reset/config.js";
+import {
+  createResetWorkerRuntime,
+  drainResetDrafts,
+} from "../../src/reset/worker.js";
 import { verifyBearerToken } from "../../src/security/bearer.js";
 import { createProductionRuntime, drainReceptionist } from "../../src/worker.js";
 
@@ -30,6 +37,25 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   try {
+    if (useResetReceptionist()) {
+      const summary = await drainResetDrafts(
+        createResetWorkerRuntime(),
+        RECOVERY_DRAIN_LIMIT,
+      );
+      logOperationalEvent("info", "reset_recovery_drain_completed", {
+        correlationId,
+        durationMs: Date.now() - startedAt,
+        ...summary,
+        automaticDeliveryAllowed: false,
+      });
+      return response.status(200).json({
+        ok: true,
+        architecture: "hera-receptionist-reset-1.0.0",
+        ...summary,
+        automaticDeliveryAllowed: false,
+      });
+    }
+
     const summary = await drainReceptionist(
       createProductionRuntime(),
       RECOVERY_DRAIN_LIMIT,

@@ -13,6 +13,14 @@ import {
 } from "../../src/db/previewHumanReviewIngest.js";
 import { SupabaseReceptionistRepository } from "../../src/db/repository.js";
 import {
+  useResetReceptionist,
+} from "../../src/reset/config.js";
+import { ResetReceptionistRepository } from "../../src/reset/repository.js";
+import {
+  createResetWorkerRuntime,
+  drainResetDrafts,
+} from "../../src/reset/worker.js";
+import {
   logOperationalEvent,
   safeErrorFields,
 } from "../../src/observability/log.js";
@@ -135,7 +143,11 @@ export default async function handler(request: VercelRequest, response: VercelRe
     const parsed = parseD360Webhook(payload);
     ingestionStage = "load_database_config";
     const database = getDatabaseConfig();
-    const repository = new SupabaseReceptionistRepository(
+    const legacyRepository = new SupabaseReceptionistRepository(
+      database.url,
+      database.serviceRoleKey,
+    );
+    const resetRepository = new ResetReceptionistRepository(
       database.url,
       database.serviceRoleKey,
     );
@@ -143,7 +155,9 @@ export default async function handler(request: VercelRequest, response: VercelRe
       database.url,
       database.serviceRoleKey,
     );
-    const humanReviewDrafting = usePreviewHumanReviewIngest();
+    const resetEnabled = useResetReceptionist();
+    const legacyHumanReviewDrafting =
+      !resetEnabled && usePreviewHumanReviewIngest();
 
     let humanEchoesInserted = 0;
     ingestionStage = "ingest_human_echoes";
@@ -152,30 +166,47 @@ export default async function handler(request: VercelRequest, response: VercelRe
         echo,
         takeoverUntil(echo.providerTimestamp, d360.humanTakeoverMinutes),
       );
-      if (result.inserted) humanEchoesInserted += 1;
+      if (result.inserted) {
+        humanEchoesInserted += 1;
+        if (resetEnabled) {
+          await resetRepository.noteHumanOutbound({
+            conversationId: result.conversationId,
+            messageId: result.messageId,
+            providerTimestamp: echo.providerTimestamp,
+          });
+        }
+      }
     }
 
     ingestionStage = "apply_delivery_statuses";
-    for (const event of parsed.statuses) await repository.applyStatus(event);
+    for (const event of parsed.statuses) await legacyRepository.applyStatus(event);
 
     let inboundInserted = 0;
-    const wakeableJobIds: string[] = [];
+    const legacyJobIds: string[] = [];
+    const resetDraftRunIds: string[] = [];
     ingestionStage = "ingest_inbound_messages";
     for (const message of parsed.inbound) {
-      const result = humanReviewDrafting
+      if (resetEnabled) {
+        const result = await resetRepository.ingestInbound(message);
+        if (result.inserted) inboundInserted += 1;
+        if (result.draftRunId) resetDraftRunIds.push(result.draftRunId);
+        continue;
+      }
+
+      const result = legacyHumanReviewDrafting
         ? await ingestPreviewHumanReviewMessage({
             databaseUrl: database.url,
             serviceRoleKey: database.serviceRoleKey,
             message,
           })
-        : await repository.ingestInbound(message);
+        : await legacyRepository.ingestInbound(message);
       if (result.inserted) inboundInserted += 1;
-      if (result.jobId) wakeableJobIds.push(result.jobId);
+      if (result.jobId) legacyJobIds.push(result.jobId);
     }
 
     if (parsed.ignored.history > 0 || parsed.ignored.appStateSync > 0) {
       ingestionStage = "audit_coexistence_events";
-      await repository.audit(
+      await legacyRepository.audit(
         "d360_coexistence_non_message_event_recorded",
         "webhook",
         correlationId,
@@ -187,9 +218,35 @@ export default async function handler(request: VercelRequest, response: VercelRe
     }
 
     ingestionStage = "schedule_background_drain";
-    if (wakeableJobIds.length > 0) {
+    if (resetEnabled && resetDraftRunIds.length > 0) {
       const drainLimit = Math.min(
-        Math.max(wakeableJobIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
+        Math.max(resetDraftRunIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
+        8,
+      );
+      waitUntil(
+        settleInboundBurst()
+          .then(() => drainResetDrafts(createResetWorkerRuntime(), drainLimit))
+          .then((summary) => {
+            logOperationalEvent("info", "reset_webhook_background_drain_completed", {
+              correlationId,
+              burstSettleMs: INBOUND_BURST_SETTLE_MS,
+              resetDraftRunCount: resetDraftRunIds.length,
+              ...summary,
+              automaticDeliveryAllowed: false,
+            });
+          })
+          .catch((error: unknown) => {
+            logOperationalEvent("error", "reset_webhook_background_drain_failed", {
+              correlationId,
+              burstSettleMs: INBOUND_BURST_SETTLE_MS,
+              ...safeErrorFields(error),
+              automaticDeliveryAllowed: false,
+            });
+          }),
+      );
+    } else if (!resetEnabled && legacyJobIds.length > 0) {
+      const drainLimit = Math.min(
+        Math.max(legacyJobIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
         8,
       );
       waitUntil(
@@ -197,7 +254,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
           .then(() =>
             drainReceptionistForJobs(
               createProductionRuntime(),
-              wakeableJobIds,
+              legacyJobIds,
               drainLimit,
             ),
           )
@@ -224,10 +281,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
       bodyBytes: rawBody.byteLength,
       inboundCount: parsed.inbound.length,
       inboundInserted,
-      targetedJobCount: wakeableJobIds.length,
-      humanReviewDrafting,
+      resetEnabled,
+      resetDraftRunCount: resetDraftRunIds.length,
+      legacyTargetedJobCount: legacyJobIds.length,
+      humanReviewDrafting: resetEnabled || legacyHumanReviewDrafting,
       burstSettleMs:
-        wakeableJobIds.length > 0 ? INBOUND_BURST_SETTLE_MS : 0,
+        resetDraftRunIds.length > 0 || legacyJobIds.length > 0
+          ? INBOUND_BURST_SETTLE_MS
+          : 0,
       statusCount: parsed.statuses.length,
       humanEchoCount: parsed.humanEchoes.length,
       humanEchoesInserted,
@@ -240,6 +301,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       received: true,
       inbound: parsed.inbound.length,
       inserted: inboundInserted,
+      resetEnabled,
       statuses: parsed.statuses.length,
       humanEchoes: parsed.humanEchoes.length,
       humanEchoesInserted,
