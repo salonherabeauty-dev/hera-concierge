@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build && npm run proof:pr73",
+  "buildCommand": "npm run build",
   "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
@@ -13,11 +13,11 @@
   "rewrites": [
     {
       "source": "/command-centre",
-      "destination": "/command-centre/index.html"
+      "destination": "/command-centre/reset.html"
     },
     {
       "source": "/command-centre/",
-      "destination": "/command-centre/index.html"
+      "destination": "/command-centre/reset.html"
     }
   ],
   "headers": [
@@ -74,6 +74,15 @@
     },
     "api/command-centre/receptionist-draft.ts": {
       "maxDuration": "max"
+    },
+    "api/command-centre/reset-retry.ts": {
+      "maxDuration": "max"
+    },
+    "api/command-centre/reset-message.ts": {
+      "maxDuration": 60
+    },
+    "api/command-centre/reset-state.ts": {
+      "maxDuration": 30
     },
     "api/command-centre/**/*.ts": {
       "maxDuration": 30
