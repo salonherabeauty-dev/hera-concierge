@@ -29,17 +29,32 @@ import {
 import { ResetReceptionistRepository } from "./repository.js";
 import type {
   ResetClaimedDraft,
+  ResetDraftContext,
   ResetEvidencePacket,
   ResetMaterializedTurn,
   ResetModelCallResult,
 } from "./types.js";
 import { validateResetDraft } from "./validator.js";
 
+export type ResetDraftRepository = Pick<
+  ResetReceptionistRepository,
+  | "claimDrafts"
+  | "loadDraftContext"
+  | "markReady"
+  | "markFailed"
+  | "markClaimFailed"
+>;
+
 export interface ResetWorkerRuntime {
-  repository: ResetReceptionistRepository;
+  repository: ResetDraftRepository;
   knowledgeRepository: ReceptionistRepository;
   mediaDownloader: ResetMediaDownloader;
   transcriptionModel: string;
+  materializeTurn?: typeof materializeResetTurn;
+  buildEvidence?: typeof buildResetEvidencePacket;
+  draftReply?: typeof draftResetReply;
+  rewriteReply?: typeof rewriteResetReply;
+  validateDraft?: typeof validateResetDraft;
 }
 
 export interface ResetDrainSummary {
@@ -53,7 +68,7 @@ function asJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
-function safeFailure(error: unknown): {
+export function resetSafeFailure(error: unknown): {
   code: string;
   message: string;
   technical: JsonValue;
@@ -86,12 +101,20 @@ function safeFailure(error: unknown): {
       technical: { name, category: "attachment" },
     };
   }
-  if (/knowledge|appointment lookup|database/i.test(combined)) {
+  if (/knowledge|appointment lookup|evidence/i.test(combined)) {
     return {
       code: "evidence_retrieval_failed",
       message:
         "The verified Hera information needed for this reply could not be loaded. Retry once or write the reply manually.",
       technical: { name, category: "evidence" },
+    };
+  }
+  if (/database|supabase|reset database/i.test(combined)) {
+    return {
+      code: "draft_storage_failed",
+      message:
+        "The draft could not be stored safely. Retry once or write the reply manually.",
+      technical: { name, category: "storage" },
     };
   }
   return {
@@ -130,38 +153,48 @@ function modelMetadata(input: {
   });
 }
 
+function contextIsStale(
+  context: ResetDraftContext,
+  claimed: ResetClaimedDraft,
+): boolean {
+  return (
+    context.draft.status !== "processing" ||
+    context.turn.id !== claimed.turnId ||
+    context.turn.status === "superseded" ||
+    Boolean(context.turn.supersededByTurnId)
+  );
+}
+
 export async function processResetDraft(
   runtime: ResetWorkerRuntime,
   claimed: ResetClaimedDraft,
 ): Promise<"ready" | "failed" | "superseded"> {
   let modelCalls = 0;
-  let context;
+  let context: ResetDraftContext | null = null;
   const callResults: ResetModelCallResult[] = [];
+  const materialize = runtime.materializeTurn ?? materializeResetTurn;
+  const buildEvidence = runtime.buildEvidence ?? buildResetEvidencePacket;
+  const draft = runtime.draftReply ?? draftResetReply;
+  const rewrite = runtime.rewriteReply ?? rewriteResetReply;
+  const validate = runtime.validateDraft ?? validateResetDraft;
 
   try {
     context = await runtime.repository.loadDraftContext(claimed.draftRunId);
-    if (context.draft.status !== "processing") return "superseded";
-    if (
-      context.turn.id !== claimed.turnId ||
-      context.turn.status === "superseded" ||
-      context.turn.supersededByTurnId
-    ) {
-      return "superseded";
-    }
+    if (contextIsStale(context, claimed)) return "superseded";
 
-    const materialized = await materializeResetTurn({
+    const materialized = await materialize({
       fragments: context.fragments,
       downloader: runtime.mediaDownloader,
       transcriptionModel: runtime.transcriptionModel,
     });
-    const evidence = await buildResetEvidencePacket({
+    const evidence = await buildEvidence({
       repository: runtime.knowledgeRepository,
       clientTurnText: materialized.text,
       waId: context.contact.waId,
     });
 
     modelCalls = 1;
-    let generated = await draftResetReply({
+    let generated = await draft({
       history: context.history,
       materialized,
       evidence,
@@ -173,7 +206,7 @@ export async function processResetDraft(
       throw new Error(`Unexpected reset model: ${generated.modelId}`);
     }
 
-    let validation = validateResetDraft({
+    let validation = validate({
       clientTurnText: materialized.text,
       draft: generated.output,
       evidence,
@@ -181,7 +214,7 @@ export async function processResetDraft(
 
     if (!validation.passed) {
       modelCalls = 2;
-      generated = await rewriteResetReply({
+      generated = await rewrite({
         history: context.history,
         materialized,
         evidence,
@@ -193,7 +226,7 @@ export async function processResetDraft(
       if (generated.modelId !== HERA_RESET_MODEL_ID) {
         throw new Error(`Unexpected reset rewrite model: ${generated.modelId}`);
       }
-      validation = validateResetDraft({
+      validation = validate({
         clientTurnText: materialized.text,
         draft: generated.output,
         evidence,
@@ -214,12 +247,12 @@ export async function processResetDraft(
           "The AI reply still failed a protected factual or safety check after one rewrite. Review the listed issue and write the reply manually.",
         modelCalls,
         modelMetadata: asJson({
-          ...((modelMetadata({
+          ...(modelMetadata({
             calls: callResults,
             materialized,
             evidence,
             operatingMode: context.conversation.operatingMode,
-          }) as Record<string, JsonValue>) ?? {}),
+          }) as Record<string, JsonValue>),
           validationIssues: validation.issues,
         }),
       });
@@ -246,8 +279,26 @@ export async function processResetDraft(
     });
     return result.state === "superseded" ? "superseded" : "ready";
   } catch (error) {
-    if (!context) throw error;
-    const failure = safeFailure(error);
+    const failure = resetSafeFailure(error);
+    const metadata = asJson({
+      architectureVersion: HERA_RESET_ARCHITECTURE_VERSION,
+      modelCalls: Math.min(modelCalls, HERA_RESET_MAX_MODEL_CALLS),
+      technical: failure.technical,
+      automaticDeliveryAllowed: false,
+    });
+
+    if (!context) {
+      const result = await runtime.repository.markClaimFailed({
+        draftRunId: claimed.draftRunId,
+        turnId: claimed.turnId,
+        failureCode: failure.code,
+        failureMessage: failure.message,
+        modelCalls: Math.min(modelCalls, HERA_RESET_MAX_MODEL_CALLS),
+        modelMetadata: metadata,
+      });
+      return result.state === "superseded" ? "superseded" : "failed";
+    }
+
     const result = await runtime.repository.markFailed({
       draftRunId: context.draft.id,
       turnId: context.turn.id,
@@ -255,12 +306,7 @@ export async function processResetDraft(
       failureCode: failure.code,
       failureMessage: failure.message,
       modelCalls: Math.min(modelCalls, HERA_RESET_MAX_MODEL_CALLS),
-      modelMetadata: asJson({
-        architectureVersion: HERA_RESET_ARCHITECTURE_VERSION,
-        modelCalls: Math.min(modelCalls, HERA_RESET_MAX_MODEL_CALLS),
-        technical: failure.technical,
-        automaticDeliveryAllowed: false,
-      }),
+      modelMetadata: metadata,
     });
     return result.state === "superseded" ? "superseded" : "failed";
   }
