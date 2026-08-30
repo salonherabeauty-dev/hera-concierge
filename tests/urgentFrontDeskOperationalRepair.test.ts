@@ -108,7 +108,7 @@ test("front desk panes are bounded and independently scrollable", async () => {
   assert.match(css, /\.fd-tab:last-child[\s\S]*grid-column:\s*1 \/ -1/i);
 });
 
-test("front desk exposes Create AI Reply and preserves reading position", async () => {
+test("historical Create AI Reply recovery remains auditable but is excluded from reset-v3 entry points", async () => {
   const [script, index, reception] = await Promise.all([
     readFile(patchJsUrl, "utf8"),
     readFile(indexUrl, "utf8"),
@@ -124,12 +124,12 @@ test("front desk exposes Create AI Reply and preserves reading position", async 
   assert.match(script, /Reply window closed/);
   assert.doesNotMatch(script, /sendText|D360_API_KEY|Timely/i);
   for (const html of [index, reception]) {
-    assert.match(html, /receptionist-emergency-fix\.css/);
-    assert.match(html, /receptionist-emergency-fix\.js/);
-    assert.ok(
-      html.indexOf("receptionist-workspace.js") <
-        html.indexOf("receptionist-emergency-fix.js"),
-    );
+    assert.match(html, /reset-reception-app/);
+    assert.match(html, /reset-workspace\.css/);
+    assert.match(html, /reset-workspace\.js/);
+    assert.doesNotMatch(html, /receptionist-emergency-fix\.css/);
+    assert.doesNotMatch(html, /receptionist-emergency-fix\.js/);
+    assert.doesNotMatch(html, /receptionist-workspace\.js/);
   }
 });
 
