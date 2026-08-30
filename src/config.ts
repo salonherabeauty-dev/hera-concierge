@@ -109,7 +109,7 @@ export function getD360Config(env: NodeJS.ProcessEnv = process.env) {
 export const HERA_OPENAI_MODEL_ID = "openai/gpt-5.6-sol";
 export const HERA_OPENAI_REASONING_EFFORT = "max";
 export const HERA_AI_PROVIDER_POLICY_VERSION =
-  "hera-openai-sol-max-only-1.0.0";
+  "hera-openai-sol-max-only-1.1.0";
 
 const aiSchema = z.object({
   HERA_AI_TRANSCRIPTION_MODEL: nonEmpty.default("openai/gpt-4o-transcribe"),

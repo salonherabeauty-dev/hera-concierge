@@ -11,6 +11,7 @@ import {
   detectLuxuryClientCopyViolations,
   HERA_LUXURY_CLIENT_COPY_POLICY_VERSION,
   HERA_OPENAI_ONLY_POLICY_VERSION,
+  HERA_OPENAI_STAGE_TIMEOUT_MS,
   OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS,
 } from "../src/ai/receptionist.js";
 
@@ -29,13 +30,13 @@ test("text intelligence is code-locked to OpenAI GPT-5.6 Sol with no alternate-p
 
   assert.equal(HERA_OPENAI_MODEL_ID, "openai/gpt-5.6-sol");
   assert.equal(HERA_OPENAI_REASONING_EFFORT, "max");
-  assert.equal(HERA_AI_PROVIDER_POLICY_VERSION, "hera-openai-sol-max-only-1.0.0");
+  assert.equal(HERA_AI_PROVIDER_POLICY_VERSION, "hera-openai-sol-max-only-1.1.0");
   assert.equal(config.primaryModel, HERA_OPENAI_MODEL_ID);
   assert.equal(config.verifierModel, HERA_OPENAI_MODEL_ID);
   assert.deepEqual(config.fallbackModels, []);
 });
 
-test("every text stage enforces OpenAI-only routing and native max reasoning", async () => {
+test("every text stage enforces OpenAI-only routing, native max reasoning and a real stage-wide timeout", async () => {
   const source = await readFile(runtimeUrl, "utf8");
   assert.match(source, /HERA_OPENAI_MODEL_ID = "openai\/gpt-5\.6-sol"/);
   assert.match(source, /HERA_OPENAI_REASONING_EFFORT = "max"/);
@@ -44,9 +45,16 @@ test("every text stage enforces OpenAI-only routing and native max reasoning", a
   assert.match(source, /reasoningEffort: HERA_OPENAI_REASONING_EFFORT/);
   assert.match(source, /store: false/);
   assert.match(source, /fallbackModels: \[\]/);
-  assert.match(source, /generateReceptionistDecision/);
-  assert.match(source, /verifyReceptionistDecision/);
-  assert.match(source, /verifyFinalClientReply/);
+  assert.match(source, /AbortSignal\.timeout/);
+  assert.match(source, /abortSignal: stageAbortSignal/);
+  assert.match(source, /enforceOpenAiSolMax\(input\.config, "response"\)/);
+  assert.match(source, /enforceOpenAiSolMax\(input\.config, "verification"\)/);
+  assert.match(source, /enforceOpenAiSolMax\(input\.config, "final_verification"\)/);
+  assert.deepEqual(HERA_OPENAI_STAGE_TIMEOUT_MS, {
+    response: 240_000,
+    verification: 240_000,
+    final_verification: 240_000,
+  });
   assert.doesNotMatch(source, /anthropic\//i);
 });
 
@@ -67,17 +75,18 @@ test("runtime-facing configuration and documentation expose no alternate text mo
 test("the final OpenAI client-copy controller uses individual 10-point thresholds with no averaging", () => {
   assert.equal(
     HERA_OPENAI_ONLY_POLICY_VERSION,
-    "hera-openai-sol-max-only-1.0.0",
+    "hera-openai-sol-max-only-1.1.0",
   );
   assert.equal(
     HERA_LUXURY_CLIENT_COPY_POLICY_VERSION,
-    "hera-luxury-client-copy-2.0.0",
+    "hera-luxury-client-copy-2.1.0",
   );
   assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /9\/10 as the minimum/i);
   assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /Require 10\/10 for factuality/i);
   assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /No averaging can hide a weak dimension/i);
   assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /Tanglin Mall is already established/i);
   assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /natural, idiomatic English/i);
+  assert.match(OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS, /legal correspondence/i);
 });
 
 test("the exact bureaucratic Neo complaint wording fails the luxury client-copy contract", () => {

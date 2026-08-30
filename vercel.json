@@ -57,10 +57,10 @@
   ],
   "functions": {
     "api/whatsapp/*.ts": {
-      "maxDuration": 300
+      "maxDuration": "max"
     },
     "api/internal/drain.ts": {
-      "maxDuration": 300
+      "maxDuration": "max"
     },
     "api/stage3r/worker.ts": {
       "maxDuration": "max",
@@ -70,10 +70,10 @@
       "maxDuration": 60
     },
     "api/command-centre/receptionist-regenerate.ts": {
-      "maxDuration": 300
+      "maxDuration": "max"
     },
     "api/command-centre/receptionist-draft.ts": {
-      "maxDuration": 300
+      "maxDuration": "max"
     },
     "api/command-centre/**/*.ts": {
       "maxDuration": 30

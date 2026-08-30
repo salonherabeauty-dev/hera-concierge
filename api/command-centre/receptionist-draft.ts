@@ -1,3 +1,4 @@
+import { waitUntil } from "@vercel/functions";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
 import {
@@ -18,6 +19,10 @@ import {
   requireReceptionistWorkspacePreview,
 } from "../../src/command-centre/receptionistWorkspaceBoundary.js";
 import { ReceptionistWorkspaceRepository } from "../../src/command-centre/receptionistWorkspaceRepository.js";
+import {
+  logOperationalEvent,
+  safeErrorFields,
+} from "../../src/observability/log.js";
 import {
   createProductionRuntime,
   drainReceptionistForJobs,
@@ -108,32 +113,45 @@ export default async function handler(
           code: "receptionist_preview_required",
         });
       }
-      await drainReceptionistForJobs(runtime, [requested.jobId], 1);
+
+      const jobId = requested.jobId;
+      waitUntil(
+        drainReceptionistForJobs(runtime, [jobId], 1)
+          .then((summary) => {
+            logOperationalEvent(
+              "info",
+              "receptionist_draft_background_drain_completed",
+              {
+                jobId,
+                conversationId: body.conversationId,
+                sourceMessageId: body.sourceMessageId,
+                ...summary,
+              },
+            );
+          })
+          .catch((error: unknown) => {
+            logOperationalEvent(
+              "error",
+              "receptionist_draft_background_drain_failed",
+              {
+                jobId,
+                conversationId: body.conversationId,
+                sourceMessageId: body.sourceMessageId,
+                ...safeErrorFields(error),
+              },
+            );
+          }),
+      );
     }
 
-    const items = await workspace.listQueue({
-      actorUserId: session.staff.userId,
-      conversationId: body.conversationId,
-      limit: 10,
-    });
-    const item = items.find(
-      (candidate) => candidate.sourceMessageId === body.sourceMessageId,
-    ) ?? null;
-
-    if (!item) {
-      return response.status(202).json({
-        ok: true,
-        state: "draft_pending",
-        code: null,
-        item: null,
-      });
-    }
-
-    return response.status(200).json({
+    // The browser must not remain blocked while three quality-first Sol Max
+    // stages run. The workspace polls the same latest-message-bound queue and
+    // opens the editable draft as soon as the background job completes.
+    return response.status(202).json({
       ok: true,
-      state: "draft_ready",
+      state: "draft_pending",
       code: null,
-      item,
+      item: null,
     });
   } catch (error) {
     if (

@@ -105,3 +105,49 @@ test("reuses a successful verification when the exact draft is unchanged", async
   assert.equal(result.correctionsApplied, 0);
   assert.equal(result.verificationAttempts.length, 1);
 });
+
+test("adopts one fully certified final-writer rewrite without paying for a duplicate verification", async () => {
+  const controlled = verifier([
+    {
+      id: "certified-rewrite",
+      approved: true,
+      correctedReply: "warm, natural and fully certified reply",
+    },
+  ]);
+
+  const result = await runFinalResponseGate({
+    draftReply: "cold procedural draft",
+    cleanReply: (value) => value.trim(),
+    assessQuality: quality,
+    verify: controlled.verify,
+  });
+
+  assert.equal(result.reply, "warm, natural and fully certified reply");
+  assert.equal(result.correctionsApplied, 1);
+  assert.equal(result.finalVerification.id, "certified-rewrite");
+  assert.equal(result.finalVerification.approved, true);
+  assert.deepEqual(controlled.inputs, ["cold procedural draft"]);
+});
+
+test("a forced safety reply is not replaced even when a verifier approves different wording", async () => {
+  const controlled = verifier([
+    { id: "draft", approved: false, correctedReply: "model correction" },
+    {
+      id: "forced-check",
+      approved: true,
+      correctedReply: "different model-authored emergency wording",
+    },
+  ]);
+
+  const result = await runFinalResponseGate({
+    draftReply: "draft",
+    forcedReply: "deterministic emergency reply",
+    cleanReply: (value) => value,
+    assessQuality: quality,
+    verify: controlled.verify,
+  });
+
+  assert.equal(result.reply, "deterministic emergency reply");
+  assert.equal(result.finalVerification.approved, false);
+  assert.equal(result.correctionsApplied, 0);
+});

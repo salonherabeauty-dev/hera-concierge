@@ -1,4 +1,4 @@
-export const FINAL_RESPONSE_GATE_VERSION = "hera-final-response-gate-1.1.0";
+export const FINAL_RESPONSE_GATE_VERSION = "hera-final-response-gate-1.2.0";
 export const MAX_FINAL_RESPONSE_CORRECTIONS = 2;
 
 interface QualityAssessment {
@@ -32,6 +32,35 @@ function requiredCorrection<Verification extends VerificationResult>(
   return verification.correctedReply;
 }
 
+function certifiedReply<Verification extends VerificationResult>(
+  verification: Verification,
+  submittedReply: string,
+  cleanReply: (value: string) => string,
+): string | null {
+  if (!verification.approved) return null;
+  return verification.correctedReply
+    ? cleanReply(verification.correctedReply)
+    : submittedReply;
+}
+
+function exactReplyVerification<Verification extends VerificationResult>(
+  verification: Verification,
+  exactReply: string,
+  cleanReply: (value: string) => string,
+): Verification {
+  if (!verification.approved || !verification.correctedReply) {
+    return verification;
+  }
+  const corrected = cleanReply(verification.correctedReply);
+  if (corrected === exactReply) {
+    return { ...verification, correctedReply: null };
+  }
+  // A forced deterministic safety reply must never be silently replaced by a
+  // model-authored alternative. Treat a verifier that approves a different
+  // text as not having approved the exact forced reply.
+  return { ...verification, approved: false };
+}
+
 export async function runFinalResponseGate<
   Quality extends QualityAssessment,
   Verification extends VerificationResult,
@@ -50,28 +79,74 @@ export async function runFinalResponseGate<
     ? null
     : input.cleanReply(input.forcedReply);
 
-  let correctionsApplied = 0;
-  let reply = forcedReply ?? (initialVerification.approved
-    ? draftReply
-    : input.cleanReply(requiredCorrection(initialVerification)));
-  if (forcedReply === null && !initialVerification.approved) {
-    correctionsApplied = 1;
+  if (forcedReply !== null) {
+    const quality = input.assessQuality(forcedReply);
+    const initialCoversForced =
+      certifiedReply(initialVerification, draftReply, input.cleanReply) ===
+      forcedReply;
+    let finalVerification = initialCoversForced
+      ? exactReplyVerification(
+          initialVerification,
+          forcedReply,
+          input.cleanReply,
+        )
+      : await input.verify(forcedReply, quality);
+    if (!initialCoversForced) verificationAttempts.push(finalVerification);
+    finalVerification = exactReplyVerification(
+      finalVerification,
+      forcedReply,
+      input.cleanReply,
+    );
+    return {
+      reply: forcedReply,
+      draftQuality,
+      quality,
+      initialVerification,
+      finalVerification,
+      verificationAttempts,
+      correctionsApplied: 0,
+    };
   }
+
+  const initiallyCertified = certifiedReply(
+    initialVerification,
+    draftReply,
+    input.cleanReply,
+  );
+  if (initiallyCertified !== null) {
+    return {
+      reply: initiallyCertified,
+      draftQuality,
+      quality: input.assessQuality(initiallyCertified),
+      initialVerification,
+      finalVerification: initialVerification,
+      verificationAttempts,
+      correctionsApplied: initiallyCertified === draftReply ? 0 : 1,
+    };
+  }
+
+  let correctionsApplied = 1;
+  let reply = input.cleanReply(requiredCorrection(initialVerification));
   let quality = input.assessQuality(reply);
-  let finalVerification = initialVerification;
+  let finalVerification = await input.verify(reply, quality);
+  verificationAttempts.push(finalVerification);
 
-  const initialVerificationCoversReply =
-    initialVerification.approved && reply === draftReply;
-  if (!initialVerificationCoversReply) {
-    finalVerification = await input.verify(reply, quality);
-    verificationAttempts.push(finalVerification);
-  }
+  while (true) {
+    const certified = certifiedReply(
+      finalVerification,
+      reply,
+      input.cleanReply,
+    );
+    if (certified !== null) {
+      if (certified !== reply) {
+        reply = certified;
+        correctionsApplied += 1;
+        quality = input.assessQuality(reply);
+      }
+      break;
+    }
+    if (correctionsApplied >= MAX_FINAL_RESPONSE_CORRECTIONS) break;
 
-  while (
-    forcedReply === null &&
-    !finalVerification.approved &&
-    correctionsApplied < MAX_FINAL_RESPONSE_CORRECTIONS
-  ) {
     reply = input.cleanReply(requiredCorrection(finalVerification));
     correctionsApplied += 1;
     quality = input.assessQuality(reply);

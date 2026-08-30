@@ -54,7 +54,7 @@ test("persisted handoff status matches the exact quality-approved client reply",
   );
 });
 
-test("corrected final replies receive a bounded independent re-verification", async () => {
+test("uncertified corrections remain bounded while one certified Sol Max rewrite can finish the gate", async () => {
   const [worker, gate] = await Promise.all([
     readFile(new URL("../src/worker.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/ai/finalResponseGate.ts", import.meta.url), "utf8"),
@@ -63,7 +63,9 @@ test("corrected final replies receive a bounded independent re-verification", as
   assert.match(worker, /runFinalResponseGate/);
   assert.match(worker, /verificationAttempts/);
   assert.match(gate, /MAX_FINAL_RESPONSE_CORRECTIONS = 2/);
-  assert.match(gate, /correctionsApplied < MAX_FINAL_RESPONSE_CORRECTIONS/);
+  assert.match(gate, /certifiedReply/);
+  assert.match(gate, /correctionsApplied >= MAX_FINAL_RESPONSE_CORRECTIONS/);
+  assert.match(gate, /initiallyCertified/);
   assert.match(
     worker,
     /deterministic\.risk === "black"[\s\S]{0,120}urgentSafetyReplyFor\(interpreted\.text\)/,
