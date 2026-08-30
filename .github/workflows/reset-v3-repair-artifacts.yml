@@ -1,0 +1,117 @@
+name: Generate Reset v3 recovery artifacts
+
+on:
+  push:
+    branches:
+      - repair/reset-v3-direct-openai-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/reset-v3-direct-openai-recovery
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply exact receptionist UI and contract updates
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          ui_path = Path("public/command-centre/reset-workspace.js")
+          ui = ui_path.read_text()
+          old = ui
+
+          ui = ui.replace(
+              '    await request("/api/command-centre/bootstrap").catch(() => null);\n',
+              '',
+          )
+          ui = ui.replace(
+              '<button class="rr-button" data-action="regenerate" ${state.busy ? "disabled" : ""}>Regenerate</button>',
+              '<button class="rr-button" data-action="regenerate" ${state.busy || !reset.retryAvailable ? "disabled" : ""}>${reset.retryAvailable ? "Regenerate" : "Regeneration used"}</button>',
+          )
+          ui = ui.replace(
+              '            <button class="rr-button rr-button--primary" data-action="retry" ${state.busy ? "disabled" : ""}>${state.busy === "retry" ? "Retrying…" : "Retry AI Reply"}</button>',
+              '''            ${reset.retryAvailable
+              ? `<button class="rr-button rr-button--primary" data-action="retry" ${state.busy ? "disabled" : ""}>${state.busy === "retry" ? "Retrying…" : "Retry AI Reply"}</button>`
+              : '<span class="rr-retry-used">The single AI retry has already been used.</span>'}''',
+          )
+          ui = ui.replace(
+              '  if (!reset?.turnId) return;\n  state.busy = "retry";',
+              '''  if (!reset?.turnId) return;
+  if (!reset.retryAvailable) {
+    setNotice("The single AI retry has already been used. Please write the reply manually.", "error");
+    return;
+  }
+  state.busy = "retry";''',
+          )
+
+          required_ui = [
+              'reset.retryAvailable ? "Regenerate" : "Regeneration used"',
+              'The single AI retry has already been used.',
+          ]
+          if any(marker not in ui for marker in required_ui):
+              raise SystemExit("Required Reset v3 UI marker was not produced")
+          if '/api/command-centre/bootstrap' in ui:
+              raise SystemExit("Invalid bootstrap GET remains in Reset v3 UI")
+          if ui != old:
+              ui_path.write_text(ui)
+
+          test_path = Path("tests/receptionistResetV3Contract.test.ts")
+          test = test_path.read_text()
+          old_test = test
+          test = test.replace(
+              '  RESET_MAX_MODEL_CALLS,\n',
+              '  RESET_MAX_MODEL_CALLS,\n  RESET_MAX_TRANSPORT_RETRIES,\n',
+          )
+          test = test.replace(
+              '  assert.match(engine, /only:\\s*\\["openai"\\]/);\n  assert.match(engine, /reasoningEffort:\\s*RESET_OPENAI_REASONING_EFFORT/);',
+              '''  assert.equal(RESET_MAX_TRANSPORT_RETRIES, 1);
+  assert.match(engine, /from "@ai-sdk\\/openai"/);
+  assert.match(engine, /createOpenAI/);
+  assert.match(engine, /\\.responses\\(RESET_OPENAI_PROVIDER_MODEL_ID\\)/);
+  assert.match(engine, /process\\.env\\.OPENAI_API_KEY/);
+  assert.match(engine, /maxRetries:\\s*RESET_MAX_TRANSPORT_RETRIES/);
+  assert.match(engine, /reasoningEffort:\\s*RESET_OPENAI_REASONING_EFFORT/);
+  assert.doesNotMatch(engine, /serviceTier:\\s*"priority"/);
+  assert.doesNotMatch(engine, /from "@ai-sdk\\/gateway"/);''',
+          )
+          test = test.replace(
+              '  assert.match(source, /state\\.exactCommit/);\n  assert.doesNotMatch(source, /Create AI Reply/);',
+              '''  assert.match(source, /state\\.exactCommit/);
+  assert.match(source, /retryAvailable/);
+  assert.match(source, /single AI retry has already been used/i);
+  assert.doesNotMatch(source, /\\/api\\/command-centre\\/bootstrap/);
+  assert.doesNotMatch(source, /Create AI Reply/);''',
+          )
+          required_test = [
+              'RESET_MAX_TRANSPORT_RETRIES',
+              'from "@ai-sdk\\/openai"',
+              'single AI retry has already been used',
+          ]
+          if any(marker not in test for marker in required_test):
+              raise SystemExit("Required Reset v3 contract test marker was not produced")
+          if test != old_test:
+              test_path.write_text(test)
+          PY
+      - name: Refresh the locked dependency graph
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Commit generated artifacts
+        run: |
+          if git diff --quiet -- public/command-centre/reset-workspace.js tests/receptionistResetV3Contract.test.ts package-lock.json; then
+            echo "No generated artifact changes were required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/command-centre/reset-workspace.js tests/receptionistResetV3Contract.test.ts package-lock.json
+          git commit -m "chore: apply generated Reset v3 recovery artifacts"
+          git push origin HEAD:repair/reset-v3-direct-openai-recovery
