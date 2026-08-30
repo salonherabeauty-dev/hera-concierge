@@ -3,7 +3,7 @@ import {
 } from "../governance/knowledgeAuthority.js";
 import { searchAllKnowledge } from "../knowledge/search.js";
 import type { ReceptionistRepository } from "../db/repository.js";
-import type { KnowledgeResult } from "../types.js";
+import type { BookingSummary, KnowledgeResult } from "../types.js";
 import type { ResetEvidencePacket } from "./types.js";
 
 const STAFF_NAMES = [
@@ -38,10 +38,7 @@ const TOPIC_RULES: TopicRule[] = [
     match: /\b(?:blonde|blond|blonding|highlight|highlights|airtou?ch|air touch)\b/i,
     queries: ["blonding", "highlights", "AirTouch"],
   },
-  {
-    match: /\bbalayage\b/i,
-    queries: ["balayage"],
-  },
+  { match: /\bbalayage\b/i, queries: ["balayage"] },
   {
     match: /\b(?:grey|gray|salt and pepper|salt-and-pepper)\b/i,
     queries: ["grey blending", "salt and pepper"],
@@ -58,10 +55,7 @@ const TOPIC_RULES: TopicRule[] = [
     match: /\b(?:keratin|smoothing|rebonding|straighten|straightening)\b/i,
     queries: ["keratin", "rebonding", "smoothing"],
   },
-  {
-    match: /\b(?:perm|perming|spiral perm)\b/i,
-    queries: ["perm"],
-  },
+  { match: /\b(?:perm|perming|spiral perm)\b/i, queries: ["perm"] },
   {
     match: /\b(?:treatment|k18|olaplex|hydration|hair spa|scalp spa)\b/i,
     queries: ["hair treatment", "K18", "Olaplex", "hydration"],
@@ -78,10 +72,7 @@ const TOPIC_RULES: TopicRule[] = [
     match: /\b(?:strand test|patch test|bleach|henna)\b/i,
     queries: ["strand test", "patch test", "bleach"],
   },
-  {
-    match: /\b(?:waited|waiting|late|delay)\b/i,
-    queries: ["waiting time"],
-  },
+  { match: /\b(?:waited|waiting|late|delay)\b/i, queries: ["waiting time"] },
   {
     match: /\b(?:photo|video|consent|privacy|delete my data|pdpa)\b/i,
     queries: ["photo consent", "privacy"],
@@ -131,8 +122,6 @@ export function resetKnowledgeQueries(clientTurnText: string): string[] {
     }
   }
 
-  // Preserve a useful generic service evidence path for unfamiliar wording,
-  // but never submit the entire multi-part client message as one brittle FTS query.
   if (queries.size === 3) queries.add("Hera services");
   return [...queries].slice(0, 16);
 }
@@ -167,7 +156,7 @@ export async function buildResetEvidencePacket(input: {
   );
   const knowledge = orderKnowledgeByAuthority(merged, 30);
 
-  let bookings = [];
+  let bookings: BookingSummary[] = [];
   if (needsAppointmentLookup(input.clientTurnText)) {
     try {
       bookings = await input.repository.lookupBookingsByWaId(input.waId, 10);
