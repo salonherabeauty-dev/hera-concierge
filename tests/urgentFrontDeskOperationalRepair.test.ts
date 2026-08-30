@@ -32,11 +32,7 @@ const patchJsUrl = new URL(
   "../public/command-centre/receptionist-emergency-fix.js",
   import.meta.url,
 );
-const indexUrl = new URL(
-  "../public/command-centre/index.html",
-  import.meta.url,
-);
-const receptionUrl = new URL(
+const legacyReceptionUrl = new URL(
   "../public/command-centre/reception.html",
   import.meta.url,
 );
@@ -108,11 +104,10 @@ test("front desk panes are bounded and independently scrollable", async () => {
   assert.match(css, /\.fd-tab:last-child[\s\S]*grid-column:\s*1 \/ -1/i);
 });
 
-test("front desk exposes Create AI Reply and preserves reading position", async () => {
-  const [script, index, reception] = await Promise.all([
+test("the explicit legacy front desk preserves its Create AI Reply recovery and reading position", async () => {
+  const [script, reception] = await Promise.all([
     readFile(patchJsUrl, "utf8"),
-    readFile(indexUrl, "utf8"),
-    readFile(receptionUrl, "utf8"),
+    readFile(legacyReceptionUrl, "utf8"),
   ]);
 
   assert.doesNotThrow(() => new Function(script));
@@ -123,14 +118,12 @@ test("front desk exposes Create AI Reply and preserves reading position", async 
   assert.match(script, /sourceMessageId: latest\.id/);
   assert.match(script, /Reply window closed/);
   assert.doesNotMatch(script, /sendText|D360_API_KEY|Timely/i);
-  for (const html of [index, reception]) {
-    assert.match(html, /receptionist-emergency-fix\.css/);
-    assert.match(html, /receptionist-emergency-fix\.js/);
-    assert.ok(
-      html.indexOf("receptionist-workspace.js") <
-        html.indexOf("receptionist-emergency-fix.js"),
-    );
-  }
+  assert.match(reception, /receptionist-emergency-fix\.css/);
+  assert.match(reception, /receptionist-emergency-fix\.js/);
+  assert.ok(
+    reception.indexOf("receptionist-workspace.js") <
+      reception.indexOf("receptionist-emergency-fix.js"),
+  );
 });
 
 test("expired timed takeovers no longer mislabel ordinary conversations as held", async () => {
