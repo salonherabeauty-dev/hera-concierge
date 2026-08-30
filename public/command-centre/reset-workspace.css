@@ -280,3 +280,13 @@ button { color: inherit; }
   .rr-row { padding: 12px 10px; }
   .rr-draft-meta { flex-direction: column; gap: 4px; }
 }
+
+
+.rr-retry-used {
+  align-self: center;
+  max-width: 230px;
+  color: var(--rr-muted, #766f68);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: right;
+}

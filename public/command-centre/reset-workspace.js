@@ -312,7 +312,6 @@ async function loadDetail(conversationId, preserveDraft = true) {
 async function refreshWorkspace(options = {}) {
   const preserveDraft = options.preserveDraft !== false;
   try {
-    await request("/api/command-centre/bootstrap").catch(() => null);
     const result = await request("/api/command-centre/conversations?limit=300");
     const conversations = Array.isArray(result.conversations)
       ? result.conversations
@@ -449,7 +448,7 @@ function composerView(conversation) {
         </div>
         <div class="rr-actions">
           <button class="rr-button rr-button--danger" data-action="hold" ${state.busy ? "disabled" : ""}>Take Over / Hold</button>
-          <button class="rr-button" data-action="regenerate" ${state.busy ? "disabled" : ""}>Regenerate</button>
+          <button class="rr-button" data-action="regenerate" ${state.busy || !reset.retryAvailable ? "disabled" : ""}>${reset.retryAvailable ? "Regenerate" : "Regeneration used"}</button>
           <button class="rr-button rr-button--primary" data-action="send" ${state.busy || !state.draft.trim() || !withinWindow ? "disabled" : ""}>${state.busy === "send" ? "Sending…" : "Send to Client"}</button>
         </div>
       </section>`;
@@ -479,7 +478,9 @@ function composerView(conversation) {
           </div>
           <div class="rr-state-actions">
             <button class="rr-button" data-action="manual" ${state.busy ? "disabled" : ""}>Write manually</button>
-            <button class="rr-button rr-button--primary" data-action="retry" ${state.busy ? "disabled" : ""}>${state.busy === "retry" ? "Retrying…" : "Retry AI Reply"}</button>
+            ${reset.retryAvailable
+              ? `<button class="rr-button rr-button--primary" data-action="retry" ${state.busy ? "disabled" : ""}>${state.busy === "retry" ? "Retrying…" : "Retry AI Reply"}</button>`
+              : '<span class="rr-retry-used">The single AI retry has already been used.</span>'}
           </div>
         </div>
         ${state.manualMode ? `<div class="rr-manual"><textarea data-manual-draft aria-label="Manual reply" maxlength="4000" placeholder="Write the reply here…">${escapeHtml(state.draft)}</textarea><p class="rr-draft-meta">A manual reply must first be saved as a human draft before it can be sent.</p></div>` : ""}
@@ -615,6 +616,10 @@ async function retryDraft() {
   const conversation = currentConversation();
   const reset = conversation ? resetState(conversation.id) : null;
   if (!reset?.turnId) return;
+  if (!reset.retryAvailable) {
+    setNotice("The single AI retry has already been used. Please write the reply manually.", "error");
+    return;
+  }
   state.busy = "retry";
   render();
   try {
