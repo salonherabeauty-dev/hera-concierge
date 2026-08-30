@@ -16,6 +16,34 @@ create unique index ai_human_send_reservations_v3_candidate_active_idx
   on public.ai_human_send_reservations_v3 (candidate_id)
   where status in ('reserved', 'sent');
 
+-- Keep the newest 40 fragments without relying on positional JSON deletion.
+create or replace function public.ai_trim_reset_fragments_v3(
+  p_fragments jsonb,
+  p_limit integer default 40
+) returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  with normalized as (
+    select
+      case
+        when jsonb_typeof(coalesce(p_fragments, '[]'::jsonb)) = 'array'
+          then coalesce(p_fragments, '[]'::jsonb)
+        else '[]'::jsonb
+      end as items,
+      greatest(1, least(coalesce(p_limit, 40), 40)) as item_limit
+  )
+  select coalesce(jsonb_agg(item.value order by item.ordinality), '[]'::jsonb)
+  from normalized
+  cross join lateral jsonb_array_elements(normalized.items)
+    with ordinality as item(value, ordinality)
+  where item.ordinality > greatest(
+    jsonb_array_length(normalized.items) - normalized.item_limit,
+    0
+  );
+$$;
+
 create or replace function public.ai_append_client_turn_fragment_v3(
   p_conversation_id uuid,
   p_contact_id uuid,
@@ -32,6 +60,7 @@ set search_path = ''
 as $$
 declare
   v_existing public.ai_client_turns_v3%rowtype;
+  v_existing_found boolean := false;
   v_turn_id uuid;
   v_version integer;
   v_effective_at timestamptz := coalesce(p_provider_timestamp, now());
@@ -42,10 +71,14 @@ declare
   v_legacy_job_id uuid;
   v_append_same_turn boolean := false;
   v_carry_previous_turn boolean := false;
+  v_stale_historical boolean := false;
   v_new_text text;
   v_new_fragments jsonb;
   v_new_source_message_id uuid;
   v_new_first_fragment_at timestamptz;
+  v_new_last_fragment_at timestamptz;
+  v_new_last_fragment_message_id uuid;
+  v_result_status text := 'collecting';
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_conversation_id::text, 703));
 
@@ -83,44 +116,73 @@ begin
   order by version desc
   limit 1
   for update;
+  v_existing_found := found;
 
-  if found then
+  if v_existing_found then
+    -- A materially older provider event may be displayed in the transcript, but
+    -- it must never supersede the current client turn or invalidate its draft.
+    v_stale_historical :=
+      v_effective_at < v_existing.first_fragment_at - interval '2 minutes';
+
     -- Normal rapid text/image bursts share one collecting turn. Unreadable or
     -- delayed attachment events get a larger grace window and can never become
     -- a replacement instruction that erases the substantive message before it.
-    v_append_same_turn := v_existing.status = 'collecting'
+    v_append_same_turn := not v_stale_historical
+      and v_existing.status = 'collecting'
       and (
-        v_effective_at <= v_existing.last_fragment_at + interval '30 seconds'
+        v_effective_at between
+          v_existing.first_fragment_at - interval '30 seconds'
+          and v_existing.last_fragment_at + interval '30 seconds'
         or (
           not v_substantive
-          and v_effective_at <= v_existing.last_fragment_at + interval '2 minutes'
+          and v_effective_at between
+            v_existing.first_fragment_at - interval '2 minutes'
+            and v_existing.last_fragment_at + interval '2 minutes'
         )
       );
-    v_carry_previous_turn := v_existing.status in ('processing', 'ready', 'failed')
+    v_carry_previous_turn := not v_stale_historical
+      and v_existing.status in ('processing', 'ready', 'failed')
       and (
-        v_effective_at <= v_existing.last_fragment_at + interval '30 seconds'
+        v_effective_at between
+          v_existing.first_fragment_at - interval '30 seconds'
+          and v_existing.last_fragment_at + interval '30 seconds'
         or (
           not v_substantive
-          and v_effective_at <= v_existing.last_fragment_at + interval '2 minutes'
+          and v_effective_at between
+            v_existing.first_fragment_at - interval '2 minutes'
+            and v_existing.last_fragment_at + interval '2 minutes'
         )
       );
   end if;
 
-  if v_append_same_turn then
-    update public.ai_client_turns_v3
-    set last_fragment_at = greatest(last_fragment_at, v_effective_at),
-        settle_at = greatest(v_settle_at, settle_at),
-        last_fragment_message_id = p_message_id,
-        source_message_id = case when v_substantive then p_message_id else source_message_id end,
-        consolidated_text = case
-          when not v_substantive then consolidated_text
-          when consolidated_text = '' then left(v_text, 24000)
-          else left(consolidated_text || E'\n' || v_text, 24000)
+  if v_stale_historical then
+    v_turn_id := v_existing.id;
+    v_result_status := v_existing.status;
+  elsif v_append_same_turn then
+    update public.ai_client_turns_v3 as turn
+    set first_fragment_at = least(turn.first_fragment_at, v_effective_at),
+        last_fragment_at = greatest(turn.last_fragment_at, v_effective_at),
+        settle_at = greatest(v_settle_at, turn.settle_at),
+        last_fragment_message_id = case
+          when v_effective_at >= turn.last_fragment_at then p_message_id
+          else turn.last_fragment_message_id
         end,
-        fragments = (fragments || jsonb_build_array(v_fragment)) - 40,
+        source_message_id = case
+          when v_substantive and v_effective_at >= turn.last_fragment_at then p_message_id
+          else turn.source_message_id
+        end,
+        consolidated_text = case
+          when not v_substantive then turn.consolidated_text
+          when turn.consolidated_text = '' then left(v_text, 24000)
+          else left(turn.consolidated_text || E'\n' || v_text, 24000)
+        end,
+        fragments = public.ai_trim_reset_fragments_v3(
+          turn.fragments || jsonb_build_array(v_fragment),
+          40
+        ),
         updated_at = now()
-    where id = v_existing.id
-    returning id into v_turn_id;
+    where turn.id = v_existing.id
+    returning turn.id into v_turn_id;
 
     update public.ai_turn_jobs_v3
     set available_at = greatest(v_settle_at, available_at),
@@ -128,7 +190,7 @@ begin
     where turn_id = v_turn_id
       and status = 'pending';
   else
-    if found and v_existing.status in ('collecting', 'processing', 'ready') then
+    if v_existing_found and v_existing.status in ('collecting', 'processing', 'ready') then
       update public.ai_reply_candidates_v3
       set status = 'superseded', updated_at = now()
       where id = v_existing.candidate_id and status = 'ready';
@@ -152,17 +214,34 @@ begin
         when v_existing.consolidated_text = '' then left(v_text, 24000)
         else left(v_existing.consolidated_text || E'\n' || v_text, 24000)
       end;
-      v_new_fragments := v_existing.fragments || jsonb_build_array(v_fragment);
+      v_new_fragments := public.ai_trim_reset_fragments_v3(
+        v_existing.fragments || jsonb_build_array(v_fragment),
+        40
+      );
       v_new_source_message_id := case
-        when v_substantive then p_message_id
+        when v_substantive and v_effective_at >= v_existing.last_fragment_at
+          then p_message_id
         else v_existing.source_message_id
       end;
-      v_new_first_fragment_at := v_existing.first_fragment_at;
+      v_new_first_fragment_at := least(
+        v_existing.first_fragment_at,
+        v_effective_at
+      );
+      v_new_last_fragment_at := greatest(
+        v_existing.last_fragment_at,
+        v_effective_at
+      );
+      v_new_last_fragment_message_id := case
+        when v_effective_at >= v_existing.last_fragment_at then p_message_id
+        else v_existing.last_fragment_message_id
+      end;
     else
       v_new_text := case when v_substantive then left(v_text, 24000) else '' end;
       v_new_fragments := jsonb_build_array(v_fragment);
       v_new_source_message_id := case when v_substantive then p_message_id else null end;
       v_new_first_fragment_at := v_effective_at;
+      v_new_last_fragment_at := v_effective_at;
+      v_new_last_fragment_message_id := p_message_id;
     end if;
 
     insert into public.ai_client_turns_v3 (
@@ -185,18 +264,18 @@ begin
       'collecting',
       'human_only',
       v_new_first_fragment_at,
-      v_effective_at,
+      v_new_last_fragment_at,
       v_settle_at,
       v_new_source_message_id,
-      p_message_id,
+      v_new_last_fragment_message_id,
       v_new_text,
-      v_new_fragments,
+      v_new_fragments
     ) returning id into v_turn_id;
 
     insert into public.ai_turn_jobs_v3 (turn_id, status, available_at)
     values (v_turn_id, 'pending', v_settle_at);
 
-    if found and v_existing.status in ('collecting', 'processing', 'ready') then
+    if v_existing_found and v_existing.status in ('collecting', 'processing', 'ready') then
       update public.ai_client_turns_v3
       set superseded_by_turn_id = v_turn_id, updated_at = now()
       where id = v_existing.id;
@@ -228,17 +307,22 @@ begin
         completed_at = now(),
         locked_at = null,
         locked_by = null,
-        last_error = 'superseded_by_receptionist_reset_v3',
+        last_error = case
+          when v_stale_historical
+            then 'stale_historical_inbound_ignored_by_receptionist_reset_v3'
+          else 'superseded_by_receptionist_reset_v3'
+        end,
         updated_at = now()
     where id = v_legacy_job_id;
   end if;
 
   return jsonb_build_object(
     'turnId', v_turn_id,
-    'status', 'collecting',
-    'settleAt', v_settle_at,
+    'status', v_result_status,
+    'settleAt', case when v_stale_historical then v_existing.settle_at else v_settle_at end,
     'substantive', v_substantive,
     'carriedPreviousTurn', v_carry_previous_turn,
+    'staleHistorical', v_stale_historical,
     'legacyJobSuppressed', v_legacy_job_id is not null
   );
 end;
@@ -502,12 +586,16 @@ begin
 end;
 $$;
 
+revoke all on function public.ai_trim_reset_fragments_v3(jsonb, integer)
+  from public, anon, authenticated;
 revoke all on function public.ai_append_client_turn_fragment_v3(uuid, uuid, uuid, text, text, jsonb, timestamptz, jsonb)
   from public, anon, authenticated;
 revoke all on function public.ai_claim_turn_jobs_v3(text, integer, uuid[])
   from public, anon, authenticated;
 revoke all on function public.ai_create_manual_candidate_v3(uuid, uuid, integer, text, text)
   from public, anon, authenticated;
+grant execute on function public.ai_trim_reset_fragments_v3(jsonb, integer)
+  to service_role;
 grant execute on function public.ai_append_client_turn_fragment_v3(uuid, uuid, uuid, text, text, jsonb, timestamptz, jsonb)
   to service_role;
 grant execute on function public.ai_claim_turn_jobs_v3(text, integer, uuid[])
