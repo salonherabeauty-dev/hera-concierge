@@ -1,4 +1,3 @@
-import { waitUntil } from "@vercel/functions";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
@@ -14,7 +13,6 @@ import {
   HERA_RECEPTIONIST_RESET_VERSION,
   requireReceptionistResetV3,
 } from "../../src/reset/boundary.js";
-import { drainResetTurnJobs } from "../../src/reset/worker.js";
 
 const uuid = z.string().uuid();
 
@@ -79,22 +77,6 @@ function mapState(value: Record<string, unknown>) {
   };
 }
 
-function eligibleRecoveryTurnIds(
-  values: Array<Record<string, unknown>>,
-): string[] {
-  const now = Date.now();
-  return values
-    .filter((value) => value.turn_status === "collecting")
-    .filter((value) => value.job_status === "pending")
-    .filter((value) => {
-      const settleAt = Date.parse(String(value.settle_at ?? ""));
-      return Number.isFinite(settleAt) && settleAt <= now;
-    })
-    .map((value) => value.turn_id)
-    .filter((value): value is string => typeof value === "string")
-    .slice(0, 2);
-}
-
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -120,7 +102,7 @@ export default async function handler(
         detectSessionInUrl: false,
       },
       global: {
-        headers: { "X-Client-Info": "hera-reset-state-v3/1.2" },
+        headers: { "X-Client-Info": "hera-reset-state-v3/1.3" },
       },
     });
 
@@ -131,24 +113,11 @@ export default async function handler(
     const { data, error } = await query.limit(300);
     if (error) throw new Error(`load reset state: ${error.message}`);
 
-    const records = (data ?? []) as Array<Record<string, unknown>>;
-    const recoveryTurnIds = eligibleRecoveryTurnIds(records);
-    if (recoveryTurnIds.length > 0) {
-      waitUntil(
-        drainResetTurnJobs({
-          turnIds: recoveryTurnIds,
-          limit: recoveryTurnIds.length,
-          workerId: `reset-v3-session-recovery-${session.staff.userId}`,
-        }),
-      );
-    }
-
     return response.status(200).json({
       ok: true,
       resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
       exactCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-      previewRecoveryQueued: recoveryTurnIds.length,
-      states: records.map((item) => mapState(item)),
+      states: ((data ?? []) as Array<Record<string, unknown>>).map(mapState),
     });
   } catch (error) {
     if (
