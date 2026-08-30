@@ -38,13 +38,20 @@ export const HERA_OPENAI_MODEL_ID = "openai/gpt-5.6-sol";
 export const HERA_OPENAI_PROVIDER = "openai";
 export const HERA_OPENAI_REASONING_EFFORT = "max";
 export const HERA_OPENAI_ONLY_POLICY_VERSION =
-  "hera-openai-sol-max-only-1.0.0";
+  "hera-openai-sol-max-only-1.1.0";
 export const HERA_LUXURY_CLIENT_COPY_POLICY_VERSION =
-  "hera-luxury-client-copy-2.0.0";
+  "hera-luxury-client-copy-2.1.0";
+
+export const HERA_OPENAI_STAGE_TIMEOUT_MS = {
+  response: 240_000,
+  verification: 240_000,
+  final_verification: 240_000,
+} as const;
+
+type OpenAiStage = keyof typeof HERA_OPENAI_STAGE_TIMEOUT_MS;
 
 const OPENAI_MAX_OUTPUT_TOKENS = 12_000;
 const OPENAI_FINAL_QUALITY_OUTPUT_TOKENS = 8_000;
-const OPENAI_FINAL_QUALITY_TIMEOUT_MS = 180_000;
 
 type GenericOptions = Record<string, unknown>;
 
@@ -54,43 +61,52 @@ function options(value: unknown): GenericOptions {
     : {};
 }
 
-const openAiSolMaxMiddleware = {
-  specificationVersion: "v3" as const,
-  transformParams: async ({ params }: { params: GenericOptions }) => {
-    const providerOptions = options(params.providerOptions);
-    const gatewayOptions = options(providerOptions.gateway);
-    const openAiOptions = options(providerOptions.openai);
-    const requestedMaxOutputTokens =
-      typeof params.maxOutputTokens === "number"
-        ? params.maxOutputTokens
-        : 0;
+function openAiSolMaxMiddleware(stageAbortSignal: AbortSignal) {
+  return {
+    specificationVersion: "v3" as const,
+    transformParams: async ({ params }: { params: GenericOptions }) => {
+      const providerOptions = options(params.providerOptions);
+      const gatewayOptions = options(providerOptions.gateway);
+      const openAiOptions = options(providerOptions.openai);
+      const requestedMaxOutputTokens =
+        typeof params.maxOutputTokens === "number"
+          ? params.maxOutputTokens
+          : 0;
 
-    return {
-      ...params,
-      maxOutputTokens: Math.max(
-        requestedMaxOutputTokens,
-        OPENAI_MAX_OUTPUT_TOKENS,
-      ),
-      providerOptions: {
-        ...providerOptions,
-        gateway: {
-          ...gatewayOptions,
-          order: [HERA_OPENAI_PROVIDER],
-          only: [HERA_OPENAI_PROVIDER],
-          disallowPromptTraining: true,
+      return {
+        ...params,
+        // The reusable core was originally tuned for medium/low reasoning and
+        // supplied 50-75 second abort signals. Sol Max legitimately needs more
+        // time, especially for long complaints and legal correspondence. Keep
+        // one bounded signal for the entire stage so each tool step cannot reset
+        // the budget, while Vercel's function duration remains the outer guard.
+        abortSignal: stageAbortSignal,
+        maxOutputTokens: Math.max(
+          requestedMaxOutputTokens,
+          OPENAI_MAX_OUTPUT_TOKENS,
+        ),
+        providerOptions: {
+          ...providerOptions,
+          gateway: {
+            ...gatewayOptions,
+            order: [HERA_OPENAI_PROVIDER],
+            only: [HERA_OPENAI_PROVIDER],
+            disallowPromptTraining: true,
+          },
+          openai: {
+            ...openAiOptions,
+            reasoningEffort: HERA_OPENAI_REASONING_EFFORT,
+            store: false,
+          },
         },
-        openai: {
-          ...openAiOptions,
-          reasoningEffort: HERA_OPENAI_REASONING_EFFORT,
-          store: false,
-        },
-      },
-    };
-  },
-} as unknown as Parameters<typeof wrapLanguageModel>[0]["middleware"];
+      };
+    },
+  } as unknown as Parameters<typeof wrapLanguageModel>[0]["middleware"];
+}
 
 function openAiSolMaxModel(
-  sourceFactory?: (modelId: string) => LanguageModel,
+  sourceFactory: ((modelId: string) => LanguageModel) | undefined,
+  stageAbortSignal: AbortSignal,
 ): LanguageModel {
   const candidate = sourceFactory
     ? sourceFactory(HERA_OPENAI_MODEL_ID)
@@ -99,7 +115,7 @@ function openAiSolMaxModel(
     typeof candidate === "string" ? gateway(candidate) : candidate;
   return wrapLanguageModel({
     model: source,
-    middleware: openAiSolMaxMiddleware,
+    middleware: openAiSolMaxMiddleware(stageAbortSignal),
     modelId: HERA_OPENAI_MODEL_ID,
     providerId: HERA_OPENAI_PROVIDER,
   });
@@ -107,14 +123,19 @@ function openAiSolMaxModel(
 
 export function enforceOpenAiSolMax(
   config: AiRuntimeConfig,
+  stage: OpenAiStage = "response",
 ): AiRuntimeConfig {
   const sourceFactory = config.modelFactory;
+  const stageAbortSignal = AbortSignal.timeout(
+    HERA_OPENAI_STAGE_TIMEOUT_MS[stage],
+  );
   return {
     ...config,
     primaryModel: HERA_OPENAI_MODEL_ID,
     verifierModel: HERA_OPENAI_MODEL_ID,
     fallbackModels: [],
-    modelFactory: () => openAiSolMaxModel(sourceFactory),
+    modelFactory: () =>
+      openAiSolMaxModel(sourceFactory, stageAbortSignal),
   };
 }
 
@@ -123,7 +144,7 @@ export async function generateReceptionistDecision(
 ): Promise<GeneratedDecision> {
   return core.generateReceptionistDecision({
     ...input,
-    config: enforceOpenAiSolMax(input.config),
+    config: enforceOpenAiSolMax(input.config, "response"),
   });
 }
 
@@ -132,7 +153,7 @@ export async function verifyReceptionistDecision(
 ): Promise<VerificationResult> {
   return core.verifyReceptionistDecision({
     ...input,
-    config: enforceOpenAiSolMax(input.config),
+    config: enforceOpenAiSolMax(input.config, "verification"),
   });
 }
 
@@ -201,6 +222,7 @@ export const OPENAI_FINAL_CLIENT_RESPONSE_INSTRUCTIONS = [
   "Use facts already supplied or available in the current-client record. Do not make the client repeat their name, outlet, service, appointment details or stylist when Hera can verify those internally. Ask only for genuinely necessary information that changes the next action, such as clear photographs or the exact aspect of a result that concerns the client.",
   "For complaints, acknowledge the actual experience and emotional impact without minimising it. Do not argue with threats, become defensive, admit legal liability, assign blame, diagnose, or promise a refund, compensation, complimentary service or other outcome before authorised review.",
   "For booking and appointment requests, never claim a booking, change or cancellation is complete without a verified result. Own the next step and ask only the one genuinely missing detail.",
+  "For legal correspondence, acknowledge receipt calmly, preserve every stated reference and deadline that is clearly supplied, avoid debating the merits or admitting liability, and state only the next authorised review step through this WhatsApp unless another verified channel is required.",
   "For medical or scalp concerns, preserve proportionate safety guidance without diagnosing. Urgent symptoms must receive urgent medical guidance before salon follow-up.",
   "For ordinary enquiries, be concise, warm, commercially intelligent and directly helpful. Answer every material part that can be answered safely.",
   "Reject and rewrite wording that sounds bureaucratic, translated, templated, evasive or process-led, including expressions such as 'authorised to review', 'transaction request', 'verification and confirmation', 'confirmed outcome', 'so that the review is as accurate as possible', 'once the review is complete', 'the relevant team', or 'a staff member will continue'.",
@@ -266,7 +288,7 @@ export async function verifyFinalClientReply(
   input: Parameters<typeof core.verifyFinalClientReply>[0],
 ): Promise<FinalResponseVerificationResult> {
   const startedAt = Date.now();
-  const config = enforceOpenAiSolMax(input.config);
+  const config = enforceOpenAiSolMax(input.config, "final_verification");
   const attempts = createGenerationAttemptLifecycle({
     ledger: config.generationAttemptLedger,
     stage: "final_verification",
@@ -321,7 +343,7 @@ export async function verifyFinalClientReply(
         exactPostPolicyDraft: input.draftReply,
         deterministicDraftQuality: input.deterministicDraftQuality,
       }),
-      timeout: OPENAI_FINAL_QUALITY_TIMEOUT_MS,
+      timeout: HERA_OPENAI_STAGE_TIMEOUT_MS.final_verification,
     });
     attempts.assertHealthy();
     const output = result.output;
@@ -351,12 +373,16 @@ export async function verifyFinalClientReply(
       issues.length === 0 &&
       ordinaryScores.every((score) => score >= 9) &&
       criticalScores.every((score) => score === 10);
-    const exactDraftApproved =
-      sendReady && finalReply === input.draftReply.trim();
+    const exactDraftUnchanged = finalReply === input.draftReply.trim();
 
     return {
-      approved: exactDraftApproved,
-      correctedReply: exactDraftApproved ? null : finalReply,
+      // When the final writer produces a different but fully certified reply,
+      // the gate may adopt that exact reply without paying for a redundant
+      // second identical quality pass. A non-certified rewrite remains
+      // unapproved and must still be checked again by the bounded gate.
+      approved: sendReady,
+      correctedReply:
+        sendReady && exactDraftUnchanged ? null : finalReply,
       issues,
       scores: {
         empathy: legacyScore(output.scores.emotionalAccuracy),
