@@ -18,6 +18,7 @@ import {
   requireResetReceptionist,
 } from "../../src/reset/config.js";
 import { ResetReceptionistRepository } from "../../src/reset/repository.js";
+import { ResetSendPreflightRepository } from "../../src/reset/sendPreflight.js";
 import {
   logOperationalEvent,
   safeErrorFields,
@@ -53,6 +54,32 @@ function failureCode(error: unknown): string {
     .slice(0, 120);
 }
 
+async function completeWithOneRetry(input: {
+  repository: ResetReceptionistRepository;
+  actorUserId: string;
+  sendId: string;
+  providerMessageId: string;
+}) {
+  try {
+    return await input.repository.completeHumanSend({
+      actorUserId: input.actorUserId,
+      sendId: input.sendId,
+      providerMessageId: input.providerMessageId,
+    });
+  } catch (firstError) {
+    logOperationalEvent("warn", "reset_human_send_finalize_retry", {
+      sendId: input.sendId,
+      providerMessageId: input.providerMessageId,
+      ...safeErrorFields(firstError),
+    });
+    return input.repository.completeHumanSend({
+      actorUserId: input.actorUserId,
+      sendId: input.sendId,
+      providerMessageId: input.providerMessageId,
+    });
+  }
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -81,6 +108,10 @@ export default async function handler(
       database.url,
       database.serviceRoleKey,
     );
+    const preflights = new ResetSendPreflightRepository(
+      database.url,
+      database.serviceRoleKey,
+    );
     const reserved = await repository.reserveHumanSend({
       actorUserId: session.staff.userId,
       draftRunId: parsed.data.draftRunId,
@@ -99,8 +130,34 @@ export default async function handler(
     }
 
     const sendId = required(reserved.sendId, "sendId");
-    const toWaId = required(reserved.toWaId, "toWaId");
-    const messageText = required(reserved.messageText, "messageText");
+    const finalHash = required(reserved.finalHash, "finalHash");
+    const preflight = await preflights.preflight({
+      actorUserId: session.staff.userId,
+      sendId,
+      expectedTurnId: parsed.data.expectedTurnId,
+      expectedCandidateHash: parsed.data.expectedCandidateHash,
+      expectedFinalHash: finalHash,
+      expectedPhoneEnding: parsed.data.expectedPhoneEnding,
+    });
+
+    if (!preflight.ok) {
+      await repository
+        .failHumanSend({
+          actorUserId: session.staff.userId,
+          sendId,
+          failureCode: preflight.code,
+        })
+        .catch(() => undefined);
+      return response.status(409).json({
+        ok: false,
+        state: "send_blocked",
+        code: preflight.code,
+        sendId,
+        providerMessageId: null,
+        channel: "Tanglin Mall WhatsApp",
+      });
+    }
+
     const d360 = getD360Config();
     const whatsapp = new D360WhatsAppClient({
       apiKey: d360.apiKey,
@@ -109,7 +166,10 @@ export default async function handler(
 
     let providerMessageId: string;
     try {
-      const sent = await whatsapp.sendText(toWaId, messageText);
+      const sent = await whatsapp.sendText(
+        preflight.toWaId,
+        preflight.messageText,
+      );
       providerMessageId = sent.providerMessageId;
     } catch (error) {
       const code = failureCode(error);
@@ -137,16 +197,37 @@ export default async function handler(
       });
     }
 
-    const completed = await repository.completeHumanSend({
-      actorUserId: session.staff.userId,
-      sendId,
-      providerMessageId,
-    });
-    return response.status(200).json({
-      ...completed,
-      architecture: HERA_RESET_ARCHITECTURE_VERSION,
-      channel: "Tanglin Mall WhatsApp",
-    });
+    try {
+      const completed = await completeWithOneRetry({
+        repository,
+        actorUserId: session.staff.userId,
+        sendId,
+        providerMessageId,
+      });
+      return response.status(200).json({
+        ...completed,
+        architecture: HERA_RESET_ARCHITECTURE_VERSION,
+        channel: "Tanglin Mall WhatsApp",
+      });
+    } catch (error) {
+      // The provider has already accepted this message. Leave the reservation
+      // non-recyclable so a refresh or repeated click cannot send it twice.
+      // A named operator must reconcile the audit record against the provider id.
+      logOperationalEvent("error", "reset_human_send_finalize_failed", {
+        sendId,
+        providerMessageId,
+        draftRunId: parsed.data.draftRunId,
+        ...safeErrorFields(error),
+      });
+      return response.status(202).json({
+        ok: true,
+        state: "sent_pending_audit_reconciliation",
+        code: "send_finalize_failed",
+        sendId,
+        providerMessageId,
+        channel: "Tanglin Mall WhatsApp",
+      });
+    }
   } catch (error) {
     const safe = clientSafeError(error);
     return response
