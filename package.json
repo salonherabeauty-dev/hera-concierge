@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "build:command-centre": "tsc -p tsconfig.command-centre.json",
     "build": "npm run build:command-centre",
+    "proof:pr71": "tsx scripts/pr71-build-proof.ts",
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "test": "npm run typecheck && npm run build && npm run test:unit",
     "credential:scan": "node scripts/scan-secrets.mjs",
