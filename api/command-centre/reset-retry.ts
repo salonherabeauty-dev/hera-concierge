@@ -22,6 +22,16 @@ const requestSchema = z.object({
   turnId: z.string().uuid(),
 });
 
+function retryBlockedMessage(code: string | null): string {
+  if (code === "retry_limit_reached") {
+    return "The single AI retry has already been used. Please write the reply manually.";
+  }
+  if (code === "turn_not_retryable") {
+    return "This reply is already being prepared or has been superseded by a newer client message.";
+  }
+  return "This AI reply cannot be retried in its current state.";
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -51,7 +61,10 @@ export default async function handler(
     );
     const retry = await repository.retryTurn(body.turnId);
     if (!retry.ok) {
-      return response.status(409).json(retry);
+      return response.status(409).json({
+        ...retry,
+        error: retryBlockedMessage(retry.code),
+      });
     }
 
     waitUntil(
