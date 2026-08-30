@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build && npm run proof:pr73",
+  "buildCommand": "npm run build",
   "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
@@ -74,6 +74,12 @@
     },
     "api/command-centre/receptionist-draft.ts": {
       "maxDuration": "max"
+    },
+    "api/command-centre/reset-regenerate.ts": {
+      "maxDuration": "max"
+    },
+    "api/command-centre/reset-message.ts": {
+      "maxDuration": 60
     },
     "api/command-centre/**/*.ts": {
       "maxDuration": 30
