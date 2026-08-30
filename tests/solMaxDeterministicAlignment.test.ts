@@ -153,7 +153,7 @@ test("Neo's consolidated legal reply passes when direct ownership routes a durab
 test("alignment does not weaken booking completion, legal review or complaint-manager safeguards", () => {
   const appointment = assessFinalResponseQuality({
     clientMessage: "Please move my appointment.",
-    reply: "I have moved and confirmed your appointment for next weekend.",
+    reply: "Your booking is confirmed for next weekend.",
     decision: decision({ intent: "appointment_change" }),
     policy: policy(),
     handoff: handoff({ taskType: "appointment_change" }),
