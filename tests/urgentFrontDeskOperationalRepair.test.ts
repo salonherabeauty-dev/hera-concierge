@@ -11,6 +11,7 @@ const resetMigrationUrls = [
 const webhookUrl = new URL("../api/whatsapp/360dialog.ts", import.meta.url);
 const resetWorkerUrl = new URL("../src/reset/worker.ts", import.meta.url);
 const resetModelUrl = new URL("../src/reset/model.ts", import.meta.url);
+const resetConfigUrl = new URL("../src/reset/config.ts", import.meta.url);
 const resetUiUrl = new URL("../public/command-centre/reset-workspace.js", import.meta.url);
 const resetCssUrl = new URL("../public/command-centre/reset-workspace.css", import.meta.url);
 const indexUrl = new URL("../public/command-centre/index.html", import.meta.url);
@@ -53,11 +54,14 @@ test("new inbound fragments create a rolling consolidated turn and automatic dra
 });
 
 test("the reset has one Sol Max writer and no more than one rewrite", async () => {
-  const [model, worker] = await Promise.all([
+  const [model, resetConfig, worker] = await Promise.all([
     readFile(resetModelUrl, "utf8"),
+    readFile(resetConfigUrl, "utf8"),
     readFile(resetWorkerUrl, "utf8"),
   ]);
-  assert.match(model, /openai\/gpt-5\.6-sol/);
+  assert.match(resetConfig, /HERA_RESET_MODEL_ID\s*=\s*"openai\/gpt-5\.6-sol"/);
+  assert.match(resetConfig, /HERA_RESET_MAX_MODEL_CALLS\s*=\s*2/);
+  assert.match(model, /gateway\(HERA_RESET_MODEL_ID\)/);
   assert.match(model, /reasoningEffort:\s*"max"/);
   assert.match(model, /only:\s*\["openai"\]/);
   assert.match(model, /stopWhen:\s*isStepCount\(1\)/);
