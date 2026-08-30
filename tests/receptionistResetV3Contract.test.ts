@@ -13,14 +13,11 @@ import type {
 } from "../src/reset/types.js";
 import { validateResetDraft } from "../src/reset/validator.js";
 
-const migrationOne = new URL(
-  "../supabase/migrations/20260830030000_create_receptionist_reset_v3.sql",
-  import.meta.url,
-);
-const migrationTwo = new URL(
-  "../supabase/migrations/20260830030001_harden_receptionist_reset_v3.sql",
-  import.meta.url,
-);
+const migrations = [
+  "20260830030000_create_receptionist_reset_v3.sql",
+  "20260830030001_harden_receptionist_reset_v3.sql",
+  "20260830030002_complete_receptionist_reset_v3.sql",
+].map((name) => new URL(`../supabase/migrations/${name}`, import.meta.url));
 const engineUrl = new URL("../src/reset/engine.ts", import.meta.url);
 const workerUrl = new URL("../src/reset/worker.ts", import.meta.url);
 const webhookUrl = new URL("../api/whatsapp/360dialog.ts", import.meta.url);
@@ -87,14 +84,11 @@ function decision(finalReply: string): ResetDraftDecision {
   };
 }
 
-test("reset schema is syntactically valid and enforces ready-or-failed terminal states", async () => {
-  const [first, second] = await Promise.all([
-    readFile(migrationOne, "utf8"),
-    readFile(migrationTwo, "utf8"),
-  ]);
-  assert.doesNotThrow(() => parse(first));
-  assert.doesNotThrow(() => parse(second));
-  const sql = `${first}\n${second}`;
+test("every reset migration is syntactically valid and enforces ready-or-failed terminal states", async () => {
+  const sqlFiles = await Promise.all(migrations.map((url) => readFile(url, "utf8")));
+  for (const sql of sqlFiles) assert.doesNotThrow(() => parse(sql));
+  const sql = sqlFiles.join("\n");
+
   assert.match(sql, /ai_client_turns_v3/);
   assert.match(sql, /ai_reply_candidates_v3/);
   assert.match(sql, /ai_turn_jobs_v3/);
@@ -109,6 +103,9 @@ test("reset schema is syntactically valid and enforces ready-or-failed terminal 
   assert.match(sql, /recipient_mismatch/);
   assert.match(sql, /customer_service_window_expired/);
   assert.match(sql, /ai_tanglin_whatsapp_reply_violation/);
+  assert.match(sql, /ai_trim_reset_fragments_v3/);
+  assert.match(sql, /stale_historical/i);
+  assert.doesNotMatch(sql, /v_new_fragments,\s*\)\s*returning/i);
 });
 
 test("one Sol Max draft and at most one rewrite are code-enforced", async () => {
@@ -132,7 +129,13 @@ test("automatic drafting cannot import or call a WhatsApp sender or Timely write
     readFile(engineUrl, "utf8"),
   ]);
   for (const source of [worker, engine]) {
-    assert.doesNotMatch(source, /D360WhatsAppClient|MetaWhatsAppClient|sendText\(|Timely/i);
+    assert.doesNotMatch(
+      source,
+      /from\s+["'][^"']*whatsapp\/(?:d360Client|client)\.js["']/i,
+    );
+    assert.doesNotMatch(source, /new\s+(?:D360WhatsAppClient|MetaWhatsAppClient)\b/);
+    assert.doesNotMatch(source, /\.sendText\s*\(/);
+    assert.doesNotMatch(source, /(?:create|update|cancel|reschedule).*Timely/i);
   }
   assert.match(worker, /providerSendCalls:\s*0/);
   assert.match(worker, /timelyWriteCalls:\s*0/);
@@ -159,6 +162,7 @@ test("the Command Centre exposes only truthful ready, preparing and failed state
   assert.match(source, /Regenerate/);
   assert.match(source, /Take Over \/ Hold/);
   assert.match(source, /Date\.parse\(right\.lastMessageAt\) - Date\.parse\(left\.lastMessageAt\)/);
+  assert.match(source, /state\.exactCommit/);
   assert.doesNotMatch(source, /Create AI Reply/);
 });
 
@@ -178,7 +182,7 @@ test("Vercel build is offline and does not process mutable staging conversations
 
 test("historical medical allegations in a legal letter are not forced into current-emergency guidance", () => {
   const clientTurn =
-    "Subject: LETTER OF DEMAND. Our client alleges that she suffered scalp irritation after a service on 8 August 2026 and was treated by a dermatologist.";
+    "Subject: LETTER OF DEMAND. Our client alleges that she suffered scalp irritation after a service on 8 August 2026 and was treated by a dermatologist. She is currently seeking compensation.";
   const reply =
     "Thank you for sending the letter. We acknowledge receipt and will review the stated service details and requests carefully. We will continue the review with you here and update you on the next authorised step without prejudging the outcome.";
   const result = validateResetDraft({
@@ -217,4 +221,21 @@ test("bureaucratic complaint copy, wrong-outlet routing and unauthorised outcome
   assert.ok(result.issues.some((issue) => /Tanglin Mall/i.test(issue)));
   assert.ok(result.issues.some((issue) => /refund/i.test(issue)));
   assert.ok(result.issues.some((issue) => /bureaucratic/i.test(issue)));
+});
+
+test("explicit liability admissions fail without blocking ordinary service ownership", () => {
+  const admitted = validateResetDraft({
+    decision: decision("Hera accepts full liability for causing your injury."),
+    evidence: evidence("I am making a legal claim."),
+  });
+  assert.equal(admitted.passed, false);
+  assert.ok(admitted.issues.some((issue) => /liability/i.test(issue)));
+
+  const ownership = validateResetDraft({
+    decision: decision(
+      "I’m very sorry this has happened. We will review the service details carefully and continue the conversation with you here.",
+    ),
+    evidence: evidence("I am unhappy with my balayage."),
+  });
+  assert.equal(ownership.passed, true, ownership.issues.join(" | "));
 });
