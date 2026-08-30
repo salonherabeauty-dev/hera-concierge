@@ -1,0 +1,1 @@
+Reset v3 branch sentinel. This file has no runtime effect.
