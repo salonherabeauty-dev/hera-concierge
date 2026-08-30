@@ -11,57 +11,116 @@ import type {
   ResetTurnFragment,
 } from "./types.js";
 
-const SERVICE_TERMS = [
-  "curly",
-  "curl",
-  "haircut",
-  "hydration",
-  "balayage",
-  "blonde",
-  "blonding",
-  "highlight",
-  "grey",
-  "gray",
-  "colour",
-  "color",
-  "correction",
-  "extension",
-  "keratin",
-  "rebonding",
-  "smoothing",
-  "perm",
-  "treatment",
-  "manicure",
-  "pedicure",
-  "nail",
-  "styling",
-  "blow-dry",
-  "regrowth",
-  "toner",
-  "airtouch",
+const RESET_QUERY_LIMIT = 16;
+const RESET_EVIDENCE_LIMIT = 24;
+
+const STAFF_NAMES = [
+  "Adam",
+  "Aleksandra",
+  "Alina",
+  "Andy",
+  "Anna",
+  "Cris",
+  "Gabriela",
+  "Ilze",
+  "Irene",
+  "Johnny",
+  "Kezlin",
+  "Monica",
+  "Phoeve",
+  "Rujean",
+  "Tamson",
 ] as const;
 
-const POLICY_TERMS = [
-  "complaint",
-  "unhappy",
-  "refund",
-  "compensation",
-  "refinement",
-  "appointment",
-  "booking",
-  "cancel",
-  "reschedule",
-  "late",
-  "strand test",
-  "bleach",
-  "consent",
-  "privacy",
-  "medical",
-  "scalp",
-  "allergy",
-  "pregnant",
-  "pregnancy",
-] as const;
+interface QueryPlanItem {
+  category: ResetKnowledgeEvidence["category"];
+  query: string;
+  boost: number;
+}
+
+interface TopicRule {
+  match: RegExp;
+  category: ResetKnowledgeEvidence["category"];
+  queries: string[];
+}
+
+const TOPIC_RULES: TopicRule[] = [
+  {
+    match: /\b(?:curl|curls|curly|wavy|wave|coily|coil|rezo|rëzo|cado|cadō)\b/i,
+    category: "service",
+    queries: ["curly hair", "curl hydration", "curly specialist"],
+  },
+  {
+    match: /\b(?:blonde|blond|blonding|highlight|highlights|airtou?ch|air touch)\b/i,
+    category: "service",
+    queries: ["blonding", "highlights", "AirTouch"],
+  },
+  {
+    match: /\bbalayage\b/i,
+    category: "service",
+    queries: ["balayage"],
+  },
+  {
+    match: /\b(?:grey|gray|salt and pepper|salt-and-pepper)\b/i,
+    category: "service",
+    queries: ["grey blending", "salt and pepper"],
+  },
+  {
+    match: /\b(?:extension|extensions|tape-in|tape in|weft|keratin bond|nano ring|micro ring|clip-in)\b/i,
+    category: "service",
+    queries: ["hair extensions", "tape-in", "keratin bond", "weft"],
+  },
+  {
+    match: /\b(?:colour correction|color correction|corrective colour|corrective color)\b/i,
+    category: "service",
+    queries: ["colour correction"],
+  },
+  {
+    match: /\b(?:keratin|smoothing|rebonding|straighten|straightening)\b/i,
+    category: "service",
+    queries: ["keratin", "rebonding", "smoothing"],
+  },
+  {
+    match: /\b(?:perm|perming|spiral perm)\b/i,
+    category: "service",
+    queries: ["perm"],
+  },
+  {
+    match: /\b(?:treatment|k18|olaplex|hydration|hair spa|scalp spa)\b/i,
+    category: "service",
+    queries: ["hair treatment", "K18", "Olaplex", "hydration"],
+  },
+  {
+    match: /\b(?:manicure|pedicure|nail|nails|gel manicure|gel pedicure)\b/i,
+    category: "service",
+    queries: ["manicure", "pedicure", "nail artist"],
+  },
+  {
+    match: /\b(?:complaint|unhappy|dissatisfied|refund|compensation|sue|lawyer|legal|injury|damage)\b/i,
+    category: "policy",
+    queries: ["service concern", "refund authority", "complaint policy"],
+  },
+  {
+    match: /\b(?:strand test|patch test|bleach|henna)\b/i,
+    category: "policy",
+    queries: ["strand test", "patch test", "bleach safety"],
+  },
+  {
+    match: /\b(?:waited|waiting|late|delay)\b/i,
+    category: "policy",
+    queries: ["waiting time policy"],
+  },
+  {
+    match: /\b(?:photo|video|consent|privacy|delete my data|pdpa)\b/i,
+    category: "policy",
+    queries: ["photo consent", "privacy authority"],
+  },
+  {
+    match: /\b(?:book|booking|appointment|reschedule|rebook|cancel|availability|available|slot)\b/i,
+    category: "authority",
+    queries: ["booking authority"],
+  },
+];
 
 function normalize(value: string): string {
   return value
@@ -70,11 +129,6 @@ function normalize(value: string): string {
     .replace(/[^a-z0-9\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function matchedTerms(text: string, terms: readonly string[]): string[] {
-  const normalized = normalize(text);
-  return terms.filter((term) => normalized.includes(normalize(term)));
 }
 
 function categoryFor(result: KnowledgeResult): ResetKnowledgeEvidence["category"] {
@@ -94,13 +148,16 @@ function categoryFor(result: KnowledgeResult): ResetKnowledgeEvidence["category"
   return "service";
 }
 
-function sentosaOnly(result: KnowledgeResult, category: ResetKnowledgeEvidence["category"]): boolean {
+function sentosaOnly(
+  result: KnowledgeResult,
+  category: ResetKnowledgeEvidence["category"],
+): boolean {
   if (category !== "price" && category !== "staff") return false;
   const text = `${result.title}\n${result.excerpt}`;
   const mentionsSentosa = /Sentosa Cove|Quayside Isle/i.test(text);
   const explicitlyTanglinOrBoth = /Tanglin Mall|\bBoth\b/i.test(text);
   const normalOutletSentosa = /Normal outlet:\s*Sentosa Cove/i.test(text);
-  return mentionsSentosa && !explicitlyTanglinOrBoth || normalOutletSentosa;
+  return (mentionsSentosa && !explicitlyTanglinOrBoth) || normalOutletSentosa;
 }
 
 function toEvidence(result: KnowledgeResult): ResetKnowledgeEvidence | null {
@@ -115,6 +172,11 @@ function toEvidence(result: KnowledgeResult): ResetKnowledgeEvidence | null {
     score: result.score,
     category,
   };
+}
+
+function fragmentTime(fragment: ResetTurnFragment): number {
+  const parsed = Date.parse(fragment.providerTimestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function fragmentDescription(fragment: ResetTurnFragment): string {
@@ -142,13 +204,19 @@ function fragmentDescription(fragment: ResetTurnFragment): string {
 }
 
 export function consolidatedTurnText(job: ClaimedResetTurnJob): string {
-  const direct = job.consolidatedText.trim();
-  const descriptions = job.fragments
+  const descriptions = [...job.fragments]
+    .sort(
+      (left, right) =>
+        fragmentTime(left) - fragmentTime(right) ||
+        left.messageId.localeCompare(right.messageId),
+    )
     .map(fragmentDescription)
     .filter(Boolean);
-  if (direct && descriptions.length === 0) return direct;
   const unique = [...new Set(descriptions)];
-  return unique.join("\n").slice(0, 24_000) ||
+  if (unique.length > 0) return unique.join("\n").slice(0, 24_000);
+
+  const direct = job.consolidatedText.trim();
+  return direct.slice(0, 24_000) ||
     "[The client sent an attachment that could not be interpreted. Ask them to resend it in a supported format.]";
 }
 
@@ -156,23 +224,83 @@ function compactQuery(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 420);
 }
 
-function queryPlan(clientTurn: string): Array<{
-  category: ResetKnowledgeEvidence["category"];
-  query: string;
-}> {
-  const services = matchedTerms(clientTurn, SERVICE_TERMS);
-  const policies = matchedTerms(clientTurn, POLICY_TERMS);
-  const serviceSeed = services.slice(0, 4).join(" ") || "hair salon service";
-  const policySeed = policies.slice(0, 4).join(" ") || "client service policy";
+function explicitStaffNames(clientTurn: string): string[] {
+  return STAFF_NAMES.map((name) => ({
+    name,
+    index: clientTurn.search(new RegExp(`\\b${name}\\b`, "i")),
+  }))
+    .filter((item) => item.index >= 0)
+    .sort((left, right) => left.index - right.index)
+    .map((item) => item.name);
+}
 
-  return [
-    { category: "service", query: compactQuery(clientTurn) },
-    { category: "service", query: compactQuery(`${serviceSeed} service`) },
-    { category: "price", query: compactQuery(`${serviceSeed} price`) },
-    { category: "staff", query: compactQuery(`${serviceSeed} specialist expertise`) },
-    { category: "policy", query: compactQuery(`${policySeed} policy`) },
-    { category: "authority", query: "Hera service constitution action authority Tanglin Mall" },
-  ];
+function likelyStylistRecommendation(clientTurn: string): boolean {
+  return /\b(?:which|who|recommend|recommendation|suitable|best)\b.{0,50}\b(?:stylist|colourist|colorist|specialist)\b|\b(?:stylist|colourist|colorist|specialist)\b.{0,50}\b(?:recommend|suitable|best)\b/i.test(
+    clientTurn,
+  );
+}
+
+function likelyPriceQuestion(clientTurn: string): boolean {
+  return /\b(?:price|prices|pricing|cost|costs|how much|quote|quotation|estimated price)\b/i.test(
+    clientTurn,
+  );
+}
+
+export function needsResetAppointmentLookup(clientTurn: string): boolean {
+  return /\b(?:book|booking|appointment|reschedule|rebook|cancel|cancellation|availability|available|slot|today|tomorrow|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i.test(
+    clientTurn,
+  );
+}
+
+export function resetEvidenceQueries(clientTurn: string): QueryPlanItem[] {
+  const byQuery = new Map<string, QueryPlanItem>();
+  const add = (item: QueryPlanItem) => {
+    const query = compactQuery(item.query);
+    if (!query) return;
+    const key = normalize(query);
+    const current = byQuery.get(key);
+    if (!current || item.boost > current.boost) {
+      byQuery.set(key, { ...item, query });
+    }
+  };
+
+  // Runtime authority is mandatory and receives the highest retrieval priority.
+  add({
+    category: "authority",
+    query: "Hera service constitution action authority Tanglin Mall WhatsApp",
+    boost: 2_000,
+  });
+
+  // Explicitly named staff must never be crowded out by broad multi-service
+  // terms. Each name receives its own exact retrieval query.
+  for (const name of explicitStaffNames(clientTurn)) {
+    add({ category: "staff", query: name, boost: 1_800 });
+  }
+
+  if (likelyPriceQuestion(clientTurn)) {
+    add({ category: "price", query: `${clientTurn} service price`, boost: 1_300 });
+  }
+  if (likelyStylistRecommendation(clientTurn)) {
+    add({ category: "staff", query: `${clientTurn} staff expertise`, boost: 1_300 });
+  }
+
+  for (const rule of TOPIC_RULES) {
+    if (!rule.match.test(clientTurn)) continue;
+    for (const query of rule.queries) {
+      add({ category: rule.category, query, boost: 900 });
+    }
+  }
+
+  // The exact turn remains useful for unusual or multi-intent queries, but its
+  // broad search cannot outrank explicit authority, staff or price evidence.
+  add({ category: "service", query: clientTurn, boost: 200 });
+  if (byQuery.size === 1) {
+    add({ category: "service", query: "Hera services", boost: 200 });
+  }
+
+  return [...byQuery.values()]
+    .sort((left, right) => right.boost - left.boost)
+    .slice(0, RESET_QUERY_LIMIT);
 }
 
 function bookingEvidence(bookings: BookingSummary[]): ResetAppointmentEvidence[] {
@@ -196,11 +324,11 @@ export async function buildResetEvidenceBundle(input: {
   recentConversation: ResetConversationMessage[];
 }): Promise<ResetEvidenceBundle> {
   const clientTurn = consolidatedTurnText(input.job);
-  const plan = queryPlan(clientTurn);
+  const plan = resetEvidenceQueries(clientTurn);
   const settled = await Promise.all(
-    plan.map(async ({ category, query }) => ({
-      category,
-      results: await searchAllKnowledge(input.repository, query, 8),
+    plan.map(async (item) => ({
+      ...item,
+      results: await searchAllKnowledge(input.repository, item.query, 8),
     })),
   );
 
@@ -209,35 +337,40 @@ export async function buildResetEvidenceBundle(input: {
     for (const result of group.results) {
       const evidence = toEvidence(result);
       if (!evidence) continue;
-      const current = merged.get(evidence.id);
       const next = {
         ...evidence,
-        category:
-          evidence.category === "authority" ? "authority" : group.category,
+        // Preserve the source's real document class. A staff record returned by
+        // a price query is still staff evidence and vice versa.
+        score:
+          evidence.score +
+          group.boost +
+          (evidence.category === group.category ? 100 : 0),
       } satisfies ResetKnowledgeEvidence;
-      if (!current || next.score > current.score || next.category === "authority") {
-        merged.set(next.id, next);
-      }
+      const current = merged.get(next.id);
+      if (!current || next.score > current.score) merged.set(next.id, next);
     }
   }
 
-  const categoryOrder: Record<ResetKnowledgeEvidence["category"], number> = {
+  const categoryTieBreak: Record<ResetKnowledgeEvidence["category"], number> = {
     authority: 0,
-    policy: 1,
-    service: 2,
-    price: 3,
-    staff: 4,
+    staff: 1,
+    price: 2,
+    policy: 3,
+    service: 4,
   };
   const knowledge = [...merged.values()]
-    .sort((left, right) =>
-      categoryOrder[left.category] - categoryOrder[right.category] ||
-      right.score - left.score,
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        categoryTieBreak[left.category] - categoryTieBreak[right.category],
     )
-    .slice(0, 24);
+    .slice(0, RESET_EVIDENCE_LIMIT);
 
-  const appointments = await input.repository
-    .lookupBookingsByWaId(input.contact.waId, 10)
-    .catch(() => [] as BookingSummary[]);
+  const appointments = needsResetAppointmentLookup(clientTurn)
+    ? await input.repository
+        .lookupBookingsByWaId(input.contact.waId, 10)
+        .catch(() => [] as BookingSummary[])
+    : [];
 
   return {
     channel: "Tanglin Mall WhatsApp",
