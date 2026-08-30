@@ -10,6 +10,8 @@ import {
   generateResetDraft,
   RESET_MAX_TRANSPORT_RETRIES,
   resetProviderFailureDiagnostic,
+  ResetDraftGenerationError,
+  ResetDraftSubmissionError,
   ResetDraftValidationError,
 } from "./engine.js";
 import { ResetReceptionistRepository } from "./repository.js";
@@ -39,13 +41,36 @@ export function createResetWorkerRuntime(): ResetWorkerRuntime {
   };
 }
 
+function modelAttemptsFromError(error: unknown): number {
+  if (
+    error instanceof ResetDraftValidationError ||
+    error instanceof ResetDraftGenerationError ||
+    error instanceof ResetDraftSubmissionError
+  ) {
+    return error.modelAttempts;
+  }
+  if (error && typeof error === "object") {
+    const attempts = (error as { modelAttempts?: unknown }).modelAttempts;
+    if (attempts === 1 || attempts === 2) return attempts;
+  }
+  return 0;
+}
+
 function failureCode(error: unknown): string {
   if (error instanceof ResetDraftValidationError) {
     return "bounded_validation_failed";
   }
+  if (error instanceof ResetDraftSubmissionError) {
+    return "openai_empty_output";
+  }
 
   const diagnostic = resetProviderFailureDiagnostic(error);
-  const providerSignal = `${diagnostic.providerErrorType ?? ""} ${diagnostic.providerErrorCode ?? ""}`;
+  const providerSignal = [
+    diagnostic.name,
+    diagnostic.causeName,
+    diagnostic.providerErrorType,
+    diagnostic.providerErrorCode,
+  ].filter(Boolean).join(" ");
   if (/insufficient_quota|insufficient_funds|billing|credit/i.test(providerSignal)) {
     return "openai_billing_required";
   }
@@ -64,6 +89,12 @@ function failureCode(error: unknown): string {
   if (diagnostic.statusCode !== null && diagnostic.statusCode >= 500) {
     return "openai_service_unavailable";
   }
+  if (/NoOutputGenerated|NoObjectGenerated|NoToolCall|InvalidToolInput|DraftSubmission/i.test(providerSignal)) {
+    return "openai_empty_output";
+  }
+  if (diagnostic.finishReason === "length") {
+    return "openai_output_limit";
+  }
 
   const name = error instanceof Error && error.name
     ? error.name
@@ -75,7 +106,7 @@ function failureCode(error: unknown): string {
   if (/rate.?limit|429/i.test(`${name} ${message}`)) {
     return "openai_rate_limited";
   }
-  if (/no output|empty output/i.test(`${name} ${message}`)) {
+  if (/no output|empty output|structured receptionist draft/i.test(`${name} ${message}`)) {
     return "openai_empty_output";
   }
   if (/credential|api.?key|authentication/i.test(`${name} ${message}`)) {
@@ -102,7 +133,10 @@ function failureMessage(error: unknown): string {
     return "OpenAI is temporarily busy. Retry once in a moment or write the reply manually.";
   }
   if (name === "openai_empty_output") {
-    return "OpenAI did not return a usable reply. Retry once or write the reply manually.";
+    return "OpenAI did not submit a usable reply. Retry once or write the reply manually.";
+  }
+  if (name === "openai_output_limit") {
+    return "OpenAI used the available response budget before submitting the reply. Retry once or write the reply manually.";
   }
   if (name === "openai_authentication_failed") {
     return "OpenAI authentication is unavailable in this Preview. Write the reply manually while the connection is repaired.";
@@ -166,9 +200,7 @@ async function processResetTurnJob(
     );
     return persisted.state;
   } catch (error) {
-    const modelAttempts = error instanceof ResetDraftValidationError
-      ? error.modelAttempts
-      : 0;
+    const modelAttempts = modelAttemptsFromError(error);
     const code = failureCode(error);
     const message = failureMessage(error);
     const providerDiagnostic = resetProviderFailureDiagnostic(error);
@@ -194,6 +226,11 @@ async function processResetTurnJob(
       providerErrorType: providerDiagnostic.providerErrorType,
       providerErrorCode: providerDiagnostic.providerErrorCode,
       providerRequestId: providerDiagnostic.requestId,
+      providerFinishReason: providerDiagnostic.finishReason,
+      providerOutputTokens: providerDiagnostic.outputTokens,
+      providerReasoningTokens: providerDiagnostic.reasoningTokens,
+      providerGeneratedTextLength: providerDiagnostic.generatedTextLength,
+      providerCauseName: providerDiagnostic.causeName,
       latencyMs: Date.now() - startedAt,
       providerSendCalls: 0,
       timelyWriteCalls: 0,
