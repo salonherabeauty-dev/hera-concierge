@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const proofUrl = new URL("../scripts/pr71-build-proof.ts", import.meta.url);
+const proofUrl = new URL("../scripts/pr73-build-proof.ts", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("PR71 proof runs only on the exact expiring shadow staging Preview", async () => {
+test("PR73 proof runs only on the exact expiring shadow staging Preview", async () => {
   const source = await readFile(proofUrl, "utf8");
   assert.match(source, /EXPECTED_BRANCH = "feat\/hera-ai-receptionist-foundation"/);
   assert.match(source, /VERCEL_ENV === "preview"/);
@@ -32,15 +32,15 @@ test("proof is exactly one attempt per hashed target and cannot claim the outbox
   assert.doesNotMatch(source, /sendText|D360WhatsAppClient|MetaWhatsAppClient|Timely/i);
 });
 
-test("only the Vercel build invokes the staging proof", async () => {
+test("only the Vercel build invokes the PR73 staging proof", async () => {
   const [packageJson, vercelJson] = await Promise.all([
     readFile(packageUrl, "utf8"),
     readFile(vercelUrl, "utf8"),
   ]);
   const pkg = JSON.parse(packageJson) as { scripts?: Record<string, string> };
   const vercel = JSON.parse(vercelJson) as { buildCommand?: string };
-  assert.equal(pkg.scripts?.["proof:pr71"], "tsx scripts/pr71-build-proof.ts");
-  assert.equal(vercel.buildCommand, "npm run build && npm run proof:pr71");
+  assert.equal(pkg.scripts?.["proof:pr73"], "tsx scripts/pr73-build-proof.ts");
+  assert.equal(vercel.buildCommand, "npm run build && npm run proof:pr73");
   assert.equal(pkg.scripts?.build, "npm run build:command-centre");
-  assert.doesNotMatch(pkg.scripts?.test ?? "", /proof:pr71/);
+  assert.doesNotMatch(pkg.scripts?.test ?? "", /proof:pr73/);
 });
