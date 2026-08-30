@@ -65,6 +65,9 @@
     "api/internal/reset-v3-synthetic-proof.ts": {
       "maxDuration": "max"
     },
+    "api/internal/reset-v3-curly-proof.ts": {
+      "maxDuration": "max"
+    },
     "api/stage3r/worker.ts": {
       "maxDuration": "max",
       "includeFiles": "{evals/*.json,governance/stage3r-*.json}"
