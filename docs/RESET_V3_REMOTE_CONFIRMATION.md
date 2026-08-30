@@ -1,0 +1,1 @@
+Connector write path confirmed for the reset-v3 implementation branch.
