@@ -227,7 +227,7 @@ test("regeneration is reversible, bounded and service-role only", async () => {
   assert.match(sql, /to service_role/i);
 });
 
-test("Vercel gives send and regeneration endpoints bounded execution time", async () => {
+test("Vercel gives send and Sol Max regeneration endpoints bounded execution time", async () => {
   const config = JSON.parse(await readFile(vercelUrl, "utf8")) as {
     functions?: Record<string, { maxDuration?: number | string }>;
   };
@@ -237,6 +237,6 @@ test("Vercel gives send and regeneration endpoints bounded execution time", asyn
   );
   assert.equal(
     config.functions?.["api/command-centre/receptionist-regenerate.ts"]?.maxDuration,
-    300,
+    "max",
   );
 });
