@@ -118,32 +118,29 @@ test("the evidence bundle preserves actual staff and price document classes and 
   let appointmentLookups = 0;
   const repository = {
     async searchApprovedKnowledge(query: string): Promise<KnowledgeResult[]> {
+      const results: KnowledgeResult[] = [];
       if (/Monica/i.test(query)) {
-        return [
-          {
-            id: "staff-monica",
-            title: "Hera current team expertise — Monica Babchina",
-            excerpt:
-              "Staff: Monica Babchina. Primary approved specialties: Blonding; dimensional colour; sun-kissed colour.",
-            sourceUrl: null,
-            version: "owner-master-test",
-            score: 1,
-          },
-        ];
+        results.push({
+          id: "staff-monica",
+          title: "Hera current team expertise — Monica Babchina",
+          excerpt:
+            "Staff: Monica Babchina. Primary approved specialties: Blonding; dimensional colour; sun-kissed colour.",
+          sourceUrl: null,
+          version: "owner-master-test",
+          score: 1,
+        });
       }
-      if (/price/i.test(query)) {
-        return [
-          {
-            id: "price-balayage",
-            title: "Hera official price — Balayage Full Head — Both",
-            excerpt: "Approved balayage price guidance for both outlets.",
-            sourceUrl: null,
-            version: "owner-master-test",
-            score: 0.8,
-          },
-        ];
+      if (/price|balayage/i.test(query)) {
+        results.push({
+          id: "price-balayage",
+          title: "Hera official price — Balayage Full Head — Both",
+          excerpt: "Approved balayage price guidance for both outlets.",
+          sourceUrl: null,
+          version: "owner-master-test",
+          score: 0.8,
+        });
       }
-      return [];
+      return results;
     },
     async lookupBookingsByWaId() {
       appointmentLookups += 1;
