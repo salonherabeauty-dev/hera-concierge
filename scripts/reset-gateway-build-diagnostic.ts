@@ -1,7 +1,7 @@
-import { gateway } from "@ai-sdk/gateway";
+import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 
-const MODEL_ID = "openai/gpt-5.6-sol";
+const MODEL_ID = "gpt-5.6-sol";
 
 function safeError(error: unknown) {
   const value = error && typeof error === "object"
@@ -17,9 +17,15 @@ function safeError(error: unknown) {
   return {
     name: error instanceof Error ? error.name : "UnknownError",
     type: typeof value.type === "string" ? value.type : null,
-    statusCode: typeof value.statusCode === "number" ? value.statusCode : null,
+    statusCode:
+      typeof value.statusCode === "number"
+        ? value.statusCode
+        : typeof value.status === "number"
+          ? value.status
+          : null,
     retryable: typeof value.isRetryable === "boolean" ? value.isRetryable : null,
-    generationId: typeof value.generationId === "string" ? value.generationId : null,
+    requestId:
+      typeof value.requestId === "string" ? value.requestId : null,
     message: clean(error instanceof Error ? error.message : error),
     cause: cause ? {
       name: clean(cause.name),
@@ -30,7 +36,7 @@ function safeError(error: unknown) {
   };
 }
 
-console.log("RESET_GATEWAY_BUILD_DIAGNOSTIC_ENV", JSON.stringify({
+console.log("RESET_DIRECT_OPENAI_BUILD_DIAGNOSTIC_ENV", JSON.stringify({
   vercelEnv: process.env.VERCEL_ENV ?? null,
   commitRef: process.env.VERCEL_GIT_COMMIT_REF ?? null,
   aiGatewayApiKeyPresent: Boolean(process.env.AI_GATEWAY_API_KEY),
@@ -40,32 +46,39 @@ console.log("RESET_GATEWAY_BUILD_DIAGNOSTIC_ENV", JSON.stringify({
   cronSecretLengthValid: (process.env.CRON_SECRET?.length ?? 0) >= 24,
 }));
 
+if (!process.env.OPENAI_API_KEY) {
+  console.error("RESET_DIRECT_OPENAI_BUILD_DIAGNOSTIC_FAIL", JSON.stringify({
+    name: "MissingOpenAIKey",
+    statusCode: null,
+    retryable: false,
+    message: "OPENAI_API_KEY is not present in the Preview environment.",
+  }));
+  process.exit(1);
+}
+
+const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 try {
   const result = await generateText({
-    model: gateway(MODEL_ID),
+    model: openai.responses(MODEL_ID),
     prompt: "Return exactly the word READY.",
     maxOutputTokens: 400,
     maxRetries: 1,
     timeout: 120_000,
     providerOptions: {
-      gateway: {
-        order: ["openai"],
-        only: ["openai"],
-        disallowPromptTraining: true,
-      },
       openai: {
         reasoningEffort: "max",
         store: false,
       },
     },
   });
-  console.log("RESET_GATEWAY_BUILD_DIAGNOSTIC_PASS", JSON.stringify({
+  console.log("RESET_DIRECT_OPENAI_BUILD_DIAGNOSTIC_PASS", JSON.stringify({
     model: result.response.modelId,
     finishReason: result.finishReason,
     text: result.text.trim().slice(0, 50),
     usage: result.usage,
   }));
 } catch (error) {
-  console.error("RESET_GATEWAY_BUILD_DIAGNOSTIC_FAIL", JSON.stringify(safeError(error)));
+  console.error("RESET_DIRECT_OPENAI_BUILD_DIAGNOSTIC_FAIL", JSON.stringify(safeError(error)));
   process.exitCode = 1;
 }
