@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+const indexUrl = new URL(
+  "../public/command-centre/index.html",
+  import.meta.url,
+);
 const resetUrl = new URL(
   "../public/command-centre/reset.html",
   import.meta.url,
@@ -12,30 +16,38 @@ const advancedUrl = new URL(
 );
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("the actual default Command Centre target is the isolated reset-v3 Reception Desk", async () => {
-  const [reset, advanced] = await Promise.all([
+function assertResetEntry(html: string) {
+  assert.match(html, /Hera Reception Desk/);
+  assert.match(html, /reset-reception-app/);
+  assert.match(html, /reset-workspace\.css/);
+  assert.match(html, /reset-workspace\.js/);
+  assert.doesNotMatch(html, /reception-app/);
+  assert.doesNotMatch(html, /receptionist-workspace\.js/);
+  assert.doesNotMatch(html, /receptionist-emergency-fix/);
+  assert.doesNotMatch(html, /receptionist-live-recovery/);
+  assert.doesNotMatch(html, /human-delivery-gate\.js/);
+  assert.doesNotMatch(html, /assets\/app\.js/);
+  assert.doesNotMatch(html, /preview-operator\.js/);
+}
+
+test("the physical default index and explicit reset page both load only reset-v3", async () => {
+  const [index, reset, advanced] = await Promise.all([
+    readFile(indexUrl, "utf8"),
     readFile(resetUrl, "utf8"),
     readFile(advancedUrl, "utf8"),
   ]);
 
-  assert.match(reset, /Hera Reception Desk/);
-  assert.match(reset, /reset-reception-app/);
-  assert.match(reset, /reset-workspace\.css/);
-  assert.match(reset, /reset-workspace\.js/);
-  assert.doesNotMatch(reset, /receptionist-workspace\.js/);
-  assert.doesNotMatch(reset, /receptionist-emergency-fix/);
-  assert.doesNotMatch(reset, /receptionist-live-recovery/);
-  assert.doesNotMatch(reset, /human-delivery-gate\.js/);
-  assert.doesNotMatch(reset, /assets\/app\.js/);
-  assert.doesNotMatch(reset, /preview-operator\.js/);
+  assertResetEntry(index);
+  assertResetEntry(reset);
+  assert.equal(index, reset);
 
   // The advanced legacy console remains separately addressable for audit and
-  // is not the default receptionist workspace.
+  // is never loaded by the default receptionist route.
   assert.match(advanced, /human-delivery-gate\.js/);
   assert.match(advanced, /assets\/app\.js/);
 });
 
-test("Vercel explicitly routes both default Command Centre paths to reset-v3", async () => {
+test("Vercel keeps both clean default paths pointed at reset-v3 as defence in depth", async () => {
   const config = JSON.parse(await readFile(vercelUrl, "utf8")) as {
     rewrites?: Array<{ source?: string; destination?: string }>;
   };
