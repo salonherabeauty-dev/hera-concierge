@@ -3,240 +3,167 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "libpg-query";
 
-const indexUrl = new URL(
-  "../public/command-centre/index.html",
-  import.meta.url,
-);
-const advancedUrl = new URL(
-  "../public/command-centre/advanced.html",
-  import.meta.url,
-);
-const uiUrl = new URL(
-  "../public/command-centre/receptionist-workspace.js",
-  import.meta.url,
-);
-const cssUrl = new URL(
-  "../public/command-centre/receptionist-workspace.css",
-  import.meta.url,
-);
-const queueApiUrl = new URL(
-  "../api/command-centre/receptionist-queue.ts",
-  import.meta.url,
-);
-const messageApiUrl = new URL(
-  "../api/command-centre/receptionist-message.ts",
-  import.meta.url,
-);
-const regenerateApiUrl = new URL(
-  "../api/command-centre/receptionist-regenerate.ts",
-  import.meta.url,
-);
-const conversationsApiUrl = new URL(
-  "../api/command-centre/conversations.ts",
-  import.meta.url,
-);
-const clientContextApiUrl = new URL(
-  "../api/command-centre/client-context.ts",
-  import.meta.url,
-);
-const frontDeskRepositoryUrl = new URL(
-  "../src/command-centre/frontDeskRepository.ts",
-  import.meta.url,
-);
-const repositoryUrl = new URL(
-  "../src/command-centre/receptionistWorkspaceRepository.ts",
-  import.meta.url,
-);
-const boundaryUrl = new URL(
-  "../src/command-centre/receptionistWorkspaceBoundary.ts",
-  import.meta.url,
-);
-const migrationUrls = [
-  "20260829000008_simple_receptionist_schema_queue.sql",
-  "20260829000009_simple_receptionist_send_reserve.sql",
-  "20260829000010_simple_receptionist_send_completion.sql",
-  "20260829000011_simple_receptionist_regeneration.sql",
+const indexUrl = new URL("../public/command-centre/index.html", import.meta.url);
+const receptionUrl = new URL("../public/command-centre/reception.html", import.meta.url);
+const advancedUrl = new URL("../public/command-centre/advanced.html", import.meta.url);
+const uiUrl = new URL("../public/command-centre/reset-workspace.js", import.meta.url);
+const cssUrl = new URL("../public/command-centre/reset-workspace.css", import.meta.url);
+const inboxApiUrl = new URL("../api/command-centre/reset-inbox.ts", import.meta.url);
+const stateApiUrl = new URL("../api/command-centre/reset-state.ts", import.meta.url);
+const messageApiUrl = new URL("../api/command-centre/reset-message.ts", import.meta.url);
+const regenerateApiUrl = new URL("../api/command-centre/reset-regenerate.ts", import.meta.url);
+const manualApiUrl = new URL("../api/command-centre/reset-manual.ts", import.meta.url);
+const preflightUrl = new URL("../src/reset/sendPreflight.ts", import.meta.url);
+const resetRepositoryUrl = new URL("../src/reset/repository.ts", import.meta.url);
+const resetMigrationUrls = [
+  "20260830000002_receptionist_reset_v1.sql",
+  "20260830000003_receptionist_reset_integrity.sql",
+  "20260830000004_receptionist_reset_supersession.sql",
 ].map((name) => new URL(`../supabase/migrations/${name}`, import.meta.url));
-
-async function migrationSql(): Promise<string> {
-  return (await Promise.all(migrationUrls.map((url) => readFile(url, "utf8")))).join("\n");
-}
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("the default Command Centre is the professional receptionist workspace", async () => {
-  const [index, advanced, ui, css] = await Promise.all([
+async function resetSql(): Promise<string> {
+  return (await Promise.all(resetMigrationUrls.map((url) => readFile(url, "utf8")))).join("\n");
+}
+
+test("the default Command Centre is only the simplified reset Reception Desk", async () => {
+  const [index, reception, advanced, ui, css] = await Promise.all([
     readFile(indexUrl, "utf8"),
+    readFile(receptionUrl, "utf8"),
     readFile(advancedUrl, "utf8"),
     readFile(uiUrl, "utf8"),
     readFile(cssUrl, "utf8"),
   ]);
 
-  assert.match(index, /Hera Reception/);
-  assert.match(index, /receptionist-workspace\.css/);
-  assert.match(index, /receptionist-workspace\.js/);
-  assert.doesNotMatch(index, /human-delivery-gate\.js/);
-  assert.doesNotMatch(index, /assets\/app\.js/);
+  for (const html of [index, reception]) {
+    assert.match(html, /hera-receptionist-reset-v1/);
+    assert.match(html, /reset-workspace\.css/);
+    assert.match(html, /reset-workspace\.js/);
+    assert.doesNotMatch(
+      html,
+      /receptionist-workspace|receptionist-readability|receptionist-emergency-fix|receptionist-live-recovery|receptionist-auto-draft-status|human-delivery-gate|assets\/app\.js/,
+    );
+  }
   assert.match(advanced, /human-delivery-gate\.js/);
   assert.match(advanced, /assets\/app\.js/);
   assert.doesNotThrow(() => new Function(ui));
-  assert.match(css, /grid-template-columns:\s*minmax\(292px, 330px\)[\s\S]*minmax\(270px, 310px\)/);
+  assert.match(css, /grid-template-columns:\s*minmax\(300px, 355px\) minmax\(0, 1fr\)/);
   assert.match(css, /@media \(max-width: 760px\)/);
+  assert.match(css, /\.reset-thread[\s\S]*overflow-y:\s*auto/);
+  assert.match(css, /\.reset-conversation-list[\s\S]*overflow-y:\s*auto/);
 });
 
-test("front desk sees a complete inbox and the approved working actions", async () => {
+test("front desk exposes one truthful automatic-draft workflow", async () => {
   const ui = await readFile(uiUrl, "utf8");
-  assert.equal((ui.match(/<textarea/g) ?? []).length, 2);
-  assert.match(ui, /Hera Reception Desk/);
-  assert.match(ui, /Needs reply/);
-  assert.match(ui, /Waiting for client/);
-  assert.match(ui, /Answered today/);
-  assert.match(ui, /On hold/);
-  assert.match(ui, /All conversations/);
-  assert.match(ui, /Search client, last 4 digits or message/);
-  assert.match(ui, /Reply to client/);
+  assert.match(ui, /AI is preparing this reply automatically/);
+  assert.match(ui, /No button press is required/);
+  assert.match(ui, /AI draft ready/);
+  assert.match(ui, /AI could not prepare this reply/);
+  assert.match(ui, /Retry AI Reply/);
+  assert.match(ui, /Write Manually/);
   assert.match(ui, /Send to Client/);
   assert.match(ui, /Regenerate/);
   assert.match(ui, /Take Over \/ Hold/);
-  assert.match(ui, /Sent only from Tanglin WhatsApp/);
-  assert.match(ui, /messageText: state\.draft/);
-  assert.match(ui, /conversations\?limit=300/);
-  assert.match(ui, /receptionist-queue\?limit=100/);
-  assert.match(ui, /client-context\?id=/);
-  assert.match(ui, /Internal notes/);
-  assert.match(ui, /action: "add_note"/);
+  assert.match(ui, /Human handling — drafting continues/);
+  assert.match(ui, /Edited by human — the exact text above will be sent/);
+  assert.match(ui, /Staging ·/);
+  assert.match(ui, /POLL_MS = 5_000/);
+  assert.match(ui, /\/api\/command-centre\/reset-inbox/);
+  assert.match(ui, /\/api\/command-centre\/reset-state/);
+  assert.match(ui, /\/api\/command-centre\/reset-message/);
+  assert.match(ui, /\/api\/command-centre\/reset-regenerate/);
+  assert.match(ui, /\/api\/command-centre\/reset-manual/);
+  assert.doesNotMatch(ui, /Create AI Reply|receptionist-draft/);
   assert.doesNotMatch(ui, /Escalate/i);
-  assert.doesNotMatch(ui, /final response quality/i);
-  assert.doesNotMatch(ui, /response hash/i);
-  assert.doesNotMatch(ui, /modelId/i);
 });
 
-test("complete inbox and client context remain authenticated and bounded", async () => {
-  const [conversationsApi, contextApi, frontDeskRepository] = await Promise.all([
-    readFile(conversationsApiUrl, "utf8"),
-    readFile(clientContextApiUrl, "utf8"),
-    readFile(frontDeskRepositoryUrl, "utf8"),
+test("complete reset inbox and per-conversation state remain authenticated and bounded", async () => {
+  const [inbox, stateApi, repository] = await Promise.all([
+    readFile(inboxApiUrl, "utf8"),
+    readFile(stateApiUrl, "utf8"),
+    readFile(resetRepositoryUrl, "utf8"),
   ]);
-  assert.match(conversationsApi, /authenticateCommandCentre/);
-  assert.match(conversationsApi, /Math\.min\(Number\(value\), 300\)/);
-  assert.match(conversationsApi, /createFrontDeskRepository/);
-  assert.match(contextApi, /authenticateCommandCentre/);
-  assert.match(contextApi, /ai_lookup_bookings_by_mobile|createFrontDeskRepository/);
-  assert.match(contextApi, /Timely must be checked/);
-  assert.match(frontDeskRepository, /Math\.min\(input\.limit \?\? 250, 300\)/);
-  assert.match(frontDeskRepository, /ai_lookup_bookings_by_mobile/);
-  assert.match(frontDeskRepository, /provider_timestamp/);
-  assert.doesNotMatch(frontDeskRepository, /NEXT_PUBLIC/);
-});
-
-test("edited or unchanged replies use only the Tanglin 360dialog route", async () => {
-  const [queueApi, messageApi, boundary, repository] = await Promise.all([
-    readFile(queueApiUrl, "utf8"),
-    readFile(messageApiUrl, "utf8"),
-    readFile(boundaryUrl, "utf8"),
-    readFile(repositoryUrl, "utf8"),
-  ]);
-
-  for (const source of [queueApi, messageApi]) {
+  for (const source of [inbox, stateApi]) {
     assert.match(source, /authenticateCommandCentre/);
+    assert.match(source, /requireResetReceptionist/);
+    assert.match(source, /view_conversations/);
   }
+  assert.match(inbox, /Math\.min\(Number\(value\), 300\)/);
+  assert.match(inbox, /replyOwed: conversation\.lastMessageDirection === "inbound"/);
+  assert.match(inbox, /Date\.parse\(right\.lastMessageAt\) - Date\.parse\(left\.lastMessageAt\)/);
+  assert.match(inbox, /VERCEL_GIT_COMMIT_SHA/);
+  assert.match(repository, /ai_reset_reconcile_timeouts/);
+  assert.match(repository, /ai_reset_client_turns/);
+  assert.match(repository, /ai_reset_draft_runs/);
+  assert.doesNotMatch(repository, /NEXT_PUBLIC/);
+});
+
+test("the only reset provider-send path requires authenticated human approval and a second preflight", async () => {
+  const [messageApi, preflight, repository] = await Promise.all([
+    readFile(messageApiUrl, "utf8"),
+    readFile(preflightUrl, "utf8"),
+    readFile(resetRepositoryUrl, "utf8"),
+  ]);
+  assert.match(messageApi, /authenticateCommandCentre/);
   assert.match(messageApi, /requireSameOrigin/);
   assert.match(messageApi, /requireCommandCentreCsrf/);
+  assert.match(messageApi, /approve_delivery/);
+  assert.match(messageApi, /reserveHumanSend/);
+  assert.match(messageApi, /preflights\.preflight/);
   assert.match(messageApi, /D360WhatsAppClient/);
   assert.match(messageApi, /whatsapp\.sendText/);
-  assert.match(messageApi, /finalMessageText: body\.messageText/);
-  assert.doesNotMatch(messageApi, /MetaWhatsAppClient/);
-  assert.doesNotMatch(messageApi, /drainOutbox/);
-  assert.doesNotMatch(messageApi, /Timely/i);
-  assert.match(boundary, /provider === "360dialog"/);
-  assert.match(boundary, /HERA_TANGLIN_WHATSAPP_CHANNEL/);
-  assert.match(repository, /ai_cc_reserve_receptionist_send/);
-  assert.match(repository, /ai_cc_preflight_receptionist_send/);
-  assert.match(repository, /ai_cc_complete_receptionist_send/);
+  assert.match(messageApi, /sent_pending_audit_reconciliation/);
+  assert.doesNotMatch(messageApi, /MetaWhatsAppClient|drainOutbox|Timely/i);
+  assert.match(preflight, /ai_reset_preflight_human_send/);
+  assert.match(repository, /ai_reset_reserve_human_send/);
+  assert.match(repository, /ai_reset_complete_human_send/);
+  assert.match(repository, /ai_reset_fail_human_send/);
 });
 
-test("regenerate creates one fresh shadow draft and never sends it", async () => {
-  const source = await readFile(regenerateApiUrl, "utf8");
-  assert.match(source, /drainReceptionistForJobs/);
-  assert.match(source, /runtime\.sendMode !== "shadow"/);
-  assert.match(source, /requestRegeneration/);
-  assert.match(source, /recoverRegeneration/);
-  assert.doesNotMatch(source, /sendText/);
-  assert.doesNotMatch(source, /D360WhatsAppClient/);
-  assert.doesNotMatch(source, /Timely/i);
+test("regeneration and manual fallback never send WhatsApp themselves", async () => {
+  const [regenerate, manual] = await Promise.all([
+    readFile(regenerateApiUrl, "utf8"),
+    readFile(manualApiUrl, "utf8"),
+  ]);
+  assert.match(regenerate, /requestRegeneration/);
+  assert.match(regenerate, /waitUntil\(drainResetDrafts/);
+  assert.match(regenerate, /automaticDeliveryAllowed: false/);
+  assert.match(manual, /createManualCandidate/);
+  assert.match(manual, /origin: "human_manual"/);
+  for (const source of [regenerate, manual]) {
+    assert.doesNotMatch(source, /sendText|D360WhatsAppClient|MetaWhatsAppClient|Timely/i);
+  }
 });
 
-test("database contract accepts edited sends and preserves exact audit evidence", async () => {
-  const sql = await migrationSql();
+test("reset database makes silent terminal jobs and duplicate sends structurally impossible", async () => {
+  const sql = await resetSql();
   assert.doesNotThrow(() => parse(sql));
-  assert.match(sql, /ai_cc_list_receptionist_queue/i);
-  assert.match(sql, /ai_cc_receptionist_candidate_block_reason/i);
-  assert.match(sql, /final_response_hash/i);
-  assert.match(sql, /edited_by_human/i);
-  assert.match(sql, /candidate_hash_changed/i);
-  assert.match(sql, /final_message_changed/i);
-  assert.match(sql, /recipient_mismatch/i);
-  assert.match(sql, /recipient_display_changed/i);
-  assert.match(sql, /candidate_not_latest/i);
-  assert.match(sql, /human_reply_already_recorded/i);
-  assert.match(sql, /customer_service_window_expired/i);
-  assert.match(sql, /human-receptionist:/i);
-  assert.match(sql, /send_authorization,[\s\S]*'management'/i);
-  assert.match(sql, /receptionist_message_sent/i);
-  assert.match(sql, /tanglin_whatsapp_360dialog/i);
-  assert.match(sql, /set ai_generated = false/i);
+  assert.match(sql, /ai_reset_client_turns/);
+  assert.match(sql, /ai_reset_draft_runs/);
+  assert.match(sql, /ai_reset_human_sends/);
+  assert.match(sql, /model_calls between 0 and 2/i);
+  assert.match(sql, /status in \('ready', 'held', 'sent'\)[\s\S]*candidate_text is not null[\s\S]*candidate_hash is not null/i);
+  assert.match(sql, /status = 'failed'[\s\S]*failure_code is not null[\s\S]*failure_message is not null/i);
+  assert.match(sql, /ai_reset_one_active_draft_per_turn/);
+  assert.match(sql, /unique \(draft_run_id\)/i);
+  assert.match(sql, /ai_reset_preflight_human_send/);
+  assert.match(sql, /human_reply_already_recorded/);
+  assert.match(sql, /customer_service_window_expired/);
+  assert.match(sql, /recipient_mismatch/);
+  assert.match(sql, /newer_client_turn/);
+  assert.match(sql, /human send is already reserved and requires reconciliation/i);
+  assert.match(sql, /automaticDeliveryAllowed', false/i);
+  assert.match(sql, /delivery_control text not null default 'human_only'/i);
 });
 
-test("complaints remain receptionist-sendable while freshness and quality still fail closed", async () => {
-  const sql = await migrationSql();
-  const start = sql.indexOf(
-    "create or replace function public.ai_cc_receptionist_candidate_block_reason",
-  );
-  const end = sql.indexOf(
-    "create or replace function public.ai_cc_list_receptionist_queue",
-  );
-  const guard = sql.slice(start, end);
-  assert.ok(start >= 0 && end > start);
-  assert.match(guard, /'receptionist'/);
-  assert.match(guard, /quality_evidence_failed/);
-  assert.match(guard, /candidate_text_mismatch/);
-  assert.doesNotMatch(guard, /risk_requires_specialist/);
-  assert.doesNotMatch(guard, /operating_mode/);
-  assert.doesNotMatch(guard, /role_not_authorized_for_open_task/);
-});
-
-test("regeneration is reversible, bounded and service-role only", async () => {
-  const sql = await migrationSql();
-  assert.match(sql, /ai_receptionist_regeneration_history/);
-  assert.match(sql, /previous_candidate_body/);
-  assert.match(sql, /previous_decisions/);
-  assert.match(sql, /ai_cc_request_receptionist_regeneration/);
-  assert.match(sql, /ai_cc_recover_receptionist_regeneration/);
-  assert.match(sql, /'human-regenerate:'/);
-  assert.match(sql, /'pending',[\s\S]*0,[\s\S]*1,[\s\S]*now\(\)/i);
-  assert.match(sql, /regeneration_failed_original_restored/);
-  assert.match(sql, /enable row level security/i);
-  assert.match(sql, /force row level security/i);
-  assert.match(
-    sql,
-    /revoke all on table public\.ai_receptionist_regeneration_history[\s\S]*from public, anon, authenticated/i,
-  );
-  assert.match(
-    sql,
-    /revoke all on function public\.ai_cc_reserve_receptionist_send/i,
-  );
-  assert.match(sql, /to service_role/i);
-});
-
-test("Vercel gives send and Sol Max regeneration endpoints bounded execution time", async () => {
+test("Vercel bounds reset processing while deployment builds remain pure", async () => {
   const config = JSON.parse(await readFile(vercelUrl, "utf8")) as {
+    buildCommand?: string;
     functions?: Record<string, { maxDuration?: number | string }>;
   };
-  assert.equal(
-    config.functions?.["api/command-centre/receptionist-message.ts"]?.maxDuration,
-    60,
-  );
-  assert.equal(
-    config.functions?.["api/command-centre/receptionist-regenerate.ts"]?.maxDuration,
-    "max",
-  );
+  assert.equal(config.buildCommand, "npm run build");
+  assert.equal(config.functions?.["api/whatsapp/*.ts"]?.maxDuration, "max");
+  assert.equal(config.functions?.["api/internal/drain.ts"]?.maxDuration, "max");
+  assert.equal(config.functions?.["api/command-centre/reset-regenerate.ts"]?.maxDuration, "max");
+  assert.equal(config.functions?.["api/command-centre/reset-message.ts"]?.maxDuration, 60);
 });
