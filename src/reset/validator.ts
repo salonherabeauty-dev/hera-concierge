@@ -60,7 +60,9 @@ const UNAUTHORISED_FINANCIAL_PROMISE = [
 
 const LIABILITY_ADMISSION = [
   /\b(?:hera|we)\s+(?:is|are|were|was)\s+(?:legally\s+)?(?:liable|at fault)\b/i,
-  /\b(?:hera|we)\s+(?:accept|admit)\s+(?:full\s+)?(?:liability|fault|responsibility for causing)\b/i,
+  /\b(?:hera|we)\s+(?:accepts?|admit(?:s|ted)?)\s+(?:full\s+)?(?:legal\s+)?(?:liability|fault)\b/i,
+  /\b(?:hera|we)\s+(?:accepts?|admit(?:s|ted)?)\s+(?:full\s+)?responsibility\s+for\s+(?:causing|the\s+(?:injury|damage|burn|loss)|your\s+(?:injury|damage|burn|loss))\b/i,
+  /\b(?:hera|we)\s+(?:caused|were responsible for|are responsible for)\s+(?:your|the|this)\s+(?:injury|damage|burn|hair loss|scalp condition)\b/i,
 ];
 
 const MEDICAL_DIAGNOSIS = [
