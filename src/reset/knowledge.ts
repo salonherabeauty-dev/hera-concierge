@@ -8,6 +8,7 @@ import type { BookingSummary, KnowledgeResult } from "../types.js";
 import type { ResetEvidencePacket } from "./types.js";
 
 const RESET_EVIDENCE_LIMIT = 24;
+const RESET_QUERY_LIMIT = 16;
 
 const STAFF_NAMES = [
   "Adam",
@@ -121,6 +122,16 @@ function orderResetEvidence(results: KnowledgeResult[]): KnowledgeResult[] {
     .slice(0, RESET_EVIDENCE_LIMIT);
 }
 
+function explicitStaffNames(clientTurnText: string): string[] {
+  return STAFF_NAMES.map((name) => ({
+    name,
+    index: clientTurnText.search(new RegExp(`\\b${name}\\b`, "i")),
+  }))
+    .filter((item) => item.index >= 0)
+    .sort((left, right) => left.index - right.index)
+    .map((item) => item.name);
+}
+
 export function resetKnowledgeQueries(clientTurnText: string): string[] {
   const queries = new Set<string>([
     "Tanglin Mall WhatsApp",
@@ -128,19 +139,24 @@ export function resetKnowledgeQueries(clientTurnText: string): string[] {
     "action authority",
   ]);
 
+  // Explicit names and direct commercial questions outrank broad topic expansion.
+  // This prevents a multi-service enquiry from exhausting the bounded query budget
+  // before the exact stylist or price evidence requested by the client is fetched.
+  for (const name of explicitStaffNames(clientTurnText)) queries.add(name);
+  if (/\b(?:price|prices|pricing|cost|costs|how much|quote|quotation)\b/i.test(clientTurnText)) {
+    queries.add("service price");
+  }
+  if (/\b(?:which|who|recommend|recommendation|suitable|best)\b.{0,40}\b(?:stylist|colourist|colorist|specialist)\b|\b(?:stylist|colourist|colorist|specialist)\b.{0,40}\b(?:recommend|suitable|best)\b/i.test(clientTurnText)) {
+    queries.add("staff expertise");
+  }
+
   for (const rule of TOPIC_RULES) {
     if (!rule.match.test(clientTurnText)) continue;
     for (const query of rule.queries) queries.add(query);
   }
 
-  for (const name of STAFF_NAMES) {
-    if (new RegExp(`\\b${name}\\b`, "i").test(clientTurnText)) {
-      queries.add(name);
-    }
-  }
-
   if (queries.size === 3) queries.add("Hera services");
-  return [...queries].slice(0, 16);
+  return [...queries].slice(0, RESET_QUERY_LIMIT);
 }
 
 function needsAppointmentLookup(text: string): boolean {
