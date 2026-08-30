@@ -23,10 +23,11 @@ test("the deployment build is deterministic and contains no one-time diagnostics
   );
 });
 
-test("the scripts directory contains only permanent tooling plus the exact audited PR71 proof", async () => {
+test("the scripts directory contains permanent tooling plus only the audited expiring proofs", async () => {
   const names = (await readdir(scriptsUrl)).sort();
   assert.deepEqual(names, [
     "pr71-build-proof.ts",
+    "pr73-build-proof.ts",
     "run-model-evals.ts",
     "scan-secrets.mjs",
   ]);
