@@ -47,7 +47,7 @@ function cancellationInput(reply: string) {
 }
 
 test("quality policy rejects the crude bureaucratic cancellation reply shown to Neo", () => {
-  assert.equal(FINAL_RESPONSE_QUALITY_POLICY_VERSION, "hera-final-response-quality-1.4.0");
+  assert.equal(FINAL_RESPONSE_QUALITY_POLICY_VERSION, "hera-final-response-quality-1.5.0");
   const result = assessFinalResponseQuality(
     cancellationInput(
       "Thank you. I’ve passed your appointment-change request to our reception team for verification and confirmation.",
