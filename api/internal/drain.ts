@@ -5,10 +5,15 @@ import {
   logOperationalEvent,
   safeErrorFields,
 } from "../../src/observability/log.js";
+import {
+  HERA_RECEPTIONIST_RESET_VERSION,
+  useReceptionistResetV3,
+} from "../../src/reset/boundary.js";
+import { drainResetTurnJobs } from "../../src/reset/worker.js";
 import { verifyBearerToken } from "../../src/security/bearer.js";
 import { createProductionRuntime, drainReceptionist } from "../../src/worker.js";
 
-const RECOVERY_DRAIN_LIMIT = 3;
+const RECOVERY_DRAIN_LIMIT = 5;
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   const correlationId = randomUUID();
@@ -30,6 +35,25 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   try {
+    if (useReceptionistResetV3()) {
+      const summary = await drainResetTurnJobs({
+        limit: RECOVERY_DRAIN_LIMIT,
+        workerId: `reset-v3-cron-${correlationId}`,
+      });
+      logOperationalEvent("info", "reset_v3_recovery_drain_completed", {
+        correlationId,
+        resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
+        durationMs: Date.now() - startedAt,
+        ...summary,
+      });
+      return response.status(200).json({
+        ok: true,
+        resetV3: true,
+        resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
+        ...summary,
+      });
+    }
+
     const summary = await drainReceptionist(
       createProductionRuntime(),
       RECOVERY_DRAIN_LIMIT,
@@ -39,11 +63,12 @@ export default async function handler(request: VercelRequest, response: VercelRe
       durationMs: Date.now() - startedAt,
       ...summary,
     });
-    return response.status(200).json({ ok: true, ...summary });
+    return response.status(200).json({ ok: true, resetV3: false, ...summary });
   } catch (error) {
     logOperationalEvent("error", "recovery_drain_failed", {
       correlationId,
       durationMs: Date.now() - startedAt,
+      resetV3: useReceptionistResetV3(),
       ...safeErrorFields(error),
     });
     return response.status(500).json({ error: "Drain failed" });

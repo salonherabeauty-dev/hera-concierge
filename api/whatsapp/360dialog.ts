@@ -16,6 +16,12 @@ import {
   logOperationalEvent,
   safeErrorFields,
 } from "../../src/observability/log.js";
+import {
+  HERA_RECEPTIONIST_RESET_VERSION,
+  useReceptionistResetV3,
+} from "../../src/reset/boundary.js";
+import { ResetReceptionistRepository } from "../../src/reset/repository.js";
+import { drainResetTurnJobs } from "../../src/reset/worker.js";
 import { verifyBasicAuthorization } from "../../src/security/basicAuth.js";
 import {
   PayloadTooLargeError,
@@ -143,6 +149,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
       database.url,
       database.serviceRoleKey,
     );
+    const resetV3 = useReceptionistResetV3();
+    const resetRepository = resetV3
+      ? new ResetReceptionistRepository(
+          database.url,
+          database.serviceRoleKey,
+        )
+      : null;
     const humanReviewDrafting = usePreviewHumanReviewIngest();
 
     let humanEchoesInserted = 0;
@@ -160,6 +173,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
     let inboundInserted = 0;
     const wakeableJobIds: string[] = [];
+    const resetTurnIds = new Set<string>();
     ingestionStage = "ingest_inbound_messages";
     for (const message of parsed.inbound) {
       const result = humanReviewDrafting
@@ -170,7 +184,16 @@ export default async function handler(request: VercelRequest, response: VercelRe
           })
         : await repository.ingestInbound(message);
       if (result.inserted) inboundInserted += 1;
-      if (result.jobId) wakeableJobIds.push(result.jobId);
+
+      if (resetV3 && resetRepository && result.inserted) {
+        const appended = await resetRepository.appendFragment({
+          ingest: result,
+          message,
+        });
+        resetTurnIds.add(appended.turnId);
+      } else if (!resetV3 && result.jobId) {
+        wakeableJobIds.push(result.jobId);
+      }
     }
 
     if (parsed.ignored.history > 0 || parsed.ignored.appStateSync > 0) {
@@ -187,7 +210,37 @@ export default async function handler(request: VercelRequest, response: VercelRe
     }
 
     ingestionStage = "schedule_background_drain";
-    if (wakeableJobIds.length > 0) {
+    if (resetV3 && resetTurnIds.size > 0) {
+      const exactTurnIds = [...resetTurnIds];
+      waitUntil(
+        settleInboundBurst()
+          .then(() =>
+            drainResetTurnJobs({
+              turnIds: exactTurnIds,
+              limit: Math.min(exactTurnIds.length, 8),
+              workerId: `reset-v3-webhook-${correlationId}`,
+            }),
+          )
+          .then((summary) => {
+            logOperationalEvent("info", "reset_v3_webhook_drain_completed", {
+              correlationId,
+              resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
+              burstSettleMs: INBOUND_BURST_SETTLE_MS,
+              turnCount: exactTurnIds.length,
+              ...summary,
+            });
+          })
+          .catch((error: unknown) => {
+            logOperationalEvent("error", "reset_v3_webhook_drain_failed", {
+              correlationId,
+              resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
+              burstSettleMs: INBOUND_BURST_SETTLE_MS,
+              turnCount: exactTurnIds.length,
+              ...safeErrorFields(error),
+            });
+          }),
+      );
+    } else if (!resetV3 && wakeableJobIds.length > 0) {
       const drainLimit = Math.min(
         Math.max(wakeableJobIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
         8,
@@ -224,10 +277,18 @@ export default async function handler(request: VercelRequest, response: VercelRe
       bodyBytes: rawBody.byteLength,
       inboundCount: parsed.inbound.length,
       inboundInserted,
-      targetedJobCount: wakeableJobIds.length,
+      targetedJobCount: resetV3 ? resetTurnIds.size : wakeableJobIds.length,
+      resetV3,
+      resetVersion: resetV3 ? HERA_RECEPTIONIST_RESET_VERSION : null,
       humanReviewDrafting,
       burstSettleMs:
-        wakeableJobIds.length > 0 ? INBOUND_BURST_SETTLE_MS : 0,
+        resetV3
+          ? resetTurnIds.size > 0
+            ? INBOUND_BURST_SETTLE_MS
+            : 0
+          : wakeableJobIds.length > 0
+            ? INBOUND_BURST_SETTLE_MS
+            : 0,
       statusCount: parsed.statuses.length,
       humanEchoCount: parsed.humanEchoes.length,
       humanEchoesInserted,
@@ -243,6 +304,8 @@ export default async function handler(request: VercelRequest, response: VercelRe
       statuses: parsed.statuses.length,
       humanEchoes: parsed.humanEchoes.length,
       humanEchoesInserted,
+      resetV3,
+      resetTurnCount: resetTurnIds.size,
       ignored: parsed.ignored,
     });
   } catch (error) {
