@@ -166,7 +166,7 @@ test("the Command Centre exposes only truthful ready, preparing and failed state
   assert.doesNotMatch(source, /Create AI Reply/);
 });
 
-test("Vercel build is offline and does not process mutable staging conversations", async () => {
+test("Vercel build is offline and the physical default index is reset v3", async () => {
   const config = JSON.parse(await readFile(vercelUrl, "utf8")) as {
     buildCommand?: string;
     rewrites?: Array<{ source: string; destination: string }>;
@@ -175,7 +175,7 @@ test("Vercel build is offline and does not process mutable staging conversations
   assert.ok(
     config.rewrites?.some(
       (item) => item.source === "/command-centre" &&
-        item.destination === "/command-centre/reset.html",
+        item.destination === "/command-centre/index.html",
     ),
   );
 });
