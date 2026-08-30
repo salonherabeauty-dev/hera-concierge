@@ -5,7 +5,7 @@ import type {
 } from "./types.js";
 
 export const RESET_DRAFT_VALIDATOR_VERSION =
-  "hera-receptionist-reset-validator-1.0.0";
+  "hera-receptionist-reset-validator-1.1.0";
 
 const INTERNAL_LANGUAGE = [
   /\b(?:system prompt|hidden instruction|backend|database row|handoff object|policy engine|verifier|model id|outbox|candidate hash|internal queue)\b/i,
@@ -31,9 +31,11 @@ const UNAUTHORISED_FINANCIAL_OUTCOME = [
 ];
 
 const LIABILITY_ADMISSION = [
-  /\bwe\s+(?:accept|admit)\s+(?:full\s+)?(?:liability|fault|negligence)\b/i,
-  /\bour\s+(?:negligence|fault|mistake)\s+(?:caused|resulted in)\b/i,
-  /\bwe\s+caused\s+(?:your|the)\s+(?:injury|damage|hair loss|burn)\b/i,
+  /\b(?:we|hera)\s+(?:accept|accepts|admit|admits|admitted)\s+(?:full\s+)?(?:legal\s+)?(?:liability|fault|negligence)\b/i,
+  /\b(?:we|hera)\s+(?:accept|accepts|admit|admits|admitted)\s+(?:full\s+)?responsibility\s+for\s+(?:causing|the\s+(?:injury|damage|burn|loss)|your\s+(?:injury|damage|burn|loss))\b/i,
+  /\b(?:our|hera'?s)\s+(?:negligence|fault|mistake)\s+(?:caused|resulted in)\b/i,
+  /\b(?:we|hera)\s+(?:caused|were responsible for|was responsible for|are responsible for|is responsible for)\s+(?:your|the|this)\s+(?:injury|damage|burn|hair loss|scalp condition)\b/i,
+  /\b(?:we|hera)\s+(?:is|are|was|were)\s+(?:legally\s+)?(?:liable|at fault)\b/i,
 ];
 
 const MEDICAL_DIAGNOSIS = [
@@ -69,6 +71,15 @@ const CURRENT_FIRST_PERSON_EMERGENCY = [
   /\bi\s+(?:feel|am feeling)\s+(?:faint|dizzy)\s+(?:right now|now)\b/i,
 ];
 
+const EXPLICIT_CURRENT_FIRST_PERSON_EMERGENCY = [
+  /\bi\s+(?:am|'m|’m)\s+currently\s+(?:having|experiencing|suffering from)\s+(?:difficulty breathing|trouble breathing|severe swelling|severe pain|blistering|eye pain)\b/i,
+  /\bi\s+(?:cannot|can't|can’t)\s+breathe\b.{0,50}\b(?:right now|now|currently|at the moment)\b/i,
+  /\b(?:right now|now|currently|at the moment)\b.{0,50}\bi\s+(?:cannot|can't|can’t)\s+breathe\b/i,
+  /\bmy\s+(?:face|lips|tongue|throat|eyes?)\s+(?:is|are)\s+(?:swollen|burning|closing|blistering)\b.{0,50}\b(?:right now|now|currently|at the moment)\b/i,
+  /\bchemical\s+(?:is|went|got)\s+in\s+my\s+eyes?\b.{0,50}\b(?:right now|now|currently|at the moment)\b/i,
+  /\bi\s+(?:feel|am feeling)\s+(?:faint|dizzy)\s+(?:right now|now|currently|at the moment)\b/i,
+];
+
 const URGENT_GUIDANCE = [
   /\bseek\s+(?:urgent|immediate|emergency)\s+medical\s+(?:care|attention|help)\b/i,
   /\bcall\s+(?:995|emergency services)\b/i,
@@ -79,15 +90,17 @@ function normalizeIssue(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
-function hasAny(text: string, patterns: RegExp[]): boolean {
+function hasAny(text: string, patterns: readonly RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(text));
 }
 
 function currentEmergencyFromText(text: string): boolean {
   if (!hasAny(text, CURRENT_FIRST_PERSON_EMERGENCY)) return false;
-  const looksLikeHistoricalLegalDocument = hasAny(text, LEGAL_OR_HISTORICAL_MARKERS);
-  const explicitlyCurrent = /\b(?:right now|currently|at the moment|today|now)\b/i.test(text);
-  return !looksLikeHistoricalLegalDocument || explicitlyCurrent;
+  if (!hasAny(text, LEGAL_OR_HISTORICAL_MARKERS)) return true;
+  // A historical legal or medical document must not become an emergency just
+  // because it contains a general word such as “currently”. Require an explicit
+  // first-person, present-tense emergency clause in the same message.
+  return hasAny(text, EXPLICIT_CURRENT_FIRST_PERSON_EMERGENCY);
 }
 
 function evidenceIds(bundle: ResetEvidenceBundle): Set<string> {
@@ -131,7 +144,7 @@ export function validateResetDraft(input: {
     issues.push("The reply claims an unverified booking, change, cancellation or confirmation outcome.");
   }
   if (hasAny(reply, UNAUTHORISED_FINANCIAL_OUTCOME)) {
-    issues.push("The reply promises a refund, voucher, credit or compensation without authorised approval.");
+    issues.push("The reply promises or confirms a refund, compensation, voucher or credit without authorised approval.");
   }
   if (hasAny(reply, LIABILITY_ADMISSION)) {
     issues.push("The reply admits legal liability, fault or causation.");
