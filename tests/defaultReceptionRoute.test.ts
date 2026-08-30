@@ -16,29 +16,31 @@ const advancedUrl = new URL(
 );
 const vercelUrl = new URL("../vercel.json", import.meta.url);
 
-test("the actual default Command Centre index is the professional receptionist workspace", async () => {
+test("the actual default Command Centre index is the simplified reset Reception Desk", async () => {
   const [index, reception, advanced] = await Promise.all([
     readFile(indexUrl, "utf8"),
     readFile(receptionUrl, "utf8"),
     readFile(advancedUrl, "utf8"),
   ]);
 
-  assert.match(index, /Hera Reception Desk/);
-  assert.match(index, /professional-front-desk-v1/);
-  assert.match(index, /receptionist-workspace\.css/);
-  assert.match(index, /receptionist-readability\.css/);
-  assert.match(index, /receptionist-workspace\.js/);
-  assert.doesNotMatch(index, /human-delivery-gate\.js/);
-  assert.doesNotMatch(index, /assets\/app\.js/);
-  assert.doesNotMatch(index, /preview-operator\.js/);
-  assert.match(reception, /professional-front-desk-v1/);
-  assert.match(reception, /receptionist-readability\.css/);
-  assert.match(reception, /receptionist-workspace\.js/);
+  for (const html of [index, reception]) {
+    assert.match(html, /Hera Reception Desk/);
+    assert.match(html, /hera-receptionist-reset-v1/);
+    assert.match(html, /reset-workspace\.css/);
+    assert.match(html, /reset-workspace\.js/);
+    assert.doesNotMatch(
+      html,
+      /human-delivery-gate|assets\/app\.js|preview-operator|receptionist-workspace|receptionist-readability|receptionist-emergency-fix|receptionist-live-recovery/,
+    );
+  }
+
+  // The separate advanced audit surface remains available without contaminating
+  // the receptionist's daily interface.
   assert.match(advanced, /human-delivery-gate\.js/);
   assert.match(advanced, /assets\/app\.js/);
 });
 
-test("Vercel explicitly routes both default Command Centre paths to the professional front desk index", async () => {
+test("Vercel explicitly routes both default Command Centre paths to the reset front desk index", async () => {
   const config = JSON.parse(await readFile(vercelUrl, "utf8")) as {
     rewrites?: Array<{ source?: string; destination?: string }>;
   };
