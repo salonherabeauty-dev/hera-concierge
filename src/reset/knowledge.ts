@@ -1,10 +1,13 @@
 import {
-  orderKnowledgeByAuthority,
+  isBlockedLegacyKnowledge,
+  knowledgeAuthorityRank,
 } from "../governance/knowledgeAuthority.js";
 import { searchAllKnowledge } from "../knowledge/search.js";
 import type { ReceptionistRepository } from "../db/repository.js";
 import type { BookingSummary, KnowledgeResult } from "../types.js";
 import type { ResetEvidencePacket } from "./types.js";
+
+const RESET_EVIDENCE_LIMIT = 24;
 
 const STAFF_NAMES = [
   "Adam",
@@ -94,14 +97,28 @@ function isSentosaOnly(result: KnowledgeResult): boolean {
   return explicitlySentosa && !supportsTanglin;
 }
 
-function dedupeKnowledge(results: KnowledgeResult[]): KnowledgeResult[] {
-  const seen = new Map<string, KnowledgeResult>();
+function orderResetEvidence(results: KnowledgeResult[]): KnowledgeResult[] {
+  const unique = new Map<string, KnowledgeResult>();
   for (const result of results) {
+    if (isBlockedLegacyKnowledge(result)) continue;
     const key = result.id || `${result.title}:${result.version}`;
-    const current = seen.get(key);
-    if (!current || result.score > current.score) seen.set(key, result);
+    const current = unique.get(key);
+    if (
+      !current ||
+      knowledgeAuthorityRank(result) > knowledgeAuthorityRank(current) ||
+      (knowledgeAuthorityRank(result) === knowledgeAuthorityRank(current) &&
+        result.score > current.score)
+    ) {
+      unique.set(key, result);
+    }
   }
-  return [...seen.values()];
+  return [...unique.values()]
+    .sort((left, right) => {
+      const authority =
+        knowledgeAuthorityRank(right) - knowledgeAuthorityRank(left);
+      return authority !== 0 ? authority : right.score - left.score;
+    })
+    .slice(0, RESET_EVIDENCE_LIMIT);
 }
 
 export function resetKnowledgeQueries(clientTurnText: string): string[] {
@@ -142,7 +159,7 @@ export async function buildResetEvidencePacket(input: {
   const batches = await Promise.all(
     queries.map(async (query) => {
       try {
-        return await searchAllKnowledge(input.repository, query, 6);
+        return await searchAllKnowledge(input.repository, query, 8);
       } catch {
         warnings.push(`Knowledge search failed for: ${query}`);
         return [] as KnowledgeResult[];
@@ -151,10 +168,9 @@ export async function buildResetEvidencePacket(input: {
   );
 
   const allowSentosaInformation = hasExplicitSentosaQuestion(input.clientTurnText);
-  const merged = dedupeKnowledge(batches.flat()).filter(
+  const knowledge = orderResetEvidence(batches.flat()).filter(
     (item) => allowSentosaInformation || !isSentosaOnly(item),
   );
-  const knowledge = orderKnowledgeByAuthority(merged, 30);
 
   let bookings: BookingSummary[] = [];
   if (needsAppointmentLookup(input.clientTurnText)) {
