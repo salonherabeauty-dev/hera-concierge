@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@ai-sdk/gateway": "4.0.59",
+    "@ai-sdk/openai": "4.0.52",
     "@supabase/supabase-js": "2.112.3",
     "@vercel/functions": "3.9.5",
     "ai": "7.0.73",
