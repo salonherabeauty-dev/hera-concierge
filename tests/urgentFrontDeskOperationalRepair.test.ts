@@ -88,8 +88,10 @@ test("Create AI Reply is atomic, latest-message-bound and cannot send by itself"
   assert.match(endpoint, /requireCommandCentreCsrf/);
   assert.match(endpoint, /requireReceptionistWorkspacePreview/);
   assert.match(endpoint, /runtime\.sendMode !== "shadow"/);
+  assert.match(endpoint, /waitUntil/);
   assert.match(endpoint, /drainReceptionistForJobs/);
   assert.match(endpoint, /draft_ready/);
+  assert.match(endpoint, /draft_pending/);
   assert.doesNotMatch(endpoint, /sendText|D360WhatsAppClient|Timely/i);
   assert.match(repository, /ai_cc_request_receptionist_draft/);
 });
@@ -138,12 +140,18 @@ test("expired timed takeovers no longer mislabel ordinary conversations as held"
   assert.match(source, /operatingMode: "ai"/);
 });
 
-test("Vercel grants bounded execution time to on-demand drafting", async () => {
+test("Vercel grants the plan maximum execution time to Sol Max drafting", async () => {
   const config = JSON.parse(await readFile(vercelUrl, "utf8")) as {
     functions?: Record<string, { maxDuration?: number | string }>;
   };
   assert.equal(
     config.functions?.["api/command-centre/receptionist-draft.ts"]?.maxDuration,
-    300,
+    "max",
   );
+  assert.equal(
+    config.functions?.["api/command-centre/receptionist-regenerate.ts"]?.maxDuration,
+    "max",
+  );
+  assert.equal(config.functions?.["api/whatsapp/*.ts"]?.maxDuration, "max");
+  assert.equal(config.functions?.["api/internal/drain.ts"]?.maxDuration, "max");
 });
