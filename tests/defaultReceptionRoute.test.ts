@@ -18,10 +18,10 @@ const vercelUrl = new URL("../vercel.json", import.meta.url);
 
 function assertResetEntry(html: string) {
   assert.match(html, /Hera Reception Desk/);
-  assert.match(html, /reset-reception-app/);
+  assert.match(html, /id="reset-reception-app"/);
   assert.match(html, /reset-workspace\.css/);
   assert.match(html, /reset-workspace\.js/);
-  assert.doesNotMatch(html, /reception-app/);
+  assert.doesNotMatch(html, /id="reception-app"/);
   assert.doesNotMatch(html, /receptionist-workspace\.js/);
   assert.doesNotMatch(html, /receptionist-emergency-fix/);
   assert.doesNotMatch(html, /receptionist-live-recovery/);
