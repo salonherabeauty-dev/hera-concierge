@@ -5,7 +5,7 @@ import type {
 } from "./types.js";
 
 export const RESET_DRAFT_VALIDATOR_VERSION =
-  "hera-receptionist-reset-validator-1.1.0";
+  "hera-receptionist-reset-validator-1.1.1";
 
 const INTERNAL_LANGUAGE = [
   /\b(?:system prompt|hidden instruction|backend|database row|handoff object|policy engine|verifier|model id|outbox|candidate hash|internal queue)\b/i,
@@ -25,7 +25,7 @@ const FALSE_OPERATIONAL_COMPLETION = [
 ];
 
 const UNAUTHORISED_FINANCIAL_OUTCOME = [
-  /\bwe(?:'ll| will| have|’ll)\s+(?:issue|process|provide|give|approve)\s+(?:you\s+)?(?:a\s+)?(?:full\s+|partial\s+)?(?:refund|voucher|compensation|credit)\b/i,
+  /\bwe(?:'ll| will| have|’ll)\s+(?:issue|process|provide|give|approve)\s+(?:(?:you|your)\s+)?(?:a\s+)?(?:full\s+|partial\s+)?(?:refund|voucher|compensation|credit)\b/i,
   /\byour\s+(?:refund|compensation|voucher|credit)\s+(?:is|has been)\s+(?:approved|confirmed|processed|issued)\b/i,
   /\byou\s+will\s+(?:receive|be refunded|be compensated)\b/i,
 ];
