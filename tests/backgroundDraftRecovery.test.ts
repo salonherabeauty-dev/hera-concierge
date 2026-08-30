@@ -56,18 +56,16 @@ test("inbox conversations are reordered by latest activity descending", async ()
   assert.match(source, /list\.scrollTop\s*=\s*0/);
 });
 
-test("both receptionist entry points load live recovery after the base workspace", async () => {
+test("legacy recovery remains available as historical code but is never loaded by reset-v3 entry points", async () => {
   const [index, alternate] = await Promise.all([
     readFile(indexUrl, "utf8"),
     readFile(alternateUrl, "utf8"),
   ]);
   for (const html of [index, alternate]) {
-    const workspace = html.indexOf("receptionist-workspace.js");
-    const emergency = html.indexOf("receptionist-emergency-fix.js");
-    const recovery = html.indexOf("receptionist-live-recovery.js");
-    assert.ok(workspace >= 0);
-    assert.ok(workspace < emergency);
-    assert.ok(emergency < recovery);
-    assert.match(html, /<script type="module"/);
+    assert.match(html, /reset-reception-app/);
+    assert.match(html, /reset-workspace\.js/);
+    assert.doesNotMatch(html, /receptionist-workspace\.js/);
+    assert.doesNotMatch(html, /receptionist-emergency-fix\.js/);
+    assert.doesNotMatch(html, /receptionist-live-recovery\.js/);
   }
 });
