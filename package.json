@@ -13,7 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build:command-centre": "tsc -p tsconfig.command-centre.json",
-    "build": "npm run build:command-centre",
+    "build": "npm run build:command-centre && tsx scripts/prove-website-concierge-database.ts",
     "proof:pr71": "tsx scripts/pr71-build-proof.ts",
     "proof:pr73": "tsx scripts/pr73-build-proof.ts",
     "test:unit": "node --import tsx --test tests/*.test.ts",
