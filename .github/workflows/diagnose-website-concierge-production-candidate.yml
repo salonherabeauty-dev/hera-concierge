@@ -1,0 +1,127 @@
+name: Diagnose rolled-back Website Concierge production candidate
+
+on:
+  push:
+    branches:
+      - release/website-concierge-public-v1.0.1
+    paths:
+      - ".github/workflows/diagnose-website-concierge-production-candidate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      BASE_URL: https://hera-concierge-ihoi5o62z-hera-concierge-team.vercel.app
+      HERA_ORIGIN: https://www.herabeauty.sg
+    steps:
+      - name: Capture exact preflight response
+        run: |
+          set -euo pipefail
+          code="$(curl -sS --max-time 30 \
+            -D /tmp/preflight.headers \
+            -o /tmp/preflight.body \
+            -w '%{http_code}' \
+            -X OPTIONS \
+            -H "Origin: $HERA_ORIGIN" \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type,x-hera-website-session' \
+            "$BASE_URL/api/website-concierge/session")"
+          echo "status=$code"
+          sed -n '1,80p' /tmp/preflight.headers
+          echo 'body:'
+          cat /tmp/preflight.body || true
+          test "$code" = "204"
+          python - <<'PY'
+          from pathlib import Path
+          lines = Path('/tmp/preflight.headers').read_text().splitlines()
+          headers = {}
+          for line in lines:
+              if ':' in line:
+                  key, value = line.split(':', 1)
+                  headers[key.strip().lower()] = value.strip()
+          assert headers.get('access-control-allow-origin') == 'https://www.herabeauty.sg', headers
+          assert 'POST' in headers.get('access-control-allow-methods', '')
+          allowed = headers.get('access-control-allow-headers', '').lower().replace(' ', '')
+          assert 'content-type' in allowed
+          assert 'x-hera-website-session' in allowed
+          print('PREFLIGHT_PASS')
+          PY
+
+      - name: Create and verify a public website session
+        run: |
+          set -euo pipefail
+          code="$(curl -sS --max-time 30 \
+            -D /tmp/session.headers \
+            -o /tmp/session.json \
+            -w '%{http_code}' \
+            -X POST \
+            -H "Origin: $HERA_ORIGIN" \
+            -H 'Content-Type: application/json' \
+            -d '{}' \
+            "$BASE_URL/api/website-concierge/session")"
+          echo "status=$code"
+          sed -n '1,80p' /tmp/session.headers
+          jq 'del(.sessionToken)' /tmp/session.json
+          test "$code" = "201"
+          SESSION_ID="$(jq -er '.sessionId' /tmp/session.json)"
+          SESSION_TOKEN="$(jq -er '.sessionToken' /tmp/session.json)"
+          echo "SESSION_ID=$SESSION_ID" >> "$GITHUB_ENV"
+          echo "SESSION_TOKEN=$SESSION_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Generate one synthetic GPT-5.6 Sol answer
+        run: |
+          set -euo pipefail
+          BODY="$(jq -n \
+            --arg sessionId "$SESSION_ID" \
+            --arg message "For a first-time curly haircut at Hera, which specialist may be suitable and what is the published price range? I am flexible between Tanglin Mall and Sentosa Cove." \
+            '{sessionId:$sessionId,message:$message}')"
+          code="$(curl -sS -N --max-time 300 \
+            -D /tmp/message.headers \
+            -o /tmp/stream.txt \
+            -w '%{http_code}' \
+            -X POST \
+            -H "Origin: $HERA_ORIGIN" \
+            -H 'Content-Type: application/json' \
+            -H "X-Hera-Website-Session: $SESSION_TOKEN" \
+            -d "$BODY" \
+            "$BASE_URL/api/website-concierge/message")"
+          echo "status=$code"
+          sed -n '1,80p' /tmp/message.headers
+          test "$code" = "200"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          raw = Path('/tmp/stream.txt').read_text()
+          reply=[]; meta={}; done={}; errors=[]
+          for block in raw.split('\n\n'):
+              event=None; data=[]
+              for line in block.splitlines():
+                  if line.startswith('event:'): event=line[6:].strip()
+                  elif line.startswith('data:'): data.append(line[5:].strip())
+              if not event or not data: continue
+              payload=json.loads('\n'.join(data))
+              if event=='delta': reply.append(payload.get('text',''))
+              elif event=='meta': meta=payload
+              elif event=='done': done=payload
+              elif event=='error': errors.append(payload)
+          text=''.join(reply).strip()
+          print(json.dumps({
+              'replyCharacters': len(text),
+              'modelId': meta.get('modelId'),
+              'modelAttempts': meta.get('modelAttempts'),
+              'replyId': meta.get('replyId'),
+              'done': done,
+              'errors': errors,
+          }, indent=2))
+          assert not errors
+          assert len(text) >= 80
+          assert meta.get('modelId') == 'openai/gpt-5.6-sol'
+          assert meta.get('modelAttempts') in (1,2)
+          assert done.get('automaticWhatsAppSendAllowed') is False
+          assert done.get('timelyWriteAllowed') is False
+          print('CANDIDATE_LIVE_PROOF_PASS')
+          PY
