@@ -6,6 +6,7 @@ import {
   requireWebsiteConciergePreview,
   useWebsiteConciergePreview,
   WEBSITE_CONCIERGE_PREVIEW_BRANCH,
+  WEBSITE_CONCIERGE_STAGING_BRANCH,
 } from "../src/website-concierge/boundary.js";
 import {
   detectWebsiteOutlet,
@@ -92,19 +93,32 @@ function decision(reply: string): WebsiteConciergeDecision {
   };
 }
 
-test("the website adapter is restricted to its own private Preview branch", () => {
+test("the website adapter is restricted to approved private Preview branches", () => {
   assert.equal(WEBSITE_CONCIERGE_PREVIEW_BRANCH, "website/concierge-staging-adapter");
-  assert.equal(
-    useWebsiteConciergePreview({
-      VERCEL_ENV: "preview",
-      VERCEL_GIT_COMMIT_REF: WEBSITE_CONCIERGE_PREVIEW_BRANCH,
-    } as NodeJS.ProcessEnv),
-    true,
-  );
+  assert.equal(WEBSITE_CONCIERGE_STAGING_BRANCH, "feat/hera-ai-receptionist-foundation");
+  for (const branch of [
+    WEBSITE_CONCIERGE_PREVIEW_BRANCH,
+    WEBSITE_CONCIERGE_STAGING_BRANCH,
+  ]) {
+    assert.equal(
+      useWebsiteConciergePreview({
+        VERCEL_ENV: "preview",
+        VERCEL_GIT_COMMIT_REF: branch,
+      } as NodeJS.ProcessEnv),
+      true,
+    );
+  }
   assert.equal(
     useWebsiteConciergePreview({
       VERCEL_ENV: "production",
       VERCEL_GIT_COMMIT_REF: "main",
+    } as NodeJS.ProcessEnv),
+    false,
+  );
+  assert.equal(
+    useWebsiteConciergePreview({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "unapproved-feature-branch",
     } as NodeJS.ProcessEnv),
     false,
   );
