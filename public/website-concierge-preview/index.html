@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="theme-color" content="#0d0c0f">
+  <title>Hera Concierge — Private Preview</title>
+  <link rel="stylesheet" href="/website-concierge-preview/widget.css">
+</head>
+<body>
+  <main class="preview-stage">
+    <div class="preview-copy">
+      <p class="eyebrow">Private staging preview</p>
+      <h1>Hera Hair Beauty</h1>
+      <p>The existing Hera Concierge design, now connected to the approved Hera intelligence library and GPT‑5.6 Sol Max.</p>
+    </div>
+
+    <section class="concierge" aria-label="Hera Concierge private preview">
+      <header class="concierge__header">
+        <div>
+          <h2>Hera Concierge</h2>
+          <p><span class="status-dot" aria-hidden="true"></span> Here to help</p>
+        </div>
+        <span class="preview-badge">Private preview</span>
+      </header>
+
+      <div id="chat-log" class="concierge__log" role="log" aria-live="polite" aria-relevant="additions"></div>
+
+      <div id="suggestions" class="concierge__suggestions" aria-label="Suggested questions">
+        <button type="button" data-question="Which service would suit my hair?">Which service suits my hair?</button>
+        <button type="button" data-question="Could you tell me about your stylists?">Tell me about your stylists</button>
+        <button type="button" data-question="I'd like to book an appointment.">I’d like to book</button>
+      </div>
+
+      <form id="chat-form" class="concierge__composer">
+        <label class="sr-only" for="chat-field">Ask Hera Concierge</label>
+        <textarea id="chat-field" rows="1" maxlength="2000" placeholder="Ask about your hair, services or stylists…" required></textarea>
+        <button id="send-button" type="submit" aria-label="Send message">Send</button>
+      </form>
+
+      <div id="dynamic-actions" class="concierge__dynamic-actions" hidden></div>
+
+      <footer class="concierge__footer">
+        <a class="primary-action" href="https://bookings.gettimely.com/herabeauty1/bb/book" target="_blank" rel="noopener">Book at Hera</a>
+        <button id="contact-button" class="secondary-action" type="button">Contact Hera</button>
+        <div id="contact-options" class="contact-options" hidden>
+          <a href="https://api.whatsapp.com/send?phone=6592371254" target="_blank" rel="noopener">Tanglin WhatsApp</a>
+          <a href="tel:+6567321206">Call Tanglin</a>
+          <a href="tel:+6562688949">Call Sentosa</a>
+        </div>
+      </footer>
+    </section>
+  </main>
+  <script type="module" src="/website-concierge-preview/widget.js"></script>
+</body>
+</html>
