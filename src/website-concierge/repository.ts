@@ -8,6 +8,8 @@ import type {
 } from "./types.js";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const SESSION_CREATE_ATTEMPTS = 2;
+const SESSION_CREATE_RETRY_DELAY_MS = 450;
 
 function tokenHash(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
@@ -18,6 +20,38 @@ function record(value: unknown): Record<string, unknown> {
     throw new Error("Website concierge database returned an invalid row.");
   }
   return value as Record<string, unknown>;
+}
+
+function databaseFailure(
+  operation: string,
+  error: { message: string; code?: string; details?: string; hint?: string },
+): Error & { code?: string } {
+  const failure = new Error(`${operation}: ${error.message}`) as Error & {
+    code?: string;
+  };
+  failure.name = "WebsiteConciergeDatabaseError";
+  if (error.code) failure.code = error.code;
+  return failure;
+}
+
+function transientSchemaFailure(error: {
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}): boolean {
+  const text = `${error.message} ${error.details ?? ""} ${error.hint ?? ""}`;
+  return (
+    error.code === "PGRST200" ||
+    error.code === "PGRST202" ||
+    error.code === "PGRST205" ||
+    error.code === "42P01" ||
+    /schema cache|relation .* does not exist|could not find the table/i.test(text)
+  );
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export interface WebsiteConciergeSessionCredential {
@@ -46,17 +80,29 @@ export class WebsiteConciergeRepository {
     const sessionId = randomUUID();
     const sessionToken = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    const { error } = await this.database
-      .from("ai_website_concierge_sessions_v1")
-      .insert({
-        id: sessionId,
-        token_hash: tokenHash(sessionToken),
-        status: "active",
-        outlet_preference: "unspecified",
-        expires_at: expiresAt,
-      });
-    if (error) throw new Error(`create website concierge session: ${error.message}`);
-    return { sessionId, sessionToken, expiresAt };
+
+    for (let attempt = 1; attempt <= SESSION_CREATE_ATTEMPTS; attempt += 1) {
+      const { error } = await this.database
+        .from("ai_website_concierge_sessions_v1")
+        .insert({
+          id: sessionId,
+          token_hash: tokenHash(sessionToken),
+          status: "active",
+          outlet_preference: "unspecified",
+          expires_at: expiresAt,
+        });
+      if (!error) return { sessionId, sessionToken, expiresAt };
+      if (
+        attempt < SESSION_CREATE_ATTEMPTS &&
+        transientSchemaFailure(error)
+      ) {
+        await delay(SESSION_CREATE_RETRY_DELAY_MS);
+        continue;
+      }
+      throw databaseFailure("create website concierge session", error);
+    }
+
+    throw new Error("Website concierge session creation ended unexpectedly.");
   }
 
   async authenticateAndConsume(input: {
@@ -72,7 +118,7 @@ export class WebsiteConciergeRepository {
         p_input_chars: input.inputCharacters,
       },
     );
-    if (error) throw new Error(`consume website concierge quota: ${error.message}`);
+    if (error) throw databaseFailure("consume website concierge quota", error);
     const value = record(data);
     if (value.ok !== true) {
       const code = typeof value.code === "string" ? value.code : "session_invalid";
@@ -101,7 +147,7 @@ export class WebsiteConciergeRepository {
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false })
       .limit(Math.max(1, Math.min(limit, 20)));
-    if (error) throw new Error(`load website concierge history: ${error.message}`);
+    if (error) throw databaseFailure("load website concierge history", error);
     return (data ?? [])
       .map((item) => ({
         role: item.role === "concierge" ? "concierge" as const : "visitor" as const,
@@ -127,7 +173,7 @@ export class WebsiteConciergeRepository {
         outlet_context: input.outlet,
         evidence: {},
       });
-    if (error) throw new Error(`store website visitor message: ${error.message}`);
+    if (error) throw databaseFailure("store website visitor message", error);
     return id;
   }
 
@@ -153,7 +199,7 @@ export class WebsiteConciergeRepository {
         model_attempts: input.result.modelAttempts,
         latency_ms: input.result.latencyMs,
       });
-    if (error) throw new Error(`store website concierge reply: ${error.message}`);
+    if (error) throw databaseFailure("store website concierge reply", error);
     await this.updateOutletPreference(
       input.sessionId,
       input.result.decision.resolvedOutlet,
@@ -173,6 +219,6 @@ export class WebsiteConciergeRepository {
         last_seen_at: new Date().toISOString(),
       })
       .eq("id", sessionId);
-    if (error) throw new Error(`update website concierge outlet: ${error.message}`);
+    if (error) throw databaseFailure("update website concierge outlet", error);
   }
 }
