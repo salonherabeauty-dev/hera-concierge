@@ -16,10 +16,10 @@ export const WEBSITE_CONCIERGE_MODEL_ID = "openai/gpt-5.6-sol";
 export const WEBSITE_CONCIERGE_PROVIDER_MODEL_ID = "gpt-5.6-sol";
 export const WEBSITE_CONCIERGE_REASONING_EFFORT = "max";
 export const WEBSITE_CONCIERGE_ENGINE_VERSION =
-  "hera-website-concierge-engine-1.0.0";
+  "hera-website-concierge-engine-1.0.1";
 export const WEBSITE_CONCIERGE_MAX_MODEL_CALLS = 2;
 export const WEBSITE_CONCIERGE_MAX_TRANSPORT_RETRIES = 1;
-export const WEBSITE_CONCIERGE_MAX_OUTPUT_TOKENS = 16_000;
+export const WEBSITE_CONCIERGE_MAX_OUTPUT_TOKENS = 24_000;
 export const WEBSITE_CONCIERGE_TIMEOUT_MS = 240_000;
 export const WEBSITE_CONCIERGE_SUBMIT_TOOL = "submitWebsiteConciergeReply";
 
