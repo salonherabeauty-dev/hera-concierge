@@ -1,0 +1,96 @@
+name: Website concierge private Preview proof
+
+on:
+  push:
+    branches:
+      - website/concierge-staging-adapter
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Authenticate to the protected immutable Preview
+        env:
+          COMMENTS_URL: https://api.github.com/repos/salonherabeauty-dev/hera-concierge/issues/85/comments
+          BASE_URL: https://hera-concierge-f4ghgowyj-hera-concierge-team.vercel.app
+        run: |
+          set -euo pipefail
+          curl -fsSL "$COMMENTS_URL" | jq -r '.[].body' > /tmp/comments.txt
+          SHARE_URL="$(grep -o 'https://hera-concierge-f4ghgowyj-hera-concierge-team.vercel.app/website-concierge-preview[^[:space:]]*' /tmp/comments.txt | tail -1)"
+          test -n "$SHARE_URL"
+          curl -fsSL -L -c /tmp/vercel.cookies -b /tmp/vercel.cookies "$SHARE_URL" -o /tmp/preview.html
+          grep -q "Hera Concierge" /tmp/preview.html
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+
+      - name: Create a separate anonymous website session
+        run: |
+          set -euo pipefail
+          curl -fsSL -L -c /tmp/vercel.cookies -b /tmp/vercel.cookies \
+            -H "Origin: $BASE_URL" \
+            -H "Content-Type: application/json" \
+            -X POST "$BASE_URL/api/website-concierge/session" \
+            -d '{}' > /tmp/session.json
+          SESSION_ID="$(jq -er '.sessionId' /tmp/session.json)"
+          SESSION_TOKEN="$(jq -er '.sessionToken' /tmp/session.json)"
+          test "$(jq -r '.automaticWhatsAppSendAllowed' /tmp/session.json)" = "false"
+          test "$(jq -r '.timelyWriteAllowed' /tmp/session.json)" = "false"
+          echo "SESSION_ID=$SESSION_ID" >> "$GITHUB_ENV"
+          echo "SESSION_TOKEN=$SESSION_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Generate one real GPT-5.6 Sol Max website answer
+        run: |
+          set -euo pipefail
+          BODY="$(jq -n \
+            --arg sessionId "$SESSION_ID" \
+            --arg message "I have fine hair and am considering tape-in or keratin-bond extensions. Which may be more suitable, what are the approximate prices, and does the answer differ between Tanglin and Sentosa?" \
+            '{sessionId:$sessionId,message:$message}')"
+          curl -fsSL -N --max-time 300 \
+            -c /tmp/vercel.cookies -b /tmp/vercel.cookies \
+            -H "Origin: $BASE_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Hera-Website-Session: $SESSION_TOKEN" \
+            -X POST "$BASE_URL/api/website-concierge/message" \
+            -d "$BODY" > /tmp/stream.txt
+          grep -q '^event: delta' /tmp/stream.txt
+          grep -q '^event: done' /tmp/stream.txt
+          ! grep -q '^event: error' /tmp/stream.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          raw = Path('/tmp/stream.txt').read_text()
+          reply = []
+          meta = {}
+          done = {}
+          for block in raw.split('\n\n'):
+              event = None
+              data = []
+              for line in block.splitlines():
+                  if line.startswith('event:'):
+                      event = line[6:].strip()
+                  elif line.startswith('data:'):
+                      data.append(line[5:].strip())
+              if not event or not data:
+                  continue
+              payload = json.loads('\n'.join(data))
+              if event == 'delta':
+                  reply.append(payload.get('text', ''))
+              elif event == 'meta':
+                  meta = payload
+              elif event == 'done':
+                  done = payload
+          text = ''.join(reply).strip()
+          assert len(text) >= 80, 'editable website reply is unexpectedly short'
+          assert meta.get('modelId') == 'openai/gpt-5.6-sol'
+          assert meta.get('modelAttempts') in (1, 2)
+          assert done.get('automaticWhatsAppSendAllowed') is False
+          assert done.get('timelyWriteAllowed') is False
+          print('WEBSITE_CONCIERGE_PRIVATE_PROOF_PASS')
+          print('session_id=' + str(meta.get('replyId', 'stored')))
+          print('model_id=' + str(meta.get('modelId')))
+          print('model_attempts=' + str(meta.get('modelAttempts')))
+          print('editable_reply_characters=' + str(len(text)))
+          PY
