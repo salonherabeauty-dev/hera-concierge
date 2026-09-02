@@ -12,19 +12,15 @@ jobs:
   prove:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      BASE_URL: https://hera-concierge-f4ghgowyj-hera-concierge-team.vercel.app
+      SHARE_URL: https://hera-concierge-f4ghgowyj-hera-concierge-team.vercel.app/website-concierge-preview?_vercel_share=S1c6RftA97YS5KDJaSq19uKwB64DqPPM
     steps:
       - name: Authenticate to the protected immutable Preview
-        env:
-          COMMENTS_URL: https://api.github.com/repos/salonherabeauty-dev/hera-concierge/issues/85/comments
-          BASE_URL: https://hera-concierge-f4ghgowyj-hera-concierge-team.vercel.app
         run: |
           set -euo pipefail
-          curl -fsSL "$COMMENTS_URL" | jq -r '.[].body' > /tmp/comments.txt
-          SHARE_URL="$(grep -o 'https://hera-concierge-f4ghgowyj-hera-concierge-team.vercel.app/website-concierge-preview[^[:space:]]*' /tmp/comments.txt | tail -1)"
-          test -n "$SHARE_URL"
           curl -fsSL -L -c /tmp/vercel.cookies -b /tmp/vercel.cookies "$SHARE_URL" -o /tmp/preview.html
           grep -q "Hera Concierge" /tmp/preview.html
-          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
 
       - name: Create a separate anonymous website session
         run: |
@@ -89,7 +85,7 @@ jobs:
           assert done.get('automaticWhatsAppSendAllowed') is False
           assert done.get('timelyWriteAllowed') is False
           print('WEBSITE_CONCIERGE_PRIVATE_PROOF_PASS')
-          print('session_id=' + str(meta.get('replyId', 'stored')))
+          print('reply_id=' + str(meta.get('replyId', 'stored')))
           print('model_id=' + str(meta.get('modelId')))
           print('model_attempts=' + str(meta.get('modelAttempts')))
           print('editable_reply_characters=' + str(len(text)))
