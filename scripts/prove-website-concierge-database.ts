@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getDatabaseConfig } from "../src/config.js";
 import { WebsiteConciergeRepository } from "../src/website-concierge/repository.js";
 
-const EXPECTED_BRANCH = "website/concierge-staging-adapter";
+const EXPECTED_BRANCH = "feat/hera-ai-receptionist-foundation";
 
 if (
   process.env.VERCEL_ENV !== "preview" ||
