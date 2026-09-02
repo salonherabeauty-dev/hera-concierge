@@ -112,7 +112,8 @@ function safeContactActions(actions, contacts) {
     links.push(["Call Sentosa", `tel:${contacts.sentosaPhone.replace(/\s+/g, "")}`]);
   }
   if (actions.includes("contact_management")) {
-    links.push(["Contact Hera team", contacts.tanglinWhatsAppUrl]);
+    links.push(["Call Tanglin", `tel:${contacts.tanglinPhone.replace(/\s+/g, "")}`]);
+    links.push(["Call Sentosa", `tel:${contacts.sentosaPhone.replace(/\s+/g, "")}`]);
   }
   if (actions.includes("seek_urgent_medical_care")) {
     links.push(["Call 995", "tel:995"]);
