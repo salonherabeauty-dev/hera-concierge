@@ -9,15 +9,6 @@
     },
     "api/internal/sync-knowledge.ts": {
       "maxDuration": 300
-    },
-    "api/website-concierge/session.ts": {
-      "maxDuration": 30
-    },
-    "api/website-concierge/message.ts": {
-      "maxDuration": 300
-    },
-    "api/website-concierge/health.ts": {
-      "maxDuration": 30
     }
   },
   "crons": [
