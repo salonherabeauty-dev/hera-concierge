@@ -1,14 +1,22 @@
 export const WEBSITE_CONCIERGE_PREVIEW_BRANCH =
   "website/concierge-staging-adapter";
+export const WEBSITE_CONCIERGE_STAGING_BRANCH =
+  "feat/hera-ai-receptionist-foundation";
 export const WEBSITE_CONCIERGE_VERSION =
-  "hera-website-concierge-adapter-1.0.0";
+  "hera-website-concierge-adapter-1.0.1";
+
+const ALLOWED_PRIVATE_BRANCHES = new Set([
+  WEBSITE_CONCIERGE_PREVIEW_BRANCH,
+  WEBSITE_CONCIERGE_STAGING_BRANCH,
+]);
 
 export function useWebsiteConciergePreview(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return (
     env.VERCEL_ENV === "preview" &&
-    env.VERCEL_GIT_COMMIT_REF === WEBSITE_CONCIERGE_PREVIEW_BRANCH
+    typeof env.VERCEL_GIT_COMMIT_REF === "string" &&
+    ALLOWED_PRIVATE_BRANCHES.has(env.VERCEL_GIT_COMMIT_REF)
   );
 }
 
@@ -17,7 +25,7 @@ export function requireWebsiteConciergePreview(
 ): void {
   if (!useWebsiteConciergePreview(env)) {
     const error = new Error(
-      "The Hera website concierge adapter is restricted to its private Preview branch.",
+      "The Hera website concierge adapter is restricted to approved private Preview branches.",
     );
     error.name = "WebsiteConciergePreviewRequiredError";
     throw error;
