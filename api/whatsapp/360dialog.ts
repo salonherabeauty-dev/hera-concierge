@@ -18,6 +18,7 @@ import {
 } from "../../src/observability/log.js";
 import {
   HERA_RECEPTIONIST_RESET_VERSION,
+  selectReceptionistInboundMode,
   useReceptionistResetV3,
 } from "../../src/reset/boundary.js";
 import { ResetReceptionistRepository } from "../../src/reset/repository.js";
@@ -156,6 +157,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
         )
       : null;
     const humanReviewDrafting = usePreviewHumanReviewIngest();
+    const inboundMode = selectReceptionistInboundMode({
+      resetV3,
+      humanReviewDrafting,
+    });
 
     let humanEchoesInserted = 0;
     ingestionStage = "ingest_human_echoes";
@@ -175,7 +180,9 @@ export default async function handler(request: VercelRequest, response: VercelRe
     const resetTurnIds = new Set<string>();
     ingestionStage = "ingest_inbound_messages";
     for (const message of parsed.inbound) {
-      const result = humanReviewDrafting
+      const result = inboundMode === "reset-v3-manual" && resetRepository
+        ? await resetRepository.ingestInboundWithoutLegacyJob(message)
+        : inboundMode === "preview-human-review"
         ? await ingestPreviewHumanReviewMessage({
             databaseUrl: database.url,
             serviceRoleKey: database.serviceRoleKey,
@@ -185,11 +192,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
       if (result.inserted) inboundInserted += 1;
 
       if (resetV3 && resetRepository && result.inserted) {
-        const appended = await resetRepository.appendFragment({
-          ingest: result,
-          message,
-        });
-        resetTurnIds.add(appended.turnId);
+        if (!("turnId" in result) || typeof result.turnId !== "string") {
+          throw new Error("Atomic Reset-v3 ingest did not return a client turn");
+        }
+        resetTurnIds.add(result.turnId);
       } else if (!resetV3 && result.jobId) {
         wakeableJobIds.push(result.jobId);
       }

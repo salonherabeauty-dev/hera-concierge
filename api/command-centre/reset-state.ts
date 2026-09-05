@@ -38,13 +38,30 @@ function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+const RESET_WORKER_LEASE_MS = 7 * 60 * 1_000;
+
 function mapState(value: Record<string, unknown>) {
   const turnStatus = typeof value.turn_status === "string"
     ? value.turn_status
     : null;
   const generationRuns = numberValue(value.generation_runs);
+  const generationRequestPending =
+    turnStatus === "collecting" &&
+    value.job_status === "pending" &&
+    typeof value.job_generation_request_id === "string" &&
+    value.job_generation_request_id.length > 0 &&
+    value.job_generation_authorization_consumed_at == null;
+  const jobLockedAt = typeof value.job_locked_at === "string"
+    ? value.job_locked_at
+    : null;
+  const jobLockedAtMs = Date.parse(jobLockedAt ?? "");
+  const jobLeaseStale =
+    turnStatus === "processing" &&
+    value.job_status === "processing" &&
+    Number.isFinite(jobLockedAtMs) &&
+    jobLockedAtMs <= Date.now() - RESET_WORKER_LEASE_MS;
   const retryAvailable =
-    (turnStatus === "failed" || turnStatus === "ready") &&
+    (turnStatus === "failed" || jobLeaseStale) &&
     generationRuns < 2;
   return {
     conversationId: value.conversation_id,
@@ -52,10 +69,22 @@ function mapState(value: Record<string, unknown>) {
     turnVersion: value.turn_version,
     turnStatus,
     deliveryControl: value.delivery_control,
+    lastFragmentMessageId:
+      typeof value.last_fragment_message_id === "string"
+        ? value.last_fragment_message_id
+        : null,
+    turnContentHash:
+      typeof value.turn_content_hash === "string" &&
+        /^[0-9a-f]{64}$/.test(value.turn_content_hash)
+        ? value.turn_content_hash
+        : null,
     generationRuns,
+    generationRequestPending,
+    jobLeaseStale,
     retryAvailable,
     retryUnavailableReason:
-      (turnStatus === "failed" || turnStatus === "ready") && !retryAvailable
+      (turnStatus === "failed" || jobLeaseStale) &&
+        !retryAvailable
         ? "retry_limit_reached"
         : null,
     firstFragmentAt: value.first_fragment_at,
@@ -74,6 +103,11 @@ function mapState(value: Record<string, unknown>) {
     jobAttempts: value.job_attempts,
     jobGenerationRun: value.job_generation_run,
     jobModelAttempts: value.job_model_attempts,
+    jobAuthorizedGenerationRun: value.job_authorized_generation_run,
+    jobGenerationAuthorizedAt: value.job_generation_authorized_at,
+    jobGenerationAuthorizationConsumedAt:
+      value.job_generation_authorization_consumed_at,
+    jobLockedAt,
   };
 }
 

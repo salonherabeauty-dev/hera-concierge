@@ -33,6 +33,13 @@ export interface ClaimedResetTurnJob {
   firstFragmentAt: string;
   lastFragmentAt: string;
   attempts: number;
+  generationRun: number;
+  generationRequestId: string;
+  generationAuthorizedBy: string;
+  generationAuthorizedAt: string;
+  generationAuthorizationConsumedAt: string;
+  recentConversation: ResetConversationMessage[];
+  workerId: string;
 }
 
 export interface ResetTurnContact {
@@ -152,7 +159,7 @@ export interface ResetDraftResult {
   decision: ResetDraftDecision;
   finalReply: string;
   modelId: string;
-  modelAttempts: 1 | 2;
+  modelAttempts: 1;
   evidence: ResetEvidenceBundle;
   validation: ResetDraftValidation;
   usage: JsonValue;

@@ -244,12 +244,12 @@ function promptEvidence(bundle: ResetEvidenceBundle): JsonValue {
 }
 
 export class ResetDraftSubmissionError extends Error {
-  readonly modelAttempts: 1 | 2;
+  readonly modelAttempts: 1;
   readonly finishReason: string | null;
   readonly usage: JsonValue;
 
   constructor(input: {
-    modelAttempts: 1 | 2;
+    modelAttempts: 1;
     finishReason?: string | null;
     usage?: unknown;
     cause?: unknown;
@@ -271,7 +271,7 @@ async function oneModelCall(input: {
   priorDecision?: ResetDraftDecision;
   validationIssues?: string[];
   modelFactory?: (modelId: string) => LanguageModel;
-  callNumber: 1 | 2;
+  callNumber: 1;
 }): Promise<{
   decision: ResetDraftDecision;
   modelId: string;
@@ -337,9 +337,9 @@ async function oneModelCall(input: {
 
 export class ResetDraftValidationError extends Error {
   readonly issues: string[];
-  readonly modelAttempts: 1 | 2;
+  readonly modelAttempts: 1;
 
-  constructor(issues: string[], modelAttempts: 1 | 2) {
+  constructor(issues: string[], modelAttempts: 1) {
     super("The AI reply did not pass the bounded hard-safety validation.");
     this.name = "ResetDraftValidationError";
     this.issues = issues;
@@ -348,9 +348,9 @@ export class ResetDraftValidationError extends Error {
 }
 
 export class ResetDraftGenerationError extends Error {
-  readonly modelAttempts: 1 | 2;
+  readonly modelAttempts: 1;
 
-  constructor(modelAttempts: 1 | 2, cause: unknown) {
+  constructor(modelAttempts: 1, cause: unknown) {
     super("GPT-5.6 Sol could not complete the receptionist draft generation.");
     this.name = "ResetDraftGenerationError";
     this.modelAttempts = modelAttempts;

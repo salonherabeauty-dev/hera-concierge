@@ -18,10 +18,12 @@ const migrations = [
   "20260830030000_create_receptionist_reset_v3.sql",
   "20260830030001_harden_receptionist_reset_v3.sql",
   "20260830030002_complete_receptionist_reset_v3.sql",
+  "20260905000000_enforce_manual_ai_generation_authorization.sql",
 ].map((name) => new URL(`../supabase/migrations/${name}`, import.meta.url));
 const engineUrl = new URL("../src/reset/engine.ts", import.meta.url);
 const workerUrl = new URL("../src/reset/worker.ts", import.meta.url);
 const webhookUrl = new URL("../api/whatsapp/360dialog.ts", import.meta.url);
+const metaWebhookUrl = new URL("../api/whatsapp/webhook.ts", import.meta.url);
 const generateUrl = new URL(
   "../api/command-centre/reset-generate.ts",
   import.meta.url,
@@ -152,16 +154,20 @@ test("automatic drafting cannot import or call a WhatsApp sender or Timely write
   assert.match(worker, /timelyWriteCalls:\s*0/);
 });
 
-test("360dialog stores Reset-v3 turns without starting AI and only the human endpoint drains one turn", async () => {
-  const [webhook, generate] = await Promise.all([
+test("both inbound providers store Reset-v3 turns without starting AI and only the human endpoint drains one turn", async () => {
+  const [webhook, metaWebhook, generate] = await Promise.all([
     readFile(webhookUrl, "utf8"),
+    readFile(metaWebhookUrl, "utf8"),
     readFile(generateUrl, "utf8"),
   ]);
-  assert.match(webhook, /useReceptionistResetV3/);
-  assert.match(webhook, /resetRepository\.appendFragment/);
+  for (const inbound of [webhook, metaWebhook]) {
+    assert.match(inbound, /useReceptionistResetV3/);
+    assert.match(inbound, /resetRepository\.ingestInboundWithoutLegacyJob/);
+    assert.doesNotMatch(inbound, /resetRepository\.appendFragment/);
+    assert.match(inbound, /if \(!resetV3 && wakeableJobIds\.length > 0\)/);
+  }
   assert.match(webhook, /resetTurnIds\.add/);
   assert.doesNotMatch(webhook, /reset-v3-webhook-/);
-  assert.match(webhook, /if \(!resetV3 && wakeableJobIds\.length > 0\)/);
   assert.match(generate, /reset-v3-human-generate-/);
   assert.match(generate, /waitUntil\([\s\S]*drainResetTurnJobs/);
   assert.match(generate, /initiatedByHuman:\s*true/);
@@ -178,7 +184,7 @@ test("the Command Centre exposes manual generation, review and send states", asy
   assert.doesNotMatch(source, /No button press is required/);
   assert.doesNotMatch(source, /will draft automatically/);
   assert.match(source, /Send to Client/);
-  assert.match(source, /Regenerate/);
+  assert.doesNotMatch(source, /Regenerate|data-action="regenerate"/i);
   assert.match(source, /Take Over \/ Hold/);
   assert.match(source, /Date\.parse\(right\.lastMessageAt\) - Date\.parse\(left\.lastMessageAt\)/);
   assert.match(source, /state\.exactCommit/);

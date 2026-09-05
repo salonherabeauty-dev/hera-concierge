@@ -50,11 +50,29 @@ test("the physical default index and explicit reset page both load only reset-v3
 test("Vercel keeps both clean default paths pointed at reset-v3 as defence in depth", async () => {
   const config = JSON.parse(await readFile(vercelUrl, "utf8")) as {
     rewrites?: Array<{ source?: string; destination?: string }>;
+    redirects?: Array<{
+      source?: string;
+      destination?: string;
+      permanent?: boolean;
+    }>;
   };
   const routes = new Map(
     (config.rewrites ?? []).map((route) => [route.source, route.destination]),
   );
+  const redirects = new Map(
+    (config.redirects ?? []).map((route) => [route.source, route]),
+  );
 
   assert.equal(routes.get("/command-centre"), "/command-centre/reset.html");
   assert.equal(routes.get("/command-centre/"), "/command-centre/reset.html");
+  for (const legacyPath of [
+    "/command-centre/reception",
+    "/command-centre/reception.html",
+  ]) {
+    assert.deepEqual(redirects.get(legacyPath), {
+      source: legacyPath,
+      destination: "/command-centre/reset",
+      permanent: false,
+    });
+  }
 });

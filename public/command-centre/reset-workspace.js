@@ -20,10 +20,12 @@ const state = {
   resetVersion: null,
   refreshedAt: null,
   expanded: new Set(),
+  generationRequests: new Map(),
   scrollToBottom: false,
 };
 
 const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const GENERATION_REQUEST_GRACE_MS = 30_000;
 
 function cookie(name) {
   for (const item of document.cookie.split(";")) {
@@ -171,12 +173,23 @@ function resetState(conversationId) {
   return state.resetStates.get(conversationId) ?? null;
 }
 
+function generationRequested(reset) {
+  if (!reset?.turnId || reset.turnStatus !== "collecting") return false;
+  if (reset.generationRequestPending === true) return true;
+  const requestedAt = state.generationRequests.get(reset.turnId);
+  return typeof requestedAt === "number" &&
+    Date.now() - requestedAt < GENERATION_REQUEST_GRACE_MS;
+}
+
 function primaryStatus(conversation) {
   const reset = resetState(conversation.id);
   if (reset?.turnStatus === "ready" && reset?.candidateStatus === "ready") {
     return { key: "ready", label: "AI draft ready", tone: "green" };
   }
-  if (reset?.turnStatus === "processing") {
+  if (reset?.jobLeaseStale) {
+    return { key: "failed", label: "AI request stopped", tone: "red" };
+  }
+  if (reset?.turnStatus === "processing" || generationRequested(reset)) {
     return { key: "processing", label: "AI preparing reply", tone: "gold" };
   }
   if (reset?.turnStatus === "failed") {
@@ -290,6 +303,12 @@ async function loadResetStates(conversations) {
     }
   }
   state.resetStates = next;
+  for (const turnId of state.generationRequests.keys()) {
+    const current = [...next.values()].find((item) => item?.turnId === turnId);
+    if (!current || current.turnStatus !== "collecting") {
+      state.generationRequests.delete(turnId);
+    }
+  }
 }
 
 async function loadDetail(conversationId, preserveDraft = true) {
@@ -448,13 +467,32 @@ function composerView(conversation) {
         </div>
         <div class="rr-actions">
           <button class="rr-button rr-button--danger" data-action="hold" ${state.busy ? "disabled" : ""}>Take Over / Hold</button>
-          <button class="rr-button" data-action="regenerate" ${state.busy || !reset.retryAvailable ? "disabled" : ""}>${reset.retryAvailable ? "Regenerate" : "Regeneration used"}</button>
           <button class="rr-button rr-button--primary" data-action="send" ${state.busy || !state.draft.trim() || !withinWindow ? "disabled" : ""}>${state.busy === "send" ? "Sending…" : "Send to Client"}</button>
         </div>
       </section>`;
   }
 
-  if (["collecting", "processing"].includes(reset?.turnStatus)) {
+  if (reset?.jobLeaseStale) {
+    return `
+      <section class="rr-composer">
+        <div class="rr-state">
+          <div class="rr-state-icon">!</div>
+          <div class="rr-state-copy">
+            <strong>The requested AI reply did not finish</strong>
+            <p>No automatic retry will occur. Retry only if you want one new AI call, or write the reply manually.</p>
+          </div>
+          <div class="rr-state-actions">
+            <button class="rr-button" data-action="manual" ${state.busy ? "disabled" : ""}>Write manually</button>
+            ${reset.retryAvailable
+              ? `<button class="rr-button rr-button--primary" data-action="retry" ${state.busy ? "disabled" : ""}>${state.busy === "retry" ? "Retrying…" : "Retry AI Reply"}</button>`
+              : '<span class="rr-retry-used">The single AI retry has already been used.</span>'}
+          </div>
+        </div>
+        ${state.manualMode ? `<div class="rr-manual"><textarea data-manual-draft aria-label="Manual reply" maxlength="4000" placeholder="Write the reply here…">${escapeHtml(state.draft)}</textarea><p class="rr-draft-meta">A manual reply must first be saved as a human draft before it can be sent.</p></div>` : ""}
+      </section>`;
+  }
+
+  if (reset?.turnStatus === "processing" || generationRequested(reset)) {
     return `
       <section class="rr-composer">
         <div class="rr-state">
@@ -634,25 +672,29 @@ async function retryDraft() {
   const conversation = currentConversation();
   const reset = conversation ? resetState(conversation.id) : null;
   if (!reset?.turnId) return;
+  if (!reset.turnContentHash || !reset.lastFragmentMessageId) {
+    setNotice("Refresh this conversation before requesting another AI reply.", "error");
+    return;
+  }
   if (!reset.retryAvailable) {
     setNotice("The single AI retry has already been used. Please write the reply manually.", "error");
     return;
   }
-  if (
-    reset.turnStatus === "ready" &&
-    !window.confirm("Regenerating makes one additional paid AI request. Continue?")
-  ) return;
   state.busy = "retry";
   render();
   try {
     await request("/api/command-centre/reset-retry", {
       method: "POST",
-      body: JSON.stringify({ turnId: reset.turnId }),
+      body: JSON.stringify({
+        turnId: reset.turnId,
+        expectedTurnContentHash: reset.turnContentHash,
+        expectedLastFragmentMessageId: reset.lastFragmentMessageId,
+      }),
     });
     state.draft = "";
     state.draftDirty = false;
     state.manualMode = false;
-    setNotice("The AI is preparing a new reply automatically.");
+    setNotice("Your requested AI retry is being prepared for review.");
     await refreshWorkspace({ preserveDraft: false });
   } catch (error) {
     setNotice(error instanceof Error ? error.message : "The AI reply could not be retried.", "error");
@@ -666,16 +708,26 @@ async function generateDraft() {
   const conversation = currentConversation();
   const reset = conversation ? resetState(conversation.id) : null;
   if (!reset?.turnId || reset.turnStatus !== "collecting") return;
+  if (!reset.turnContentHash || !reset.lastFragmentMessageId) {
+    setNotice("Refresh this conversation before requesting an AI reply.", "error");
+    return;
+  }
   state.busy = "generate";
   render();
   try {
     await request("/api/command-centre/reset-generate", {
       method: "POST",
-      body: JSON.stringify({ turnId: reset.turnId }),
+      body: JSON.stringify({
+        turnId: reset.turnId,
+        expectedTurnContentHash: reset.turnContentHash,
+        expectedLastFragmentMessageId: reset.lastFragmentMessageId,
+      }),
     });
+    state.generationRequests.set(reset.turnId, Date.now());
     setNotice("One best-quality AI reply is now being prepared for human review.");
     await refreshWorkspace({ preserveDraft: false });
   } catch (error) {
+    state.generationRequests.delete(reset.turnId);
     setNotice(error instanceof Error ? error.message : "The AI reply could not be generated.", "error");
   } finally {
     state.busy = null;
@@ -777,7 +829,7 @@ root.addEventListener("click", (event) => {
     render();
   } else if (action === "generate") {
     void generateDraft();
-  } else if (action === "retry" || action === "regenerate") {
+  } else if (action === "retry") {
     void retryDraft();
   } else if (action === "hold") {
     void holdDraft();

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
@@ -20,6 +21,8 @@ import { drainResetTurnJobs } from "../../src/reset/worker.js";
 
 const requestSchema = z.object({
   turnId: z.string().uuid(),
+  expectedTurnContentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  expectedLastFragmentMessageId: z.string().uuid(),
 });
 
 function retryBlockedMessage(code: string | null): string {
@@ -48,7 +51,7 @@ export default async function handler(
     requireCommandCentreCsrf(request);
     if (
       !hasCapability(session.staff.role, "view_conversations") ||
-      !hasCapability(session.staff.role, "review_delivery")
+      !hasCapability(session.staff.role, "generate_ai_reply")
     ) {
       return response.status(403).json({ error: "Forbidden" });
     }
@@ -59,8 +62,14 @@ export default async function handler(
       database.url,
       database.serviceRoleKey,
     );
-    const retry = await repository.retryTurn(body.turnId);
-    if (!retry.ok) {
+    const retry = await repository.retryTurn({
+      actorUserId: session.staff.userId,
+      turnId: body.turnId,
+      requestId: randomUUID(),
+      expectedTurnContentHash: body.expectedTurnContentHash,
+      expectedLastFragmentMessageId: body.expectedLastFragmentMessageId,
+    });
+    if (!retry.ok || !retry.requestId) {
       return response.status(409).json({
         ...retry,
         error: retryBlockedMessage(retry.code),
@@ -69,8 +78,8 @@ export default async function handler(
 
     waitUntil(
       drainResetTurnJobs({
-        turnIds: [body.turnId],
-        limit: 1,
+        turnId: body.turnId,
+        requestId: retry.requestId,
         workerId: `reset-v3-human-retry-${session.staff.userId}`,
       }),
     );
@@ -79,6 +88,9 @@ export default async function handler(
       ok: true,
       state: "processing",
       turnId: body.turnId,
+      generationRequestId: retry.requestId,
+      generationRun: retry.generationRun,
+      initiatedByHuman: true,
       automaticDeliveryAllowed: false,
     });
   } catch (error) {

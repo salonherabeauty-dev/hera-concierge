@@ -43,6 +43,30 @@ function requiredNumber(value: unknown, field: string): number {
   return parsed;
 }
 
+function conversationSnapshot(value: unknown): ResetConversationMessage[] {
+  if (!Array.isArray(value)) {
+    throw new Error(
+      "Reset repository row is missing generation_authorized_conversation_context.",
+    );
+  }
+  return value.map((entry, index) => {
+    const item = row(entry);
+    return {
+      id: requiredString(item.id, `conversation_context[${index}].id`),
+      direction: item.direction === "outbound" ? "outbound" : "inbound",
+      kind: requiredString(
+        item.kind,
+        `conversation_context[${index}].kind`,
+      ) as ResetConversationMessage["kind"],
+      text: typeof item.text === "string" ? item.text : "",
+      createdAt: requiredString(
+        item.createdAt,
+        `conversation_context[${index}].createdAt`,
+      ),
+    };
+  });
+}
+
 function safeFailureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/[\r\n]+/g, " ").trim().slice(0, 500) ||
@@ -90,6 +114,14 @@ export interface ResetGenerationRequestState {
   availableAt: string;
 }
 
+export interface ResetGenerationAuthorization {
+  ok: boolean;
+  state: string | null;
+  code: string | null;
+  requestId: string | null;
+  generationRun: number | null;
+}
+
 export class ResetReceptionistRepository {
   readonly knowledgeRepository: ReceptionistRepository;
   private readonly database;
@@ -111,6 +143,40 @@ export class ResetReceptionistRepository {
       url,
       serviceRoleKey,
     );
+  }
+
+  async ingestInboundWithoutLegacyJob(
+    message: InboundMessage,
+  ): Promise<IngestResult & { turnId: string | null }> {
+    const { data, error } = await this.database.rpc(
+      "ai_ingest_whatsapp_message_reset_v3",
+      {
+        p_provider_message_id: message.providerMessageId,
+        p_wa_id: message.fromWaId,
+        p_profile_name: message.profileName ?? null,
+        p_phone_number_id: message.phoneNumberId ?? null,
+        p_business_account_id: message.businessAccountId ?? null,
+        p_kind: message.kind,
+        p_text: message.text,
+        p_media: message.media ?? null,
+        p_context_message_id: message.contextMessageId ?? null,
+        p_provider_timestamp: message.providerTimestamp,
+        p_raw: message.raw,
+      },
+    );
+    if (error) {
+      throw new Error(`ingest reset WhatsApp message: ${error.message}`);
+    }
+    const value = row(data);
+    const inserted = value.inserted === true;
+    return {
+      inserted,
+      messageId: requiredString(value.messageId, "messageId"),
+      conversationId: requiredString(value.conversationId, "conversationId"),
+      contactId: requiredString(value.contactId, "contactId"),
+      jobId: null,
+      turnId: inserted ? requiredString(value.turnId, "turnId") : null,
+    };
   }
 
   async appendFragment(input: {
@@ -143,18 +209,22 @@ export class ResetReceptionistRepository {
     };
   }
 
-  async claimTurnJobs(input: {
+  async claimAuthorizedTurnJob(input: {
     workerId: string;
-    limit?: number;
-    turnIds?: string[];
+    turnId: string;
+    requestId: string;
   }): Promise<ClaimedResetTurnJob[]> {
-    const uniqueTurnIds = [...new Set(input.turnIds ?? [])].slice(0, 25);
-    const { data, error } = await this.database.rpc("ai_claim_turn_jobs_v3", {
-      p_worker_id: input.workerId,
-      p_limit: Math.max(1, Math.min(input.limit ?? 5, 20)),
-      p_turn_ids: uniqueTurnIds.length > 0 ? uniqueTurnIds : null,
-    });
-    if (error) throw new Error(`claim reset turn jobs: ${error.message}`);
+    const { data, error } = await this.database.rpc(
+      "ai_claim_authorized_turn_job_v3",
+      {
+        p_worker_id: input.workerId,
+        p_turn_id: input.turnId,
+        p_request_id: input.requestId,
+      },
+    );
+    if (error) {
+      throw new Error(`claim authorized reset turn job: ${error.message}`);
+    }
     const values = Array.isArray(data) ? data : [];
     return values.map((value) => {
       const item = row(value);
@@ -188,8 +258,60 @@ export class ResetReceptionistRepository {
           "last_fragment_at",
         ),
         attempts: requiredNumber(item.attempts, "attempts"),
+        generationRun: requiredNumber(item.generation_run, "generation_run"),
+        generationRequestId: requiredString(
+          item.generation_request_id,
+          "generation_request_id",
+        ),
+        generationAuthorizedBy: requiredString(
+          item.generation_authorized_by,
+          "generation_authorized_by",
+        ),
+        generationAuthorizedAt: requiredString(
+          item.generation_authorized_at,
+          "generation_authorized_at",
+        ),
+        generationAuthorizationConsumedAt: requiredString(
+          item.generation_authorization_consumed_at,
+          "generation_authorization_consumed_at",
+        ),
+        recentConversation: conversationSnapshot(
+          item.generation_authorized_conversation_context,
+        ),
+        workerId: requiredString(item.worker_id, "worker_id"),
       };
     });
+  }
+
+  async authorizeGeneration(input: {
+    actorUserId: string;
+    turnId: string;
+    requestId: string;
+    expectedLastFragmentMessageId: string;
+    expectedTurnContentHash: string;
+  }): Promise<ResetGenerationAuthorization> {
+    const { data, error } = await this.database.rpc(
+      "ai_authorize_turn_generation_v3",
+      {
+        p_actor_user_id: input.actorUserId,
+        p_turn_id: input.turnId,
+        p_request_id: input.requestId,
+        p_expected_last_fragment_message_id:
+          input.expectedLastFragmentMessageId,
+        p_expected_turn_content_hash: input.expectedTurnContentHash,
+      },
+    );
+    if (error) throw new Error(`authorize reset generation: ${error.message}`);
+    const value = row(data);
+    return {
+      ok: value.ok === true,
+      state: optionalString(value.state),
+      code: optionalString(value.code),
+      requestId: optionalString(value.requestId),
+      generationRun: typeof value.generationRun === "number"
+        ? value.generationRun
+        : null,
+    };
   }
 
   async getGenerationRequestState(
@@ -259,22 +381,59 @@ export class ResetReceptionistRepository {
     job: ClaimedResetTurnJob;
     result: ResetDraftResult;
   }): Promise<{ state: "ready" | "superseded"; candidateId: string | null }> {
-    const { data, error } = await this.database.rpc("ai_finish_turn_ready_v3", {
+    const { data, error } = await this.database.rpc(
+      "ai_finish_authorized_turn_ready_v3",
+      {
       p_job_id: input.job.jobId,
       p_turn_id: input.job.turnId,
+      p_request_id: input.job.generationRequestId,
+      p_generation_run: input.job.generationRun,
+      p_worker_id: input.job.workerId,
       p_model_id: input.result.modelId,
       p_model_attempts: input.result.modelAttempts,
       p_body: input.result.finalReply,
       p_evidence: input.result.evidence as unknown as JsonValue,
       p_validation: input.result.validation as unknown as JsonValue,
-    });
+      },
+    );
     if (error) throw new Error(`finish reset turn ready: ${error.message}`);
     const value = row(data);
-    const state = value.state === "superseded" ? "superseded" : "ready";
+    if (value.state === "superseded") {
+      return { state: "superseded", candidateId: null };
+    }
+    if (value.ok !== true || value.state !== "ready") {
+      throw new Error(
+        `finish reset turn ready blocked: ${optionalString(value.code) ?? "unknown"}`,
+      );
+    }
     return {
-      state,
+      state: "ready",
       candidateId: optionalString(value.candidateId),
     };
+  }
+
+  async validateAuthorizedTurnJob(
+    job: ClaimedResetTurnJob,
+  ): Promise<"valid" | "superseded"> {
+    const { data, error } = await this.database.rpc(
+      "ai_validate_authorized_turn_job_v3",
+      {
+        p_job_id: job.jobId,
+        p_turn_id: job.turnId,
+        p_request_id: job.generationRequestId,
+        p_generation_run: job.generationRun,
+        p_worker_id: job.workerId,
+      },
+    );
+    if (error) {
+      throw new Error(`validate authorized reset turn job: ${error.message}`);
+    }
+    const value = row(data);
+    if (value.ok === true && value.state === "valid") return "valid";
+    if (value.state === "superseded") return "superseded";
+    throw new Error(
+      `validate authorized reset turn job blocked: ${optionalString(value.code) ?? "unknown"}`,
+    );
   }
 
   async finishFailed(input: {
@@ -283,35 +442,63 @@ export class ResetReceptionistRepository {
     modelAttempts?: number;
     failureCode?: string;
     failureMessage?: string;
-  }): Promise<void> {
-    const { error } = await this.database.rpc("ai_finish_turn_failed_v3", {
+  }): Promise<"failed" | "superseded"> {
+    const { data, error } = await this.database.rpc(
+      "ai_finish_authorized_turn_failed_v3",
+      {
       p_job_id: input.job.jobId,
       p_turn_id: input.job.turnId,
+      p_request_id: input.job.generationRequestId,
+      p_generation_run: input.job.generationRun,
+      p_worker_id: input.job.workerId,
       p_failure_code: input.failureCode ?? safeFailureCode(input.error),
       p_failure_message:
         input.failureMessage ?? safeFailureMessage(input.error),
       p_model_attempts: Math.max(
         0,
-        Math.min(input.modelAttempts ?? 0, 2),
+        Math.min(input.modelAttempts ?? 0, 1),
       ),
-    });
+      },
+    );
     if (error) throw new Error(`finish reset turn failed: ${error.message}`);
+    const value = row(data);
+    if (value.state === "superseded") return "superseded";
+    if (value.ok !== true || value.state !== "failed") {
+      throw new Error(
+        `finish reset turn failed blocked: ${optionalString(value.code) ?? "unknown"}`,
+      );
+    }
+    return "failed";
   }
 
-  async retryTurn(turnId: string): Promise<{
-    ok: boolean;
-    state: string;
-    code: string | null;
-  }> {
-    const { data, error } = await this.database.rpc("ai_retry_turn_v3", {
-      p_turn_id: turnId,
-    });
+  async retryTurn(input: {
+    actorUserId: string;
+    turnId: string;
+    requestId: string;
+    expectedLastFragmentMessageId: string;
+    expectedTurnContentHash: string;
+  }): Promise<ResetGenerationAuthorization> {
+    const { data, error } = await this.database.rpc(
+      "ai_retry_and_authorize_turn_v3",
+      {
+        p_actor_user_id: input.actorUserId,
+        p_turn_id: input.turnId,
+        p_request_id: input.requestId,
+        p_expected_last_fragment_message_id:
+          input.expectedLastFragmentMessageId,
+        p_expected_turn_content_hash: input.expectedTurnContentHash,
+      },
+    );
     if (error) throw new Error(`retry reset turn: ${error.message}`);
     const value = row(data);
     return {
       ok: value.ok === true,
-      state: requiredString(value.state, "state"),
+      state: optionalString(value.state),
       code: optionalString(value.code),
+      requestId: optionalString(value.requestId),
+      generationRun: typeof value.generationRun === "number"
+        ? value.generationRun
+        : null,
     };
   }
 

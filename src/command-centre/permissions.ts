@@ -10,6 +10,7 @@ export type CommandCentreCapability =
   | "view_audit"
   | "view_quality"
   | "review_delivery"
+  | "generate_ai_reply"
   | "approve_delivery"
   | "reject_delivery"
   | "escalate_delivery"
@@ -32,6 +33,7 @@ const ROLE_CAPABILITIES: Record<
     "view_audit",
     "view_quality",
     "review_delivery",
+    "generate_ai_reply",
     "approve_delivery",
     "reject_delivery",
     "escalate_delivery",
@@ -50,6 +52,7 @@ const ROLE_CAPABILITIES: Record<
     "view_audit",
     "view_quality",
     "review_delivery",
+    "generate_ai_reply",
     "approve_delivery",
     "reject_delivery",
     "escalate_delivery",
@@ -68,6 +71,7 @@ const ROLE_CAPABILITIES: Record<
     "view_audit",
     "view_quality",
     "review_delivery",
+    "generate_ai_reply",
     "approve_delivery",
     "reject_delivery",
     "escalate_delivery",
@@ -82,6 +86,7 @@ const ROLE_CAPABILITIES: Record<
     "view_dashboard",
     "view_conversations",
     "review_delivery",
+    "generate_ai_reply",
     "approve_delivery",
     "reject_delivery",
     "escalate_delivery",

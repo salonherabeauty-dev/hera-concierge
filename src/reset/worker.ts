@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { getDatabaseConfig } from "../config.js";
 import {
@@ -51,7 +50,7 @@ function modelAttemptsFromError(error: unknown): number {
   }
   if (error && typeof error === "object") {
     const attempts = (error as { modelAttempts?: unknown }).modelAttempts;
-    if (attempts === 1 || attempts === 2) return attempts;
+    if (attempts === 1) return attempts;
   }
   return 0;
 }
@@ -159,20 +158,26 @@ async function processResetTurnJob(
 ): Promise<"ready" | "failed" | "superseded"> {
   const startedAt = Date.now();
   try {
-    const [contact, recentConversation] = await Promise.all([
-      runtime.repository.getContact(job.contactId),
-      runtime.repository.getRecentConversation({
-        conversationId: job.conversationId,
-        throughCreatedAt: new Date(Date.now() + 60_000).toISOString(),
-        limit: 20,
-      }),
-    ]);
+    const contact = await runtime.repository.getContact(job.contactId);
     const evidence = await buildResetEvidenceBundle({
       repository: runtime.repository.knowledgeRepository,
       job,
       contact,
-      recentConversation,
+      recentConversation: job.recentConversation,
     });
+    const preflight = await runtime.repository.validateAuthorizedTurnJob(job);
+    if (preflight === "superseded") {
+      logOperationalEvent("info", "reset_v3_generation_preflight_rejected", {
+        jobId: job.jobId,
+        turnId: job.turnId,
+        conversationId: job.conversationId,
+        turnVersion: job.version,
+        modelAttempts: 0,
+        providerSendCalls: 0,
+        timelyWriteCalls: 0,
+      });
+      return "superseded";
+    }
     const result = await generateResetDraft({
       evidence,
       modelFactory: runtime.modelFactory,
@@ -204,7 +209,7 @@ async function processResetTurnJob(
     const code = failureCode(error);
     const message = failureMessage(error);
     const providerDiagnostic = resetProviderFailureDiagnostic(error);
-    await runtime.repository.finishFailed({
+    const persistedFailure = await runtime.repository.finishFailed({
       job,
       error,
       modelAttempts,
@@ -236,22 +241,21 @@ async function processResetTurnJob(
       timelyWriteCalls: 0,
       ...safeErrorFields(error),
     });
-    return "failed";
+    return persistedFailure;
   }
 }
 
 export async function drainResetTurnJobs(input: {
   runtime?: ResetWorkerRuntime;
-  turnIds?: string[];
-  limit?: number;
-  workerId?: string;
-} = {}): Promise<ResetDrainSummary> {
+  turnId: string;
+  requestId: string;
+  workerId: string;
+}): Promise<ResetDrainSummary> {
   const runtime = input.runtime ?? createResetWorkerRuntime();
-  const workerId = input.workerId ?? `reset-v3-${randomUUID()}`;
-  const jobs = await runtime.repository.claimTurnJobs({
-    workerId,
-    limit: input.limit ?? 5,
-    turnIds: input.turnIds,
+  const jobs = await runtime.repository.claimAuthorizedTurnJob({
+    workerId: input.workerId,
+    turnId: input.turnId,
+    requestId: input.requestId,
   });
 
   let jobsReady = 0;

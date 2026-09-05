@@ -27,6 +27,13 @@ function job(overrides: Partial<ClaimedResetTurnJob> = {}): ClaimedResetTurnJob 
     firstFragmentAt: "2026-08-30T01:00:00.000Z",
     lastFragmentAt: "2026-08-30T01:00:05.000Z",
     attempts: 1,
+    generationRun: 1,
+    generationRequestId: "00000000-0000-4000-8000-000000000601",
+    generationAuthorizedBy: "00000000-0000-4000-8000-000000000602",
+    generationAuthorizedAt: "2026-08-30T01:00:06.000Z",
+    generationAuthorizationConsumedAt: "2026-08-30T01:00:07.000Z",
+    recentConversation: [],
+    workerId: "reset-v3-test-worker",
     ...overrides,
   };
 }

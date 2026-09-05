@@ -10,6 +10,18 @@
       "schedule": "* * * * *"
     }
   ],
+  "redirects": [
+    {
+      "source": "/command-centre/reception",
+      "destination": "/command-centre/reset",
+      "permanent": false
+    },
+    {
+      "source": "/command-centre/reception.html",
+      "destination": "/command-centre/reset",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/command-centre",

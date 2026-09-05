@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
@@ -20,6 +21,8 @@ import { drainResetTurnJobs } from "../../src/reset/worker.js";
 
 const requestSchema = z.object({
   turnId: z.string().uuid(),
+  expectedTurnContentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  expectedLastFragmentMessageId: z.string().uuid(),
 });
 
 export default async function handler(
@@ -38,12 +41,16 @@ export default async function handler(
     requireCommandCentreCsrf(request);
     if (
       !hasCapability(session.staff.role, "view_conversations") ||
-      !hasCapability(session.staff.role, "review_delivery")
+      !hasCapability(session.staff.role, "generate_ai_reply")
     ) {
       return response.status(403).json({ error: "Forbidden" });
     }
 
-    const { turnId } = requestSchema.parse(parseJsonBody<unknown>(request));
+    const {
+      turnId,
+      expectedTurnContentHash,
+      expectedLastFragmentMessageId,
+    } = requestSchema.parse(parseJsonBody<unknown>(request));
     const database = getDatabaseConfig();
     const repository = new ResetReceptionistRepository(
       database.url,
@@ -78,10 +85,24 @@ export default async function handler(
       });
     }
 
+    const authorization = await repository.authorizeGeneration({
+      actorUserId: session.staff.userId,
+      turnId,
+      requestId: randomUUID(),
+      expectedTurnContentHash,
+      expectedLastFragmentMessageId,
+    });
+    if (!authorization.ok || !authorization.requestId) {
+      return response.status(409).json({
+        error: "This client message is not available for AI assistance.",
+        code: authorization.code ?? "generation_authorization_failed",
+      });
+    }
+
     waitUntil(
       drainResetTurnJobs({
-        turnIds: [turnId],
-        limit: 1,
+        turnId,
+        requestId: authorization.requestId,
         workerId: `reset-v3-human-generate-${session.staff.userId}`,
       }),
     );
@@ -90,6 +111,8 @@ export default async function handler(
       ok: true,
       state: "processing",
       turnId,
+      generationRequestId: authorization.requestId,
+      generationRun: authorization.generationRun,
       initiatedByHuman: true,
       automaticDeliveryAllowed: false,
     });

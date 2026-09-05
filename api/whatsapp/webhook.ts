@@ -11,6 +11,8 @@ import {
   logOperationalEvent,
   safeErrorFields,
 } from "../../src/observability/log.js";
+import { useReceptionistResetV3 } from "../../src/reset/boundary.js";
+import { ResetReceptionistRepository } from "../../src/reset/repository.js";
 import { verifyMetaSignature } from "../../src/security/metaSignature.js";
 import {
   PayloadTooLargeError,
@@ -114,21 +116,30 @@ export default async function handler(request: VercelRequest, response: VercelRe
     database.url,
     database.serviceRoleKey,
   );
+  const resetV3 = useReceptionistResetV3();
+  const resetRepository = resetV3
+    ? new ResetReceptionistRepository(
+        database.url,
+        database.serviceRoleKey,
+      )
+    : null;
 
   for (const event of parsed.statuses) await repository.applyStatus(event);
   let inserted = 0;
   const wakeableJobIds: string[] = [];
   for (const message of parsed.inbound) {
-    const result = await repository.ingestInbound(message);
+    const result = resetRepository
+      ? await resetRepository.ingestInboundWithoutLegacyJob(message)
+      : await repository.ingestInbound(message);
     if (result.inserted) inserted += 1;
-    if (result.jobId) wakeableJobIds.push(result.jobId);
+    if (!resetV3 && result.jobId) wakeableJobIds.push(result.jobId);
   }
 
   // A valid inbound delivery is also a safe wake-up signal for eligible retry
   // jobs. Meta's dashboard may resend the same fixed sample message during
   // Preview validation; ingestion remains idempotent, while the worker can
   // recover work that was deferred by a transient provider failure.
-  if (wakeableJobIds.length > 0) {
+  if (!resetV3 && wakeableJobIds.length > 0) {
     const drainLimit = Math.min(
       Math.max(wakeableJobIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
       8,
