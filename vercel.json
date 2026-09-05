@@ -103,6 +103,9 @@
     "api/command-centre/reset-retry.ts": {
       "maxDuration": "max"
     },
+    "api/command-centre/reset-generate.ts": {
+      "maxDuration": "max"
+    },
     "api/command-centre/reset-recover.ts": {
       "maxDuration": "max"
     },

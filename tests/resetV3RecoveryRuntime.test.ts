@@ -31,7 +31,7 @@ test("the read-only reset-state endpoint cannot start a long AI job", async () =
   assert.match(source, /methodNotAllowed\(response, \["GET"\]\)/);
 });
 
-test("authenticated recovery runs in its own long-duration function", async () => {
+test("legacy recovery endpoint is disabled and cannot start a model call", async () => {
   const [source, vercelText] = await Promise.all([
     readFile(recoveryUrl, "utf8"),
     readFile(vercelUrl, "utf8"),
@@ -41,11 +41,9 @@ test("authenticated recovery runs in its own long-duration function", async () =
   };
 
   assert.match(source, /requireReceptionistResetV3/);
-  assert.match(source, /authenticateCommandCentre/);
-  assert.match(source, /requireSameOrigin/);
-  assert.match(source, /requireCommandCentreCsrf/);
-  assert.match(source, /waitUntil\([\s\S]*drainResetTurnJobs/);
-  assert.match(source, /automaticDeliveryAllowed:\s*false/);
+  assert.match(source, /status\(410\)/);
+  assert.match(source, /automatic_generation_disabled/);
+  assert.doesNotMatch(source, /waitUntil|drainResetTurnJobs/);
   assert.doesNotMatch(source, /sendText|D360WhatsAppClient|MetaWhatsAppClient/);
   assert.doesNotMatch(source, /(?:create|update|cancel|reschedule).*Timely/i);
   assert.equal(
@@ -58,7 +56,7 @@ test("authenticated recovery runs in its own long-duration function", async () =
   );
 });
 
-test("the Reception Desk requests bounded recovery without altering the main workspace", async () => {
+test("the Reception Desk does not load automatic recovery", async () => {
   const [client, index, reset] = await Promise.all([
     readFile(recoveryClientUrl, "utf8"),
     readFile(indexUrl, "utf8"),
@@ -66,14 +64,9 @@ test("the Reception Desk requests bounded recovery without altering the main wor
   ]);
 
   assert.match(client, /\/api\/command-centre\/reset-recover/);
-  assert.match(client, /method:\s*"POST"/);
-  assert.match(client, /X-Hera-CSRF/);
-  assert.match(client, /RECOVERY_INTERVAL_MS = 60_000/);
-  assert.match(client, /document\.visibilityState/);
-  assert.doesNotMatch(client, /sendText|Timely|candidateText|messageText/);
   for (const html of [index, reset]) {
     assert.match(html, /reset-workspace\.js/);
     assert.match(html, /reset-scroll-stability\.js/);
-    assert.match(html, /reset-recovery\.js/);
+    assert.doesNotMatch(html, /reset-recovery\.js/);
   }
 });

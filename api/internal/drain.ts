@@ -9,7 +9,6 @@ import {
   HERA_RECEPTIONIST_RESET_VERSION,
   useReceptionistResetV3,
 } from "../../src/reset/boundary.js";
-import { drainResetTurnJobs } from "../../src/reset/worker.js";
 import { verifyBearerToken } from "../../src/security/bearer.js";
 import { createProductionRuntime, drainReceptionist } from "../../src/worker.js";
 
@@ -36,11 +35,17 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   try {
     if (useReceptionistResetV3()) {
-      const summary = await drainResetTurnJobs({
-        limit: RECOVERY_DRAIN_LIMIT,
-        workerId: `reset-v3-cron-${correlationId}`,
-      });
-      logOperationalEvent("info", "reset_v3_recovery_drain_completed", {
+      // Manual-assist mode must never turn a scheduled recovery request into a
+      // paid model call. Pending turns remain available for an explicit click.
+      const summary = {
+        jobsClaimed: 0,
+        jobsReady: 0,
+        jobsFailed: 0,
+        jobsSuperseded: 0,
+        providerSendCalls: 0 as const,
+        timelyWriteCalls: 0 as const,
+      };
+      logOperationalEvent("info", "reset_v3_automatic_drain_suppressed", {
         correlationId,
         resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
         durationMs: Date.now() - startedAt,

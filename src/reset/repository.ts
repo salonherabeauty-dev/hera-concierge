@@ -80,6 +80,16 @@ export interface ResetSendReservation {
   providerMessageId: string | null;
 }
 
+export interface ResetGenerationRequestState {
+  turnId: string;
+  turnStatus: string;
+  turnModelAttempts: number;
+  settleAt: string;
+  jobStatus: string;
+  jobModelAttempts: number;
+  availableAt: string;
+}
+
 export class ResetReceptionistRepository {
   readonly knowledgeRepository: ReceptionistRepository;
   private readonly database;
@@ -180,6 +190,41 @@ export class ResetReceptionistRepository {
         attempts: requiredNumber(item.attempts, "attempts"),
       };
     });
+  }
+
+  async getGenerationRequestState(
+    turnId: string,
+  ): Promise<ResetGenerationRequestState | null> {
+    const [turnResult, jobResult] = await Promise.all([
+      this.database
+        .from("ai_client_turns_v3")
+        .select("id,status,model_attempts,settle_at")
+        .eq("id", turnId)
+        .maybeSingle(),
+      this.database
+        .from("ai_turn_jobs_v3")
+        .select("turn_id,status,model_attempts,available_at")
+        .eq("turn_id", turnId)
+        .maybeSingle(),
+    ]);
+    if (turnResult.error) {
+      throw new Error(`load reset generation turn: ${turnResult.error.message}`);
+    }
+    if (jobResult.error) {
+      throw new Error(`load reset generation job: ${jobResult.error.message}`);
+    }
+    if (!turnResult.data || !jobResult.data) return null;
+    const turn = row(turnResult.data);
+    const job = row(jobResult.data);
+    return {
+      turnId: requiredString(turn.id, "id"),
+      turnStatus: requiredString(turn.status, "status"),
+      turnModelAttempts: requiredNumber(turn.model_attempts, "model_attempts"),
+      settleAt: requiredString(turn.settle_at, "settle_at"),
+      jobStatus: requiredString(job.status, "job.status"),
+      jobModelAttempts: requiredNumber(job.model_attempts, "job.model_attempts"),
+      availableAt: requiredString(job.available_at, "job.available_at"),
+    };
   }
 
   async getContact(contactId: string): Promise<ResetTurnContact> {

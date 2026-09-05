@@ -22,6 +22,10 @@ const migrations = [
 const engineUrl = new URL("../src/reset/engine.ts", import.meta.url);
 const workerUrl = new URL("../src/reset/worker.ts", import.meta.url);
 const webhookUrl = new URL("../api/whatsapp/360dialog.ts", import.meta.url);
+const generateUrl = new URL(
+  "../api/command-centre/reset-generate.ts",
+  import.meta.url,
+);
 const uiUrl = new URL(
   "../public/command-centre/reset-workspace.js",
   import.meta.url,
@@ -109,16 +113,15 @@ test("every reset migration is syntactically valid and enforces ready-or-failed 
   assert.doesNotMatch(sql, /v_new_fragments,\s*\)\s*returning/i);
 });
 
-test("one Sol Max draft and at most one rewrite are code-enforced", async () => {
+test("one Sol Max call with no provider retry is code-enforced", async () => {
   const engine = await readFile(engineUrl, "utf8");
   assert.equal(RESET_OPENAI_MODEL_ID, "openai/gpt-5.6-sol");
   assert.equal(RESET_OPENAI_REASONING_EFFORT, "max");
-  assert.equal(RESET_MAX_MODEL_CALLS, 2);
+  assert.equal(RESET_MAX_MODEL_CALLS, 1);
   assert.match(engine, /callNumber:\s*1/);
-  assert.match(engine, /callNumber:\s*2/);
-  assert.match(engine, /if \(firstValidation\.passed\)/);
-  assert.match(engine, /if \(!secondValidation\.passed\)/);
-  assert.equal(RESET_MAX_TRANSPORT_RETRIES, 1);
+  assert.doesNotMatch(engine, /callNumber:\s*2/);
+  assert.match(engine, /if \(!firstValidation\.passed\)/);
+  assert.equal(RESET_MAX_TRANSPORT_RETRIES, 0);
   assert.match(engine, /from "@ai-sdk\/openai"/);
   assert.match(engine, /createOpenAI/);
   assert.match(engine, /\.responses\(RESET_OPENAI_PROVIDER_MODEL_ID\)/);
@@ -149,23 +152,31 @@ test("automatic drafting cannot import or call a WhatsApp sender or Timely write
   assert.match(worker, /timelyWriteCalls:\s*0/);
 });
 
-test("360dialog appends every inserted fragment to one reset client-turn and bypasses legacy drafting", async () => {
-  const source = await readFile(webhookUrl, "utf8");
-  assert.match(source, /useReceptionistResetV3/);
-  assert.match(source, /resetRepository\.appendFragment/);
-  assert.match(source, /resetTurnIds\.add/);
-  assert.match(source, /drainResetTurnJobs/);
-  assert.match(source, /settleInboundBurst/);
-  assert.match(source, /else if \(!resetV3 && result\.jobId\)/);
+test("360dialog stores Reset-v3 turns without starting AI and only the human endpoint drains one turn", async () => {
+  const [webhook, generate] = await Promise.all([
+    readFile(webhookUrl, "utf8"),
+    readFile(generateUrl, "utf8"),
+  ]);
+  assert.match(webhook, /useReceptionistResetV3/);
+  assert.match(webhook, /resetRepository\.appendFragment/);
+  assert.match(webhook, /resetTurnIds\.add/);
+  assert.doesNotMatch(webhook, /reset-v3-webhook-/);
+  assert.match(webhook, /if \(!resetV3 && wakeableJobIds\.length > 0\)/);
+  assert.match(generate, /reset-v3-human-generate-/);
+  assert.match(generate, /waitUntil\([\s\S]*drainResetTurnJobs/);
+  assert.match(generate, /initiatedByHuman:\s*true/);
+  assert.match(generate, /automaticDeliveryAllowed:\s*false/);
 });
 
-test("the Command Centre exposes only truthful ready, preparing and failed states", async () => {
+test("the Command Centre exposes manual generation, review and send states", async () => {
   const source = await readFile(uiUrl, "utf8");
   assert.doesNotThrow(() => new Function(source));
-  assert.match(source, /AI is preparing the reply automatically/);
+  assert.match(source, /Generate AI Reply/);
+  assert.match(source, /No AI cost has been incurred/);
   assert.match(source, /AI draft ready/);
   assert.match(source, /AI could not prepare this reply/);
-  assert.match(source, /No button press is required/);
+  assert.doesNotMatch(source, /No button press is required/);
+  assert.doesNotMatch(source, /will draft automatically/);
   assert.match(source, /Send to Client/);
   assert.match(source, /Regenerate/);
   assert.match(source, /Take Over \/ Hold/);

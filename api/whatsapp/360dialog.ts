@@ -21,7 +21,6 @@ import {
   useReceptionistResetV3,
 } from "../../src/reset/boundary.js";
 import { ResetReceptionistRepository } from "../../src/reset/repository.js";
-import { drainResetTurnJobs } from "../../src/reset/worker.js";
 import { verifyBasicAuthorization } from "../../src/security/basicAuth.js";
 import {
   PayloadTooLargeError,
@@ -210,37 +209,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
     }
 
     ingestionStage = "schedule_background_drain";
-    if (resetV3 && resetTurnIds.size > 0) {
-      const exactTurnIds = [...resetTurnIds];
-      waitUntil(
-        settleInboundBurst()
-          .then(() =>
-            drainResetTurnJobs({
-              turnIds: exactTurnIds,
-              limit: Math.min(exactTurnIds.length, 8),
-              workerId: `reset-v3-webhook-${correlationId}`,
-            }),
-          )
-          .then((summary) => {
-            logOperationalEvent("info", "reset_v3_webhook_drain_completed", {
-              correlationId,
-              resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
-              burstSettleMs: INBOUND_BURST_SETTLE_MS,
-              turnCount: exactTurnIds.length,
-              ...summary,
-            });
-          })
-          .catch((error: unknown) => {
-            logOperationalEvent("error", "reset_v3_webhook_drain_failed", {
-              correlationId,
-              resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
-              burstSettleMs: INBOUND_BURST_SETTLE_MS,
-              turnCount: exactTurnIds.length,
-              ...safeErrorFields(error),
-            });
-          }),
-      );
-    } else if (!resetV3 && wakeableJobIds.length > 0) {
+    // Reset v3 is deliberately human-triggered. Inbound WhatsApp delivery only
+    // records and consolidates the client turn; it must never spend on an AI
+    // draft until a receptionist presses Generate AI Reply.
+    if (!resetV3 && wakeableJobIds.length > 0) {
       const drainLimit = Math.min(
         Math.max(wakeableJobIds.length + WEBHOOK_BACKLOG_RECOVERY_SLOTS, 1),
         8,
@@ -283,9 +255,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       humanReviewDrafting,
       burstSettleMs:
         resetV3
-          ? resetTurnIds.size > 0
-            ? INBOUND_BURST_SETTLE_MS
-            : 0
+          ? 0
           : wakeableJobIds.length > 0
             ? INBOUND_BURST_SETTLE_MS
             : 0,

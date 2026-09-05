@@ -45,13 +45,16 @@ test("Create AI Reply acknowledges immediately and continues the exact job in wa
   assert.doesNotMatch(source, /sendText|D360WhatsAppClient|Timely/i);
 });
 
-test("new 360dialog messages still start automatic background drafting without a button press", async () => {
+test("new 360dialog messages never start Reset-v3 AI drafting without a human click", async () => {
   const source = await readFile(webhookUrl, "utf8");
   assert.match(source, /waitUntil\(/);
   assert.match(source, /drainReceptionistForJobs/);
   assert.match(source, /wakeableJobIds/);
   assert.match(source, /humanReviewDrafting/);
   assert.match(source, /INBOUND_BURST_SETTLE_MS = 9_000/);
+  assert.match(source, /if \(!resetV3 && wakeableJobIds\.length > 0\)/);
+  assert.doesNotMatch(source, /drainResetTurnJobs/);
+  assert.doesNotMatch(source, /reset-v3-webhook-/);
   assert.doesNotMatch(source, /receptionist-draft/);
 });
 

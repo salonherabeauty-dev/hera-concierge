@@ -35,7 +35,7 @@ test("both WhatsApp adapters prioritize the jobs they just created", async () =>
   }
 });
 
-test("the protected recovery drain is scheduled every minute with a bounded reset batch", async () => {
+test("the scheduled recovery drain cannot spend on Reset-v3 manual-assist turns", async () => {
   const [drainSource, vercelSource] = await Promise.all([
     readFile(drainUrl, "utf8"),
     readFile(vercelUrl, "utf8"),
@@ -49,7 +49,9 @@ test("the protected recovery drain is scheduled every minute with a bounded rese
   assert.match(drainSource, /verifyBearerToken\(authorization, cronSecret\)/);
   assert.match(drainSource, /RECOVERY_DRAIN_LIMIT = 5/);
   assert.match(drainSource, /useReceptionistResetV3/);
-  assert.match(drainSource, /drainResetTurnJobs/);
+  assert.match(drainSource, /reset_v3_automatic_drain_suppressed/);
+  assert.match(drainSource, /jobsClaimed:\s*0/);
+  assert.doesNotMatch(drainSource, /drainResetTurnJobs/);
 });
 
 test("the worker processes targeted jobs before unrelated backlog", async () => {

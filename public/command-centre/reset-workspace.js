@@ -176,7 +176,7 @@ function primaryStatus(conversation) {
   if (reset?.turnStatus === "ready" && reset?.candidateStatus === "ready") {
     return { key: "ready", label: "AI draft ready", tone: "green" };
   }
-  if (["collecting", "processing"].includes(reset?.turnStatus)) {
+  if (reset?.turnStatus === "processing") {
     return { key: "processing", label: "AI preparing reply", tone: "gold" };
   }
   if (reset?.turnStatus === "failed") {
@@ -460,8 +460,26 @@ function composerView(conversation) {
         <div class="rr-state">
           <div class="rr-state-icon"><span class="rr-spinner"></span></div>
           <div class="rr-state-copy">
-            <strong>AI is preparing the reply automatically</strong>
-            <p>No button press is required. Messages and attachments sent together are being consolidated into one client turn. A complex request may take several minutes.</p>
+            <strong>AI is preparing your requested reply</strong>
+            <p>This single draft was started by a human. Nothing will be sent automatically.</p>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  if (reset?.turnStatus === "collecting" && reset?.turnId) {
+    const readyAt = Date.parse(reset.settleAt || "");
+    const ready = Number.isFinite(readyAt) && readyAt <= Date.now();
+    return `
+      <section class="rr-composer">
+        <div class="rr-state">
+          <div class="rr-state-icon">AI</div>
+          <div class="rr-state-copy">
+            <strong>AI assistance is available</strong>
+            <p>No AI cost has been incurred for this message. Generate one best-quality draft only when assistance is needed.</p>
+          </div>
+          <div class="rr-state-actions">
+            <button class="rr-button rr-button--primary" data-action="generate" ${state.busy || !ready ? "disabled" : ""}>${state.busy === "generate" ? "Generating…" : ready ? "Generate AI Reply" : "Messages still arriving…"}</button>
           </div>
         </div>
       </section>`;
@@ -502,7 +520,7 @@ function composerView(conversation) {
       <section class="rr-composer">
         <div class="rr-state">
           <div class="rr-state-icon">✓</div>
-          <div class="rr-state-copy"><strong>Waiting for the client</strong><p>Hera has already sent the latest message. A new AI draft will be prepared automatically when the client replies.</p></div>
+          <div class="rr-state-copy"><strong>Waiting for the client</strong><p>Hera has already sent the latest message. If the client replies, Reception may request AI assistance manually.</p></div>
         </div>
       </section>`;
   }
@@ -512,8 +530,8 @@ function composerView(conversation) {
       <div class="rr-state">
         <div class="rr-state-icon">i</div>
         <div class="rr-state-copy">
-          <strong>No reset-v3 draft exists for this older message</strong>
-          <p>New incoming messages will draft automatically. This historical conversation has not been converted into a new client turn.</p>
+          <strong>No AI draft exists for this older message</strong>
+          <p>AI generation is manual only. This historical conversation has not been converted into a new client turn.</p>
         </div>
       </div>
     </section>`;
@@ -620,6 +638,10 @@ async function retryDraft() {
     setNotice("The single AI retry has already been used. Please write the reply manually.", "error");
     return;
   }
+  if (
+    reset.turnStatus === "ready" &&
+    !window.confirm("Regenerating makes one additional paid AI request. Continue?")
+  ) return;
   state.busy = "retry";
   render();
   try {
@@ -634,6 +656,27 @@ async function retryDraft() {
     await refreshWorkspace({ preserveDraft: false });
   } catch (error) {
     setNotice(error instanceof Error ? error.message : "The AI reply could not be retried.", "error");
+  } finally {
+    state.busy = null;
+    render();
+  }
+}
+
+async function generateDraft() {
+  const conversation = currentConversation();
+  const reset = conversation ? resetState(conversation.id) : null;
+  if (!reset?.turnId || reset.turnStatus !== "collecting") return;
+  state.busy = "generate";
+  render();
+  try {
+    await request("/api/command-centre/reset-generate", {
+      method: "POST",
+      body: JSON.stringify({ turnId: reset.turnId }),
+    });
+    setNotice("One best-quality AI reply is now being prepared for human review.");
+    await refreshWorkspace({ preserveDraft: false });
+  } catch (error) {
+    setNotice(error instanceof Error ? error.message : "The AI reply could not be generated.", "error");
   } finally {
     state.busy = null;
     render();
@@ -732,6 +775,8 @@ root.addEventListener("click", (event) => {
   } else if (action === "expand-message") {
     state.expanded.add(target.getAttribute("data-id"));
     render();
+  } else if (action === "generate") {
+    void generateDraft();
   } else if (action === "retry" || action === "regenerate") {
     void retryDraft();
   } else if (action === "hold") {

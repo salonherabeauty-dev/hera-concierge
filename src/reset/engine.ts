@@ -19,9 +19,9 @@ export const RESET_OPENAI_MODEL_ID = "openai/gpt-5.6-sol";
 export const RESET_OPENAI_PROVIDER_MODEL_ID = "gpt-5.6-sol";
 export const RESET_OPENAI_REASONING_EFFORT = "max";
 export const RESET_DRAFT_ENGINE_VERSION =
-  "hera-receptionist-reset-engine-1.2.0";
-export const RESET_MAX_MODEL_CALLS = 2;
-export const RESET_MAX_TRANSPORT_RETRIES = 1;
+  "hera-receptionist-manual-assist-engine-2.0.0";
+export const RESET_MAX_MODEL_CALLS = 1;
+export const RESET_MAX_TRANSPORT_RETRIES = 0;
 export const RESET_MODEL_TIMEOUT_MS = 240_000;
 export const RESET_MAX_OUTPUT_TOKENS = 24_000;
 export const RESET_SUBMIT_TOOL_NAME = "submitReceptionistDraft";
@@ -144,12 +144,6 @@ function nestedErrorSignature(error: unknown): string {
   return parts.join(" | ").slice(0, 1_000);
 }
 
-function recoverableStructuredOutputFailure(error: unknown): boolean {
-  return /(?:NoOutputGenerated|NoObjectGenerated|NoToolCall|InvalidToolInput|structured output|submitReceptionistDraft)/i.test(
-    nestedErrorSignature(error),
-  );
-}
-
 export interface ResetProviderFailureDiagnostic {
   name: string;
   statusCode: number | null;
@@ -235,16 +229,7 @@ const BASE_INSTRUCTIONS = [
   "Use concise paragraphs suitable for WhatsApp. Answer every material part that can be answered safely. Avoid exclamation marks, sales pressure, robotic process language and internal terms such as handoff, queue, verifier, policy engine, candidate or database.",
   "Every item in verifiedFactsUsed must cite an exact sourceId present in the supplied evidence bundle. Do not cite sources that were not supplied. Use current-client-appointments only for the read-only appointment records included in the bundle.",
   "The rationaleSummary must be a concise decision summary, not hidden chain-of-thought.",
-].join("\n");
-
-const REWRITE_INSTRUCTIONS = [
-  BASE_INSTRUCTIONS,
-  "This is the single permitted rewrite. Correct every listed hard validation issue while preserving all supported facts and the client's language and intent. Return a complete replacement reply through the required tool call, not editing notes. If a fact cannot be verified, remove or qualify it rather than guessing.",
-].join("\n");
-
-const NO_OUTPUT_RECOVERY_INSTRUCTIONS = [
-  BASE_INSTRUCTIONS,
-  "The first generation did not submit a usable structured draft. This is the final permitted content call. Keep the analysis focused, call the required submission tool exactly once, and provide a complete client-ready reply grounded only in the supplied evidence.",
+  "This is the only paid generation call. Before submitting, silently check the reply for completeness, factual grounding, tone, concision, unsupported promises and unnecessary questions. Submit the strongest final draft on this first attempt.",
 ].join("\n");
 
 function promptEvidence(bundle: ResetEvidenceBundle): JsonValue {
@@ -387,47 +372,7 @@ export async function generateResetDraft(input: {
       callNumber: 1,
     });
   } catch (error) {
-    if (!recoverableStructuredOutputFailure(error)) {
-      throw new ResetDraftGenerationError(1, error);
-    }
-
-    let recovery: Awaited<ReturnType<typeof oneModelCall>>;
-    try {
-      recovery = await oneModelCall({
-        evidence: input.evidence,
-        instructions: NO_OUTPUT_RECOVERY_INSTRUCTIONS,
-        validationIssues: [
-          "The first model call did not submit a usable structured draft.",
-        ],
-        modelFactory: input.modelFactory,
-        callNumber: 2,
-      });
-    } catch (recoveryError) {
-      throw new ResetDraftGenerationError(2, recoveryError);
-    }
-
-    const recoveryValidation = validateResetDraft({
-      decision: recovery.decision,
-      evidence: input.evidence,
-    });
-    if (!recoveryValidation.passed) {
-      throw new ResetDraftValidationError(recoveryValidation.issues, 2);
-    }
-
-    return {
-      decision: recovery.decision,
-      finalReply: recovery.decision.finalReply.trim(),
-      modelId: recovery.modelId,
-      modelAttempts: 2,
-      evidence: input.evidence,
-      validation: recoveryValidation,
-      usage: asJson({
-        first: null,
-        recovery: recovery.usage,
-        firstFailure: resetProviderFailureDiagnostic(error),
-      }),
-      latencyMs: Date.now() - overallStartedAt,
-    };
+    throw new ResetDraftGenerationError(1, error);
   }
 
   const firstValidation = validateResetDraft({
@@ -435,50 +380,18 @@ export async function generateResetDraft(input: {
     evidence: input.evidence,
   });
 
-  if (firstValidation.passed) {
-    return {
-      decision: first.decision,
-      finalReply: first.decision.finalReply.trim(),
-      modelId: first.modelId,
-      modelAttempts: 1,
-      evidence: input.evidence,
-      validation: firstValidation,
-      usage: asJson({ first: first.usage, rewrite: null }),
-      latencyMs: Date.now() - overallStartedAt,
-    };
-  }
-
-  let second: Awaited<ReturnType<typeof oneModelCall>>;
-  try {
-    second = await oneModelCall({
-      evidence: input.evidence,
-      instructions: REWRITE_INSTRUCTIONS,
-      priorDecision: first.decision,
-      validationIssues: firstValidation.issues,
-      modelFactory: input.modelFactory,
-      callNumber: 2,
-    });
-  } catch (error) {
-    throw new ResetDraftGenerationError(2, error);
-  }
-
-  const secondValidation = validateResetDraft({
-    decision: second.decision,
-    evidence: input.evidence,
-  });
-
-  if (!secondValidation.passed) {
-    throw new ResetDraftValidationError(secondValidation.issues, 2);
+  if (!firstValidation.passed) {
+    throw new ResetDraftValidationError(firstValidation.issues, 1);
   }
 
   return {
-    decision: second.decision,
-    finalReply: second.decision.finalReply.trim(),
-    modelId: second.modelId,
-    modelAttempts: 2,
+    decision: first.decision,
+    finalReply: first.decision.finalReply.trim(),
+    modelId: first.modelId,
+    modelAttempts: 1,
     evidence: input.evidence,
-    validation: secondValidation,
-    usage: asJson({ first: first.usage, rewrite: second.usage }),
+    validation: firstValidation,
+    usage: asJson({ first: first.usage }),
     latencyMs: Date.now() - overallStartedAt,
   };
 }

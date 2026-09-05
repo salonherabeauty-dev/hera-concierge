@@ -17,7 +17,7 @@ const NAI_NAI_MESSAGE =
 test("Reset v3 uses one-shot forced structured submission instead of ToolLoopAgent output resolution", async () => {
   const source = await readFile(engineUrl, "utf8");
 
-  assert.equal(RESET_MAX_MODEL_CALLS, 2);
+  assert.equal(RESET_MAX_MODEL_CALLS, 1);
   assert.equal(RESET_MAX_OUTPUT_TOKENS, 24_000);
   assert.equal(RESET_SUBMIT_TOOL_NAME, "submitReceptionistDraft");
   assert.match(source, /generateText/);
@@ -30,15 +30,13 @@ test("Reset v3 uses one-shot forced structured submission instead of ToolLoopAge
   assert.doesNotMatch(source, /isStepCount/);
 });
 
-test("one missing structured submission receives exactly one final content-call recovery", async () => {
+test("a missing structured submission fails visibly without a hidden paid retry", async () => {
   const source = await readFile(engineUrl, "utf8");
 
-  assert.match(source, /recoverableStructuredOutputFailure/);
-  assert.match(source, /NO_OUTPUT_RECOVERY_INSTRUCTIONS/);
   assert.match(source, /callNumber:\s*1/);
-  assert.match(source, /callNumber:\s*2/);
-  assert.match(source, /This is the final permitted content call/);
-  assert.match(source, /throw new ResetDraftGenerationError\(2, recoveryError\)/);
+  assert.doesNotMatch(source, /callNumber:\s*2/);
+  assert.doesNotMatch(source, /NO_OUTPUT_RECOVERY_INSTRUCTIONS/);
+  assert.match(source, /throw new ResetDraftGenerationError\(1, error\)/);
   assert.doesNotMatch(source, /callNumber:\s*3/);
 });
 

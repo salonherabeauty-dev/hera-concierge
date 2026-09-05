@@ -21,6 +21,7 @@ import {
   createProductionRuntime,
   drainReceptionistForJobs,
 } from "../../src/worker.js";
+import { useReceptionistResetV3 } from "../../src/reset/boundary.js";
 
 const requestSchema = z.object({
   candidateId: z.string().uuid(),
@@ -57,6 +58,14 @@ export default async function handler(
   secureCommandCentreHeaders(response);
   if (request.method !== "POST") {
     return methodNotAllowed(response, ["POST"]);
+  }
+
+
+  if (useReceptionistResetV3()) {
+    return response.status(410).json({
+      error: "Use the Reception Desk regeneration control.",
+      code: "legacy_generation_disabled",
+    });
   }
 
   try {
