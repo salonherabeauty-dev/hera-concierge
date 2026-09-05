@@ -40,7 +40,10 @@ function numberValue(value: unknown): number {
 
 const RESET_WORKER_LEASE_MS = 7 * 60 * 1_000;
 
-function mapState(value: Record<string, unknown>) {
+function mapState(
+  value: Record<string, unknown>,
+  sendReservation?: Record<string, unknown>,
+) {
   const turnStatus = typeof value.turn_status === "string"
     ? value.turn_status
     : null;
@@ -98,6 +101,16 @@ function mapState(value: Record<string, unknown>) {
     candidateStatus: value.candidate_status,
     candidateModelId: value.candidate_model_id,
     candidateModelAttempts: value.candidate_model_attempts,
+    sendReservationStatus:
+      sendReservation?.status === "reserved" ||
+        sendReservation?.status === "sent" ||
+        sendReservation?.status === "failed"
+        ? sendReservation.status
+        : null,
+    sendReservationFailureCode:
+      typeof sendReservation?.failure_code === "string"
+        ? sendReservation.failure_code
+        : null,
     jobId: value.job_id,
     jobStatus: value.job_status,
     jobAttempts: value.job_attempts,
@@ -147,11 +160,45 @@ export default async function handler(
     const { data, error } = await query.limit(300);
     if (error) throw new Error(`load reset state: ${error.message}`);
 
+    const stateRows = (data ?? []) as Array<Record<string, unknown>>;
+    const candidateIds = [
+      ...new Set(
+        stateRows
+          .map((item) => item.candidate_id)
+          .filter((value): value is string => typeof value === "string"),
+      ),
+    ];
+    const reservationsByCandidate = new Map<string, Record<string, unknown>>();
+    if (candidateIds.length > 0) {
+      const { data: reservations, error: reservationError } = await client
+        .from("ai_human_send_reservations_v3")
+        .select("candidate_id,status,failure_code,reserved_at")
+        .in("candidate_id", candidateIds)
+        .order("reserved_at", { ascending: false });
+      if (reservationError) {
+        throw new Error(`load reset send reservation: ${reservationError.message}`);
+      }
+      for (const reservation of (reservations ?? []) as Array<Record<string, unknown>>) {
+        const candidateId = reservation.candidate_id;
+        if (
+          typeof candidateId === "string" &&
+          !reservationsByCandidate.has(candidateId)
+        ) {
+          reservationsByCandidate.set(candidateId, reservation);
+        }
+      }
+    }
+
     return response.status(200).json({
       ok: true,
       resetVersion: HERA_RECEPTIONIST_RESET_VERSION,
       exactCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-      states: ((data ?? []) as Array<Record<string, unknown>>).map(mapState),
+      states: stateRows.map((item) => mapState(
+        item,
+        typeof item.candidate_id === "string"
+          ? reservationsByCandidate.get(item.candidate_id)
+          : undefined,
+      )),
     });
   } catch (error) {
     if (

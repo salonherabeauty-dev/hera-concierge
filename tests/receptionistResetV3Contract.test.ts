@@ -19,6 +19,7 @@ const migrations = [
   "20260830030001_harden_receptionist_reset_v3.sql",
   "20260830030002_complete_receptionist_reset_v3.sql",
   "20260905000000_enforce_manual_ai_generation_authorization.sql",
+  "20260905072901_persist_reset_v3_sent_messages.sql",
 ].map((name) => new URL(`../supabase/migrations/${name}`, import.meta.url));
 const engineUrl = new URL("../src/reset/engine.ts", import.meta.url);
 const workerUrl = new URL("../src/reset/worker.ts", import.meta.url);

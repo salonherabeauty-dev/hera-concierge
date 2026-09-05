@@ -25,6 +25,10 @@ import {
 } from "../../src/observability/log.js";
 import { requireReceptionistResetV3 } from "../../src/reset/boundary.js";
 import { ResetReceptionistRepository } from "../../src/reset/repository.js";
+import {
+  isRetryableWhatsAppError,
+  WhatsAppApiError,
+} from "../../src/whatsapp/client.js";
 import { D360WhatsAppClient } from "../../src/whatsapp/d360Client.js";
 
 const uuid = z.string().uuid();
@@ -62,6 +66,35 @@ function safeFailureCode(error: unknown): string {
     .replace(/[^a-z0-9_]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 120) || "provider_send_failed";
+}
+
+function isAmbiguousProviderOutcome(error: unknown): boolean {
+  if (isRetryableWhatsAppError(error)) return true;
+  return error instanceof WhatsAppApiError &&
+    (error.status < 400 || error.status >= 500);
+}
+
+async function completeHumanSendWithOneRetry(input: {
+  repository: ResetReceptionistRepository;
+  reservationId: string;
+  providerMessageId: string;
+}): Promise<void> {
+  try {
+    await input.repository.completeHumanSend({
+      reservationId: input.reservationId,
+      providerMessageId: input.providerMessageId,
+    });
+  } catch (firstError) {
+    logOperationalEvent("warn", "reset_v3_send_finalize_retry", {
+      reservationId: input.reservationId,
+      providerMessageId: input.providerMessageId,
+      ...safeErrorFields(firstError),
+    });
+    await input.repository.completeHumanSend({
+      reservationId: input.reservationId,
+      providerMessageId: input.providerMessageId,
+    });
+  }
 }
 
 export default async function handler(
@@ -154,24 +187,36 @@ export default async function handler(
       baseUrl: d360.baseUrl,
     });
 
+    let providerMessageId: string;
     try {
       const sent = await whatsapp.sendText(
         reservation.toWaId,
         reservation.messageText,
       );
-      await repository.completeHumanSend({
-        reservationId: reservation.reservationId,
-        providerMessageId: sent.providerMessageId,
-      });
-      return response.status(200).json({
-        ok: true,
-        state: "sent",
-        providerMessageId: sent.providerMessageId,
-        editedByHuman: reservation.editedByHuman,
-        channel: HERA_TANGLIN_WHATSAPP_CHANNEL,
-      });
+      providerMessageId = sent.providerMessageId;
     } catch (error) {
       const code = safeFailureCode(error);
+      if (isAmbiguousProviderOutcome(error)) {
+        // The request may have reached 360dialog even though no acknowledgement
+        // reached us. Keep the reservation locked: a later click must not send
+        // the same reply again while staff checks the native WhatsApp record.
+        logOperationalEvent("warn", "reset_v3_send_outcome_unknown", {
+          reservationId: reservation.reservationId,
+          candidateId: body.candidateId,
+          turnId: body.turnId,
+          recipientEnding: body.expectedPhoneEnding,
+          failureCode: code,
+          ...safeErrorFields(error),
+        });
+        return response.status(202).json({
+          ok: false,
+          state: "send_outcome_unknown",
+          code,
+          providerMessageId: null,
+          transcriptPersisted: false,
+          channel: HERA_TANGLIN_WHATSAPP_CHANNEL,
+        });
+      }
       await repository
         .failHumanSend({
           reservationId: reservation.reservationId,
@@ -201,6 +246,40 @@ export default async function handler(
         state: "send_failed",
         code,
         providerMessageId: null,
+        channel: HERA_TANGLIN_WHATSAPP_CHANNEL,
+      });
+    }
+
+    try {
+      await completeHumanSendWithOneRetry({
+        repository,
+        reservationId: reservation.reservationId,
+        providerMessageId,
+      });
+      return response.status(200).json({
+        ok: true,
+        state: "sent",
+        providerMessageId,
+        editedByHuman: reservation.editedByHuman,
+        transcriptPersisted: true,
+        channel: HERA_TANGLIN_WHATSAPP_CHANNEL,
+      });
+    } catch (error) {
+      // The provider has already accepted this message. Never mark the
+      // reservation failed here: leaving it reserved blocks a second provider
+      // send while operators reconcile the idempotent database completion.
+      logOperationalEvent("error", "reset_v3_send_finalize_failed", {
+        reservationId: reservation.reservationId,
+        providerMessageId,
+        ...safeErrorFields(error),
+      });
+      return response.status(202).json({
+        ok: true,
+        state: "sent",
+        code: "send_persistence_pending",
+        providerMessageId,
+        editedByHuman: reservation.editedByHuman,
+        transcriptPersisted: false,
         channel: HERA_TANGLIN_WHATSAPP_CHANNEL,
       });
     }

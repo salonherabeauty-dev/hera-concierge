@@ -40,6 +40,10 @@ const resetStateUrl = new URL(
   "../api/command-centre/reset-state.ts",
   import.meta.url,
 );
+const resetMessageUrl = new URL(
+  "../api/command-centre/reset-message.ts",
+  import.meta.url,
+);
 const drainUrl = new URL("../api/internal/drain.ts", import.meta.url);
 const syntheticProofUrl = new URL(
   "../api/internal/reset-v3-synthetic-proof.ts",
@@ -50,6 +54,10 @@ const engineUrl = new URL("../src/reset/engine.ts", import.meta.url);
 const resetRepositoryUrl = new URL("../src/reset/repository.ts", import.meta.url);
 const authorizationMigrationUrl = new URL(
   "../supabase/migrations/20260905000000_enforce_manual_ai_generation_authorization.sql",
+  import.meta.url,
+);
+const sendPersistenceMigrationUrl = new URL(
+  "../supabase/migrations/20260905072901_persist_reset_v3_sent_messages.sql",
   import.meta.url,
 );
 const resetV3CompletionMigrationUrl = new URL(
@@ -99,6 +107,9 @@ interface ComposerResetState {
   candidateText?: string | null;
   candidateHash?: string | null;
   candidateModelAttempts?: number | null;
+  candidateStatus?: "ready" | "superseded" | "rejected" | "sent" | null;
+  sendReservationStatus?: "reserved" | "sent" | "failed" | null;
+  sendReservationFailureCode?: string | null;
   retryAvailable?: boolean;
   generationRequestPending?: boolean;
   jobLeaseStale?: boolean;
@@ -107,6 +118,7 @@ interface ComposerResetState {
 
 async function mapResetState(
   value: Record<string, unknown>,
+  sendReservation?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const source = await readFile(resetStateUrl, "utf8");
   const start = source.indexOf("function numberValue(");
@@ -119,18 +131,24 @@ async function mapResetState(
       "function numberValue(value)",
     )
     .replace(
-      "function mapState(value: Record<string, unknown>)",
-      "function mapState(value)",
+      `function mapState(
+  value: Record<string, unknown>,
+  sendReservation?: Record<string, unknown>,
+)`,
+      "function mapState(value, sendReservation)",
     );
   const build = new Function(
     `${mapperSource}; return mapState;`,
-  ) as () => (row: Record<string, unknown>) => Record<string, unknown>;
-  return build()(value);
+  ) as () => (
+    row: Record<string, unknown>,
+    reservation?: Record<string, unknown>,
+  ) => Record<string, unknown>;
+  return build()(value, sendReservation);
 }
 
 async function renderComposer(
   reset: ComposerResetState,
-  options: { generationAccepted?: boolean } = {},
+  options: { generationAccepted?: boolean; uncertainSend?: boolean } = {},
 ): Promise<string> {
   const source = await readFile(uiUrl, "utf8");
   const generationRequestedSource = functionSource(
@@ -138,28 +156,35 @@ async function renderComposer(
     "generationRequested",
     "primaryStatus",
   );
+  const primaryStatusSource = functionSource(
+    source,
+    "primaryStatus",
+    "riskStatus",
+  );
   const composer = functionSource(source, "composerView", "renderMain");
   const state = {
     busy: null,
     draft: reset.candidateText ?? "",
     manualMode: false,
     generationRequests: new Map<string, number>(),
+    uncertainSends: new Set<string>(),
   };
   if (options.generationAccepted) {
     state.generationRequests.set(reset.turnId, Date.now());
   }
+  if (options.uncertainSend && reset.candidateId) {
+    state.uncertainSends.add(reset.candidateId);
+  }
   const build = new Function(
     "state",
     "resetState",
-    "primaryStatus",
     "REPLY_WINDOW_MS",
     "GENERATION_REQUEST_GRACE_MS",
     "escapeHtml",
-    `${generationRequestedSource}; ${composer}; return composerView;`,
+    `${generationRequestedSource}; ${primaryStatusSource}; ${composer}; return composerView;`,
   ) as (
     stateValue: typeof state,
     resetStateValue: () => ComposerResetState,
-    primaryStatusValue: () => { key: string },
     replyWindowMs: number,
     generationRequestGraceMs: number,
     escapeHtmlValue: (value: unknown) => string,
@@ -167,7 +192,6 @@ async function renderComposer(
   const view = build(
     state,
     () => reset,
-    () => ({ key: reset.turnStatus }),
     24 * 60 * 60 * 1_000,
     30_000,
     (value) => String(value ?? ""),
@@ -391,6 +415,84 @@ test("a locally accepted Generate request shows preparing during the database cl
   assert.match(html, /AI is preparing your requested reply/i);
   assert.match(html, /started by a human/i);
   assert.doesNotMatch(html, /data-action="generate"/);
+});
+
+test("a sent candidate stays Waiting even while the conversation snapshot is stale", async () => {
+  const html = await renderComposer({
+    turnStatus: "ready",
+    turnId: "turn-sent",
+    settleAt: new Date(Date.now() - 60_000).toISOString(),
+    candidateId: "candidate-sent",
+    candidateText: "The human-approved message that was sent.",
+    candidateHash: "candidate-hash",
+    candidateModelAttempts: 1,
+    candidateStatus: "sent",
+  });
+  const source = await readFile(uiUrl, "utf8");
+
+  assert.match(html, /Waiting for the client/);
+  assert.doesNotMatch(
+    html,
+    /No AI draft exists|data-action="generate"|data-action="retry"|data-action="send"/i,
+  );
+  assert.match(
+    source,
+    /candidateStatus === "sent"[\s\S]{0,140}key: "waiting"/,
+  );
+  assert.match(
+    source,
+    /lastMessageDirection === "inbound" && status !== "waiting"/,
+  );
+});
+
+test("an ambiguous send remains visibly locked after a browser reload", async () => {
+  const html = await renderComposer({
+    turnStatus: "ready",
+    turnId: "turn-send-pending",
+    settleAt: new Date(Date.now() - 60_000).toISOString(),
+    candidateId: "candidate-send-pending",
+    candidateText: "The reviewed draft whose provider outcome is unknown.",
+    candidateHash: "candidate-hash",
+    candidateModelAttempts: 1,
+    candidateStatus: "ready",
+    sendReservationStatus: "reserved",
+  });
+  const resetState = await readFile(resetStateUrl, "utf8");
+  const mapped = await mapResetState(
+    { turn_status: "ready", candidate_id: "candidate-send-pending" },
+    {
+      candidate_id: "candidate-send-pending",
+      status: "reserved",
+      failure_code: null,
+    },
+  );
+
+  assert.equal(mapped.sendReservationStatus, "reserved");
+  assert.match(html, /Delivery confirmation is pending/i);
+  assert.match(html, /Do not send this reply again/i);
+  assert.doesNotMatch(html, /data-action="send"/i);
+  assert.match(resetState, /ai_human_send_reservations_v3/);
+  assert.match(resetState, /sendReservationStatus/);
+});
+
+test("durable sent status clears an earlier in-browser uncertain warning", async () => {
+  const html = await renderComposer(
+    {
+      turnStatus: "ready",
+      turnId: "turn-reconciled-send",
+      settleAt: new Date(Date.now() - 60_000).toISOString(),
+      candidateId: "candidate-reconciled-send",
+      candidateText: "The human-approved message that was reconciled.",
+      candidateHash: "candidate-hash",
+      candidateModelAttempts: 1,
+      candidateStatus: "sent",
+      sendReservationStatus: "sent",
+    },
+    { uncertainSend: true },
+  );
+
+  assert.match(html, /Waiting for the client/i);
+  assert.doesNotMatch(html, /Delivery confirmation is pending|data-action="send"/i);
 });
 
 test("the inbound webhook and scheduled/read-only endpoints have no Reset-v3 generation path", async () => {
@@ -1034,11 +1136,141 @@ test("the single paid retry is available only after a failed or stale first call
     candidateText: "A finished best-quality draft.",
     candidateHash: "candidate-hash",
     candidateModelAttempts: 1,
+    candidateStatus: "ready",
     retryAvailable: true,
   });
   assert.match(readyHtml, /data-action="send"/);
   assert.doesNotMatch(readyHtml, /data-action="regenerate"|>Regenerate</i);
   assert.doesNotMatch(ui, /action\s*===\s*"regenerate"/);
+});
+
+test("send completion atomically and idempotently persists the outbound transcript", async () => {
+  const migration = await readFile(sendPersistenceMigrationUrl, "utf8");
+  assert.doesNotThrow(() => parse(migration));
+  const complete = sqlFunctionSource(
+    migration,
+    "ai_complete_human_send_v3",
+  );
+  const reservationLock = complete.indexOf(
+    "from public.ai_human_send_reservations_v3 as reservation",
+  );
+  const conversationLock = complete.indexOf(
+    "from public.ai_conversations as conversation",
+  );
+  const messageInsert = complete.indexOf("insert into public.ai_messages");
+  const conversationUpdate = complete.indexOf(
+    "update public.ai_conversations",
+  );
+
+  assert.ok(reservationLock >= 0, "completion must lock its reservation");
+  assert.match(complete.slice(reservationLock), /for update/i);
+  assert.ok(
+    conversationLock > reservationLock,
+    "completion must load the conversation after locking its reservation",
+  );
+  assert.ok(messageInsert > conversationLock, "completion must persist the sent message");
+  assert.ok(
+    conversationUpdate > messageInsert,
+    "completion must advance conversation chronology after message persistence",
+  );
+  assert.match(
+    complete,
+    /on conflict \(provider_message_id\)[\s\S]{0,120}do nothing/i,
+  );
+  assert.match(complete, /reset_v3_provider_message_id_collision/i);
+  assert.match(complete, /v_reservation\.status = 'sent'[\s\S]*v_message_inserted/i);
+  assert.doesNotMatch(
+    complete,
+    /v_reservation\.status = 'sent'\s+then\s+return/i,
+  );
+  assert.doesNotMatch(
+    complete,
+    /pg_advisory_xact_lock/,
+    "completion must not invert the inbound conversation/advisory lock order",
+  );
+  assert.match(
+    complete,
+    /last_message_at = greatest\(last_message_at, v_message_at\)/i,
+  );
+  assert.match(complete, /v_message_at := v_reservation\.reserved_at/i);
+  assert.match(complete, /'transcriptPersisted', true/);
+
+  assert.match(
+    migration,
+    /reservation\.reserved_at,\s*reservation\.reserved_at,\s*pg_catalog\.now\(\)/i,
+  );
+  assert.match(
+    migration,
+    /lock table public\.ai_human_send_reservations_v3\s+in share row exclusive mode/i,
+  );
+  assert.match(migration, /reset_v3_sent_message_backfill_collision/i);
+  assert.match(migration, /reset_v3_sent_message_backfill_incomplete/i);
+  assert.match(migration, /'providerCalled', false/);
+  assert.match(migration, /'aiCalled', false/);
+  assert.doesNotMatch(
+    migration,
+    /D360WhatsAppClient|MetaWhatsAppClient|\.sendText\s*\(|generateResetDraft|OPENAI_API_KEY/i,
+  );
+
+  const normalized = migration.replace(/\s+/g, " ");
+  assert.match(
+    normalized,
+    /revoke all on function public\.ai_complete_human_send_v3\s*\(\s*uuid,\s*text\s*\)\s*from public, anon, authenticated/i,
+  );
+  assert.match(
+    normalized,
+    /grant execute on function public\.ai_complete_human_send_v3\s*\(\s*uuid,\s*text\s*\)\s*to service_role/i,
+  );
+});
+
+test("a provider acknowledgement can never be converted into a resendable failure", async () => {
+  const source = await readFile(resetMessageUrl, "utf8");
+  const ui = await readFile(uiUrl, "utf8");
+  const providerSend = source.indexOf("await whatsapp.sendText(");
+  const providerFailure = source.indexOf(".failHumanSend({", providerSend);
+  const finalize = source.indexOf(
+    "await completeHumanSendWithOneRetry({",
+    providerSend,
+  );
+  const finalizeFailure = source.indexOf(
+    '"reset_v3_send_finalize_failed"',
+    finalize,
+  );
+
+  assert.ok(providerSend >= 0, "the separate human Send action must call 360dialog");
+  assert.equal(
+    source.match(/await whatsapp\.sendText\s*\(/g)?.length,
+    1,
+    "the endpoint must contain exactly one provider send",
+  );
+  assert.ok(
+    providerFailure > providerSend && providerFailure < finalize,
+    "only the provider-failure branch may fail the reservation",
+  );
+  assert.match(
+    source.slice(providerSend, providerFailure),
+    /isAmbiguousProviderOutcome[\s\S]*response\.status\(202\)[\s\S]*state: "send_outcome_unknown"/,
+    "an ambiguous provider outcome must remain reserved instead of becoming resendable",
+  );
+  assert.ok(finalizeFailure > finalize, "finalization failure must be explicit");
+  assert.doesNotMatch(
+    source.slice(finalize, finalizeFailure + 500),
+    /failHumanSend/,
+  );
+  assert.equal(
+    source.match(/input\.repository\.completeHumanSend\s*\(/g)?.length,
+    2,
+    "the bounded retry must repeat only the idempotent database completion",
+  );
+  assert.match(
+    source.slice(finalizeFailure),
+    /response\.status\(202\)[\s\S]{0,180}state: "sent"[\s\S]{0,220}transcriptPersisted: false/,
+  );
+  assert.match(
+    ui,
+    /uncertainSends[\s\S]*Delivery confirmation is pending[\s\S]*send_outcome_unknown[\s\S]*uncertainSends\.add/,
+    "the browser must lock an ambiguous send and tell staff not to resend",
+  );
 });
 
 test("human Send reservation follows the canonical generation lock order", async () => {

@@ -21,6 +21,7 @@ const state = {
   refreshedAt: null,
   expanded: new Set(),
   generationRequests: new Map(),
+  uncertainSends: new Set(),
   scrollToBottom: false,
 };
 
@@ -183,6 +184,18 @@ function generationRequested(reset) {
 
 function primaryStatus(conversation) {
   const reset = resetState(conversation.id);
+  if (
+    reset?.candidateStatus === "sent" ||
+    reset?.sendReservationStatus === "sent"
+  ) {
+    return { key: "waiting", label: "Waiting for client", tone: "blue" };
+  }
+  if (reset?.sendReservationStatus === "reserved") {
+    return { key: "send_pending", label: "Check delivery", tone: "red" };
+  }
+  if (reset?.sendReservationStatus === "failed") {
+    return { key: "send_failed", label: "Delivery failed", tone: "red" };
+  }
   if (reset?.turnStatus === "ready" && reset?.candidateStatus === "ready") {
     return { key: "ready", label: "AI draft ready", tone: "green" };
   }
@@ -227,7 +240,7 @@ function matchesFilter(conversation) {
   const status = primaryStatus(conversation).key;
   if (state.filter === "all") return true;
   if (state.filter === "needs") {
-    return conversation.lastMessageDirection === "inbound" ||
+    return (conversation.lastMessageDirection === "inbound" && status !== "waiting") ||
       ["ready", "processing", "failed"].includes(status);
   }
   if (state.filter === "waiting") return status === "waiting";
@@ -258,7 +271,8 @@ function visibleConversations() {
 function counts() {
   return {
     needs: state.conversations.filter((conversation) =>
-      conversation.lastMessageDirection === "inbound" ||
+      (conversation.lastMessageDirection === "inbound" &&
+        primaryStatus(conversation).key !== "waiting") ||
       ["ready", "processing", "failed"].includes(primaryStatus(conversation).key),
     ).length,
     waiting: state.conversations.filter((conversation) =>
@@ -300,6 +314,12 @@ async function loadResetStates(conversations) {
     state.resetVersion = result.resetVersion ?? state.resetVersion;
     for (const item of Array.isArray(result.states) ? result.states : []) {
       if (item?.conversationId) next.set(item.conversationId, item);
+      if (
+        item?.candidateId &&
+        item.sendReservationStatus !== "reserved"
+      ) {
+        state.uncertainSends.delete(item.candidateId);
+      }
     }
   }
   state.resetStates = next;
@@ -452,6 +472,48 @@ function composerView(conversation) {
   const withinWindow = conversation.lastMessageDirection === "inbound" &&
     Date.now() - Date.parse(conversation.lastMessageAt) < REPLY_WINDOW_MS;
 
+  if (
+    reset?.candidateId &&
+    (
+      reset.sendReservationStatus === "reserved" ||
+      (
+        reset.sendReservationStatus == null &&
+        state.uncertainSends?.has(reset.candidateId)
+      )
+    )
+  ) {
+    return `
+      <section class="rr-composer">
+        <div class="rr-state">
+          <div class="rr-state-icon">!</div>
+          <div class="rr-state-copy">
+            <strong>Delivery confirmation is pending</strong>
+            <p>Do not send this reply again. Check the native WhatsApp conversation before taking any further action.</p>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  if (reset?.sendReservationStatus === "failed") {
+    const edited = state.draft !== (reset.candidateText ?? "");
+    return `
+      <section class="rr-composer rr-draft">
+        <div class="rr-draft-header">
+          <strong>Delivery failed — review before trying again</strong>
+          <span>No automatic retry occurred</span>
+        </div>
+        <textarea data-draft aria-label="Editable reply after failed delivery" maxlength="4000">${escapeHtml(state.draft)}</textarea>
+        <div class="rr-draft-meta">
+          <span>${state.draft.length}/4000${edited ? " · Edited by human" : " · Original reviewed draft"}</span>
+          <span>A fresh click makes one new 360dialog attempt. It never generates another AI reply.</span>
+        </div>
+        <div class="rr-actions">
+          <button class="rr-button rr-button--danger" data-action="hold" ${state.busy ? "disabled" : ""}>Take Over / Hold</button>
+          <button class="rr-button rr-button--primary" data-action="send" ${state.busy || !state.draft.trim() || !withinWindow ? "disabled" : ""}>${state.busy === "send" ? "Sending…" : "Review and Send Again"}</button>
+        </div>
+      </section>`;
+  }
+
   if (status.key === "ready" && reset?.candidateId) {
     const edited = state.draft !== (reset.candidateText ?? "");
     return `
@@ -553,7 +615,7 @@ function composerView(conversation) {
       </section>`;
   }
 
-  if (conversation.lastMessageDirection === "outbound") {
+  if (status.key === "waiting") {
     return `
       <section class="rr-composer">
         <div class="rr-state">
@@ -614,7 +676,15 @@ function renderContext() {
       <section class="rr-context-section">
         <h3>Draft status</h3>
         <div class="rr-context-card">
-          <strong>${escapeHtml(reset?.turnStatus || "No reset turn")}</strong>
+          <strong>${escapeHtml(
+            reset?.candidateStatus === "sent" || reset?.sendReservationStatus === "sent"
+              ? "sent"
+              : reset?.sendReservationStatus === "reserved"
+                ? "delivery confirmation pending"
+                : reset?.sendReservationStatus === "failed"
+                  ? "delivery failed"
+                  : reset?.turnStatus || "No reset turn",
+          )}</strong>
           <p>${reset?.turnVersion ? `Client turn version ${reset.turnVersion}. ` : ""}Delivery control: human only.</p>
           ${reset?.failureCode ? `<p>Failure code: ${escapeHtml(reset.failureCode)}</p>` : ""}
         </div>
@@ -786,10 +856,53 @@ async function sendDraft() {
         messageText: state.draft.trim(),
       }),
     });
+    if (result.state === "send_outcome_unknown") {
+      state.uncertainSends.add(reset.candidateId);
+      setNotice(
+        "360dialog did not confirm whether it accepted the message. Do not send it again; check the native WhatsApp conversation.",
+        "error",
+      );
+      return;
+    }
     if (result.state !== "sent") throw new Error("The message was not confirmed as sent.");
-    setNotice("Message sent from Tanglin WhatsApp.");
+    const sentText = state.draft.trim();
+    const sentAt = new Date().toISOString();
+    state.resetStates.set(conversation.id, {
+      ...reset,
+      candidateStatus: "sent",
+    });
+    conversation.lastMessageDirection = "outbound";
+    conversation.lastMessageAt = sentAt;
+    conversation.lastMessagePreview = sentText;
+    if (state.detail && Array.isArray(state.detail.messages)) {
+      state.detail = {
+        ...state.detail,
+        messages: [
+          ...state.detail.messages,
+          {
+            id: `confirmed-send-${result.providerMessageId || sentAt}`,
+            direction: "outbound",
+            kind: "text",
+            text: sentText,
+            aiGenerated: false,
+            deliveryStatus: "sent",
+            providerTimestamp: sentAt,
+            createdAt: sentAt,
+            media: null,
+          },
+        ],
+      };
+    }
     state.draftDirty = false;
-    await refreshWorkspace({ preserveDraft: false });
+    if (result.transcriptPersisted === false) {
+      setNotice(
+        "WhatsApp accepted the message, but its inbox record needs reconciliation. Do not send it again.",
+        "error",
+      );
+    } else {
+      setNotice("Message sent from Tanglin WhatsApp.");
+      await refreshWorkspace({ preserveDraft: false });
+    }
   } catch (error) {
     setNotice(error instanceof Error ? error.message : "The message could not be sent.", "error");
   } finally {
